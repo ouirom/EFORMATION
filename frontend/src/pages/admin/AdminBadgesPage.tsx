@@ -1,0 +1,452 @@
+import { useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Card, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Badge } from '@/components/ui/badge'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
+import { PageLoading } from '@/components/ui/loading'
+import { useToast } from '@/components/ui/use-toast'
+import {
+  Award,
+  Plus,
+  Search,
+  Edit,
+  Trash2,
+  Users,
+  Star,
+  Trophy,
+  Target,
+  Flame,
+} from 'lucide-react'
+import { api } from '@/services/api'
+
+interface BadgeType {
+  id: number
+  name: string
+  description: string
+  imageUrl: string
+  criteria: string
+  criteriaValue: number
+  category: string
+  points: number
+  isActive: boolean
+  earnedCount?: number
+}
+
+const badgeCategories = [
+  { value: 'completion', label: 'Complétion', icon: Target },
+  { value: 'engagement', label: 'Engagement', icon: Flame },
+  { value: 'achievement', label: 'Accomplissement', icon: Trophy },
+  { value: 'social', label: 'Social', icon: Users },
+  { value: 'special', label: 'Spécial', icon: Star },
+]
+
+const badgeCriteria = [
+  { value: 'courses_completed', label: 'Cours terminés' },
+  { value: 'lessons_completed', label: 'Leçons terminées' },
+  { value: 'quizzes_passed', label: 'Quiz réussis' },
+  { value: 'login_streak', label: 'Jours de connexion consécutifs' },
+  { value: 'points_earned', label: 'Points gagnés' },
+  { value: 'time_spent', label: 'Heures de formation' },
+  { value: 'certificates_earned', label: 'Certificats obtenus' },
+]
+
+export default function AdminBadgesPage() {
+  const { toast } = useToast()
+  const queryClient = useQueryClient()
+  const [searchTerm, setSearchTerm] = useState('')
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
+  const [editingBadge, setEditingBadge] = useState<BadgeType | null>(null)
+  const [formData, setFormData] = useState({
+    name: '',
+    description: '',
+    imageUrl: '',
+    criteria: '',
+    criteriaValue: 1,
+    category: '',
+    points: 10,
+  })
+
+  const { data: badges = [], isLoading } = useQuery<BadgeType[]>({
+    queryKey: ['admin-badges'],
+    queryFn: async () => {
+      const response = await api.get('/badges')
+      return response.data.data || []
+    },
+  })
+
+  const createMutation = useMutation({
+    mutationFn: async (data: typeof formData) => {
+      await api.post('/badges', data)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-badges'] })
+      setIsCreateDialogOpen(false)
+      resetForm()
+      toast({ title: 'Succès', description: 'Badge créé avec succès' })
+    },
+    onError: () => {
+      toast({ title: 'Erreur', description: 'Erreur lors de la création', variant: 'destructive' })
+    },
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: typeof formData }) => {
+      await api.put(`/badges/${id}`, data)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-badges'] })
+      setEditingBadge(null)
+      resetForm()
+      toast({ title: 'Succès', description: 'Badge mis à jour avec succès' })
+    },
+    onError: () => {
+      toast({ title: 'Erreur', description: 'Erreur lors de la mise à jour', variant: 'destructive' })
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await api.delete(`/badges/${id}`)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-badges'] })
+      toast({ title: 'Succès', description: 'Badge supprimé' })
+    },
+    onError: () => {
+      toast({ title: 'Erreur', description: 'Erreur lors de la suppression', variant: 'destructive' })
+    },
+  })
+
+  const resetForm = () => {
+    setFormData({
+      name: '',
+      description: '',
+      imageUrl: '',
+      criteria: '',
+      criteriaValue: 1,
+      category: '',
+      points: 10,
+    })
+  }
+
+  const handleEdit = (badge: BadgeType) => {
+    setEditingBadge(badge)
+    setFormData({
+      name: badge.name,
+      description: badge.description,
+      imageUrl: badge.imageUrl,
+      criteria: badge.criteria,
+      criteriaValue: badge.criteriaValue,
+      category: badge.category,
+      points: badge.points,
+    })
+  }
+
+  const handleSubmit = () => {
+    if (editingBadge) {
+      updateMutation.mutate({ id: editingBadge.id, data: formData })
+    } else {
+      createMutation.mutate(formData)
+    }
+  }
+
+  const filteredBadges = badges.filter((badge) =>
+    badge.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    badge.description.toLowerCase().includes(searchTerm.toLowerCase())
+  )
+
+  const getCategoryIcon = (category: string) => {
+    const cat = badgeCategories.find((c) => c.value === category)
+    return cat ? <cat.icon className="h-4 w-4" /> : <Award className="h-4 w-4" />
+  }
+
+  if (isLoading) {
+    return <PageLoading />
+  }
+
+  const BadgeForm = () => (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label>Nom du badge</Label>
+          <Input
+            value={formData.name}
+            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            placeholder="Ex: Expert React"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Catégorie</Label>
+          <Select value={formData.category} onValueChange={(v) => setFormData({ ...formData, category: v })}>
+            <SelectTrigger>
+              <SelectValue placeholder="Sélectionner une catégorie" />
+            </SelectTrigger>
+            <SelectContent>
+              {badgeCategories.map((cat) => (
+                <SelectItem key={cat.value} value={cat.value}>
+                  <div className="flex items-center gap-2">
+                    <cat.icon className="h-4 w-4" />
+                    {cat.label}
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label>Description</Label>
+        <Textarea
+          value={formData.description}
+          onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+          placeholder="Description du badge..."
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label>URL de l'image</Label>
+        <Input
+          value={formData.imageUrl}
+          onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
+          placeholder="https://example.com/badge.png"
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label>Critère d'obtention</Label>
+          <Select value={formData.criteria} onValueChange={(v) => setFormData({ ...formData, criteria: v })}>
+            <SelectTrigger>
+              <SelectValue placeholder="Sélectionner un critère" />
+            </SelectTrigger>
+            <SelectContent>
+              {badgeCriteria.map((crit) => (
+                <SelectItem key={crit.value} value={crit.value}>
+                  {crit.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label>Valeur requise</Label>
+          <Input
+            type="number"
+            min={1}
+            value={formData.criteriaValue}
+            onChange={(e) => setFormData({ ...formData, criteriaValue: parseInt(e.target.value) })}
+          />
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label>Points attribués</Label>
+        <Input
+          type="number"
+          min={0}
+          value={formData.points}
+          onChange={(e) => setFormData({ ...formData, points: parseInt(e.target.value) })}
+        />
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Gestion des badges</h1>
+          <p className="text-muted-foreground">Créez et gérez les badges de gamification</p>
+        </div>
+        <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+          <DialogTrigger asChild>
+            <Button onClick={resetForm}>
+              <Plus className="h-4 w-4 mr-2" />
+              Nouveau badge
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Créer un badge</DialogTitle>
+              <DialogDescription>
+                Définissez les caractéristiques et critères d'obtention du badge
+              </DialogDescription>
+            </DialogHeader>
+            <BadgeForm />
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
+                Annuler
+              </Button>
+              <Button onClick={handleSubmit} disabled={createMutation.isPending}>
+                {createMutation.isPending ? 'Création...' : 'Créer le badge'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-lg bg-blue-100 flex items-center justify-center">
+                <Award className="h-5 w-5 text-blue-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">{badges.length}</p>
+                <p className="text-sm text-muted-foreground">Total badges</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-lg bg-green-100 flex items-center justify-center">
+                <Target className="h-5 w-5 text-green-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">{badges.filter((b) => b.isActive).length}</p>
+                <p className="text-sm text-muted-foreground">Badges actifs</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-lg bg-yellow-100 flex items-center justify-center">
+                <Users className="h-5 w-5 text-yellow-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">{badges.reduce((sum, b) => sum + (b.earnedCount || 0), 0)}</p>
+                <p className="text-sm text-muted-foreground">Badges attribués</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-lg bg-purple-100 flex items-center justify-center">
+                <Star className="h-5 w-5 text-purple-600" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">{badgeCategories.length}</p>
+                <p className="text-sm text-muted-foreground">Catégories</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Search */}
+      <div className="relative max-w-md">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          placeholder="Rechercher un badge..."
+          className="pl-9"
+        />
+      </div>
+
+      {/* Badges grid */}
+      {filteredBadges.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <Award className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+            <h3 className="text-lg font-medium mb-2">Aucun badge trouvé</h3>
+            <p className="text-muted-foreground">
+              Créez votre premier badge pour motiver vos apprenants
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredBadges.map((badge) => (
+            <Card key={badge.id} className="overflow-hidden">
+              <CardContent className="p-4">
+                <div className="flex items-start gap-4">
+                  <div className="h-16 w-16 rounded-lg bg-muted flex items-center justify-center shrink-0">
+                    {badge.imageUrl ? (
+                      <img src={badge.imageUrl} alt={badge.name} className="h-12 w-12 object-contain" />
+                    ) : (
+                      <Award className="h-8 w-8 text-muted-foreground" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <h3 className="font-medium truncate">{badge.name}</h3>
+                        <div className="flex items-center gap-2 mt-1">
+                          <Badge variant="outline" className="text-xs">
+                            {getCategoryIcon(badge.category)}
+                            <span className="ml-1">
+                              {badgeCategories.find((c) => c.value === badge.category)?.label || badge.category}
+                            </span>
+                          </Badge>
+                          <Badge variant="secondary" className="text-xs">
+                            {badge.points} pts
+                          </Badge>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="icon" onClick={() => handleEdit(badge)}>
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => deleteMutation.mutate(badge.id)}
+                        >
+                          <Trash2 className="h-4 w-4 text-red-500" />
+                        </Button>
+                      </div>
+                    </div>
+                    <p className="text-sm text-muted-foreground mt-2 line-clamp-2">
+                      {badge.description}
+                    </p>
+                    <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
+                      <span>{badgeCriteria.find((c) => c.value === badge.criteria)?.label}: {badge.criteriaValue}</span>
+                      <span>{badge.earnedCount || 0} attribués</span>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Edit Dialog */}
+      <Dialog open={!!editingBadge} onOpenChange={(open) => !open && setEditingBadge(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Modifier le badge</DialogTitle>
+            <DialogDescription>
+              Mettez à jour les informations du badge
+            </DialogDescription>
+          </DialogHeader>
+          <BadgeForm />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingBadge(null)}>
+              Annuler
+            </Button>
+            <Button onClick={handleSubmit} disabled={updateMutation.isPending}>
+              {updateMutation.isPending ? 'Mise à jour...' : 'Enregistrer'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}

@@ -1,0 +1,475 @@
+import nodemailer from 'nodemailer';
+import twilio from 'twilio';
+import webPush from 'web-push';
+import admin from 'firebase-admin';
+import { config } from '../config';
+import { DatabaseService } from './database.service';
+import { logger } from '../utils/logger';
+
+interface NotificationPayload {
+  tenantId: number;
+  userId: number;
+  channel: 'email' | 'sms' | 'whatsapp' | 'push' | 'in_app';
+  subject?: string;
+  body: string;
+  actionUrl?: string;
+  metadata?: Record<string, any>;
+}
+
+interface NotificationResult {
+  id: number;
+  status: 'sent' | 'failed' | 'pending';
+  channel: string;
+  externalId?: string;
+}
+
+interface ResolvedEmailConfig {
+  transporter: nodemailer.Transporter;
+  from: string;
+}
+
+// Per-tenant SMTP transporters, built from DB settings (or env fallback) and cached until invalidated.
+const emailTransporterCache = new Map<number, ResolvedEmailConfig | null>();
+
+// Twilio client for SMS and WhatsApp
+const twilioClient = config.twilio.accountSid && config.twilio.authToken
+  ? twilio(config.twilio.accountSid, config.twilio.authToken)
+  : null;
+
+// Configure web-push for VAPID (only if keys are configured)
+if (config.webPush?.publicKey && config.webPush?.privateKey) {
+  try {
+    webPush.setVapidDetails(
+      config.webPush.subject || 'mailto:admin@eformation.com',
+      config.webPush.publicKey,
+      config.webPush.privateKey
+    );
+  } catch (error) {
+    logger.warn('VAPID configuration failed', { error });
+  }
+}
+
+// Initialize Firebase Admin for FCM
+let firebaseApp: admin.app.App | null = null;
+if (config.firebase?.projectId && config.firebase?.clientEmail && config.firebase?.privateKey) {
+  try {
+    firebaseApp = admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId: config.firebase.projectId,
+        clientEmail: config.firebase.clientEmail,
+        privateKey: config.firebase.privateKey,
+      }),
+    });
+  } catch (error) {
+    logger.warn('Firebase initialization failed', { error });
+  }
+}
+
+export class NotificationService {
+  /**
+   * Send a notification through the specified channel
+   */
+  static async send(payload: NotificationPayload): Promise<NotificationResult> {
+    const { tenantId, userId, channel, subject, body, actionUrl, metadata } = payload;
+
+    // Check user preferences
+    const preferences = await this.getUserPreferences(userId);
+    const channelEnabled = this.isChannelEnabled(preferences, channel);
+
+    if (!channelEnabled) {
+      logger.info('Notification channel disabled by user preferences', { userId, channel });
+      return { id: 0, status: 'pending', channel };
+    }
+
+    // Get user info
+    const users = await DatabaseService.query<any>(
+      'SELECT email, phone FROM users WHERE id = @userId',
+      { userId }
+    );
+
+    if (users.length === 0) {
+      throw new Error('User not found');
+    }
+
+    const user = users[0];
+
+    // Create notification record
+    const result = await DatabaseService.query<{ id: number }>(
+      `INSERT INTO notifications (tenant_id, user_id, channel, subject, body, action_url, metadata)
+       OUTPUT INSERTED.id
+       VALUES (@tenantId, @userId, @channel, @subject, @body, @actionUrl, @metadata)`,
+      {
+        tenantId,
+        userId,
+        channel,
+        subject: subject || null,
+        body,
+        actionUrl: actionUrl || null,
+        metadata: metadata ? JSON.stringify(metadata) : null,
+      }
+    );
+
+    const notificationId = result[0].id;
+
+    try {
+      let externalId: string | undefined;
+
+      switch (channel) {
+        case 'email':
+          externalId = await this.sendEmail(tenantId, user.email, subject || 'Notification', body, actionUrl);
+          break;
+        case 'sms':
+          externalId = await this.sendSMS(user.phone, body);
+          break;
+        case 'whatsapp':
+          externalId = await this.sendWhatsApp(user.phone, body);
+          break;
+        case 'push':
+          await this.sendPush(userId, subject || 'Notification', body, actionUrl);
+          break;
+        case 'in_app':
+          // Already created in database
+          break;
+      }
+
+      // Update status to sent
+      await DatabaseService.execute(
+        `UPDATE notifications SET sent_at = SYSUTCDATETIME(), external_id = @externalId WHERE id = @id`,
+        { id: notificationId, externalId }
+      );
+
+      return { id: notificationId, status: 'sent', channel, externalId };
+    } catch (error) {
+      logger.error('Failed to send notification', { notificationId, channel, error });
+      
+      await DatabaseService.execute(
+        `UPDATE notifications SET failed_at = SYSUTCDATETIME(), error_message = @error WHERE id = @id`,
+        { id: notificationId, error: (error as Error).message }
+      );
+
+      return { id: notificationId, status: 'failed', channel };
+    }
+  }
+
+  /**
+   * Resolve the SMTP transporter for a tenant: its own configured settings if
+   * present and enabled, otherwise the env-configured defaults. Cached per
+   * tenant until invalidateEmailSettingsCache() is called.
+   */
+  private static async getEmailConfig(tenantId: number): Promise<ResolvedEmailConfig | null> {
+    if (emailTransporterCache.has(tenantId)) {
+      return emailTransporterCache.get(tenantId)!;
+    }
+
+    const rows = await DatabaseService.query<any>(
+      'SELECT * FROM email_settings WHERE tenant_id = @tenantId',
+      { tenantId }
+    );
+    const settings = rows[0];
+
+    let resolved: ResolvedEmailConfig | null = null;
+
+    if (settings?.enabled && settings.smtp_host) {
+      resolved = {
+        transporter: nodemailer.createTransport({
+          host: settings.smtp_host,
+          port: settings.smtp_port,
+          secure: !!settings.smtp_secure,
+          auth: settings.smtp_user ? { user: settings.smtp_user, pass: settings.smtp_password } : undefined,
+        }),
+        from: settings.from_name
+          ? `"${settings.from_name}" <${settings.from_email || settings.smtp_user}>`
+          : settings.from_email || settings.smtp_user,
+      };
+    } else if (config.smtp.host) {
+      resolved = {
+        transporter: nodemailer.createTransport({
+          host: config.smtp.host,
+          port: config.smtp.port,
+          secure: config.smtp.port === 465,
+          auth: config.smtp.user ? { user: config.smtp.user, pass: config.smtp.password } : undefined,
+        }),
+        from: `"${config.smtp.fromName}" <${config.smtp.from}>`,
+      };
+    }
+
+    emailTransporterCache.set(tenantId, resolved);
+    return resolved;
+  }
+
+  /**
+   * Drop the cached transporter for a tenant so the next send re-reads its settings from the DB.
+   */
+  static invalidateEmailSettingsCache(tenantId: number): void {
+    emailTransporterCache.delete(tenantId);
+  }
+
+  /**
+   * Send email notification
+   */
+  private static async sendEmail(
+    tenantId: number,
+    to: string,
+    subject: string,
+    body: string,
+    actionUrl?: string
+  ): Promise<string> {
+    const htmlBody = this.generateEmailHTML(subject, body, actionUrl);
+
+    const emailConfig = await this.getEmailConfig(tenantId);
+    if (!emailConfig) {
+      throw new Error('Email transporter not configured');
+    }
+
+    const info = await emailConfig.transporter.sendMail({
+      from: emailConfig.from,
+      to,
+      subject,
+      text: body,
+      html: htmlBody,
+    });
+
+    return info.messageId;
+  }
+
+  /**
+   * Send a test email to verify the tenant's SMTP settings work.
+   */
+  static async sendTestEmail(tenantId: number, to: string): Promise<void> {
+    this.invalidateEmailSettingsCache(tenantId);
+    await this.sendEmail(
+      tenantId,
+      to,
+      'Email de test - E-Formation',
+      "Ceci est un email de test envoyé depuis la configuration des notifications de E-Formation. Si vous recevez ce message, votre configuration SMTP fonctionne correctement."
+    );
+  }
+
+  /**
+   * Send SMS notification via Twilio
+   */
+  private static async sendSMS(to: string, body: string): Promise<string> {
+    if (!twilioClient) {
+      throw new Error('Twilio not configured');
+    }
+
+    if (!to) {
+      throw new Error('Phone number not available');
+    }
+
+    const message = await twilioClient.messages.create({
+      body,
+      from: config.twilio.phoneNumber,
+      to,
+    });
+
+    return message.sid;
+  }
+
+  /**
+   * Send WhatsApp notification via Twilio
+   */
+  private static async sendWhatsApp(to: string, body: string): Promise<string> {
+    if (!twilioClient) {
+      throw new Error('Twilio not configured');
+    }
+
+    if (!to) {
+      throw new Error('Phone number not available');
+    }
+
+    const message = await twilioClient.messages.create({
+      body,
+      from: `whatsapp:${config.twilio.whatsappNumber}`,
+      to: `whatsapp:${to}`,
+    });
+
+    return message.sid;
+  }
+
+  /**
+   * Send push notification
+   */
+  private static async sendPush(
+    userId: number,
+    title: string,
+    body: string,
+    actionUrl?: string
+  ): Promise<void> {
+    // Get user's push subscriptions
+    const subscriptions = await DatabaseService.query<any>(
+      'SELECT * FROM push_subscriptions WHERE user_id = @userId',
+      { userId }
+    );
+
+    const payload = JSON.stringify({
+      title,
+      body,
+      icon: '/icon-192.png',
+      badge: '/badge.png',
+      data: { url: actionUrl },
+    });
+
+    // Send to web push (VAPID)
+    const webPushPromises = subscriptions.map(async (sub: any) => {
+      try {
+        await webPush.sendNotification(
+          {
+            endpoint: sub.endpoint,
+            keys: {
+              p256dh: sub.p256dh,
+              auth: sub.auth,
+            },
+          },
+          payload
+        );
+      } catch (error: any) {
+        if (error.statusCode === 410) {
+          // Subscription expired, remove it
+          await DatabaseService.execute(
+            'DELETE FROM push_subscriptions WHERE id = @id',
+            { id: sub.id }
+          );
+        }
+        throw error;
+      }
+    });
+
+    // Send to Firebase (FCM) if configured
+    if (firebaseApp) {
+      const fcmTokens = await DatabaseService.query<any>(
+        'SELECT fcm_token FROM user_devices WHERE user_id = @userId AND fcm_token IS NOT NULL',
+        { userId }
+      );
+
+      const fcmPromises = fcmTokens.map(async (device: any) => {
+        try {
+          await admin.messaging().send({
+            token: device.fcm_token,
+            notification: { title, body },
+            webpush: actionUrl ? {
+              fcmOptions: { link: actionUrl },
+            } : undefined,
+          });
+        } catch (error: any) {
+          if (error.code === 'messaging/registration-token-not-registered') {
+            await DatabaseService.execute(
+              'UPDATE user_devices SET fcm_token = NULL WHERE fcm_token = @token',
+              { token: device.fcm_token }
+            );
+          }
+          throw error;
+        }
+      });
+
+      await Promise.allSettled([...webPushPromises, ...fcmPromises]);
+    } else {
+      await Promise.allSettled(webPushPromises);
+    }
+  }
+
+  /**
+   * Get user notification preferences
+   */
+  private static async getUserPreferences(userId: number): Promise<any> {
+    const prefs = await DatabaseService.query<any>(
+      'SELECT * FROM notification_preferences WHERE user_id = @userId',
+      { userId }
+    );
+
+    return prefs[0] || {
+      email_enabled: true,
+      sms_enabled: false,
+      whatsapp_enabled: false,
+      push_enabled: true,
+      in_app_enabled: true,
+    };
+  }
+
+  /**
+   * Check if channel is enabled in preferences
+   */
+  private static isChannelEnabled(preferences: any, channel: string): boolean {
+    const channelMap: Record<string, string> = {
+      email: 'email_enabled',
+      sms: 'sms_enabled',
+      whatsapp: 'whatsapp_enabled',
+      push: 'push_enabled',
+      in_app: 'in_app_enabled',
+    };
+
+    return preferences[channelMap[channel]] !== false;
+  }
+
+  /**
+   * Generate HTML email template
+   */
+  private static generateEmailHTML(title: string, body: string, actionUrl?: string): string {
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title}</title>
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
+    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+    .header { background: #1a365d; color: white; padding: 20px; text-align: center; }
+    .content { padding: 30px 20px; background: #f9f9f9; }
+    .button { display: inline-block; background: #3182ce; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; margin-top: 20px; }
+    .footer { padding: 20px; text-align: center; font-size: 12px; color: #666; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>${title}</h1>
+    </div>
+    <div class="content">
+      <p>${body.replace(/\n/g, '<br>')}</p>
+      ${actionUrl ? `<a href="${actionUrl}" class="button">View Details</a>` : ''}
+    </div>
+    <div class="footer">
+      <p>This is an automated notification. Please do not reply directly to this email.</p>
+    </div>
+  </div>
+</body>
+</html>
+    `;
+  }
+
+  /**
+   * Send bulk notifications
+   */
+  static async sendBulk(
+    tenantId: number,
+    userIds: number[],
+    channel: string,
+    subject: string,
+    body: string,
+    actionUrl?: string
+  ): Promise<{ sent: number; failed: number }> {
+    let sent = 0;
+    let failed = 0;
+
+    for (const userId of userIds) {
+      try {
+        await this.send({
+          tenantId,
+          userId,
+          channel: channel as any,
+          subject,
+          body,
+          actionUrl,
+        });
+        sent++;
+      } catch (error) {
+        failed++;
+        logger.error('Bulk notification failed', { userId, error });
+      }
+    }
+
+    return { sent, failed };
+  }
+}

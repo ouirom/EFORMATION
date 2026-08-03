@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(npm run *)",
+      "Bash(npx eslint *)",
+      "Bash(node -e \"console.log\\(require\\('./node_modules/eslint/package.json'\\).version\\)\")",
+      "Bash(node -e \"console.log\\(require\\('./node_modules/@typescript-eslint/eslint-plugin/package.json'\\).version\\)\")",
+      "Bash(node -e \"console.log\\(require\\('./node_modules/eslint-plugin-react-hooks/package.json'\\).version\\)\")",
+      "Bash(node -e \"console.log\\(require\\('./node_modules/eslint-plugin-react-refresh/package.json'\\).version\\)\")",
+      "Bash(echo \"Exit code: $?\")",
+      "Bash(echo \"Exit: $?\")",
+      "Bash(npx jest *)",
+      "Bash(powershell.exe -NoProfile -Command 'Get-Service | Where-Object {$_.Name -like '\\\\''*SQL*'\\\\''} | Select-Object Name,Status')",
+      "Bash(node -e \"console.log\\(Buffer.from\\('DÃ©veloppement', 'latin1'\\).toString\\('utf8'\\)\\)\")",
+      "Bash(node \"C:/Users/USER/AppData/Local/Temp/claude/D--PROJECT-EFORMATION/9f450da8-e5c7-4beb-94d3-e43a6a758e22/scratchpad/scan_mojibake.js\")",
+      "Bash(node _scan_mojibake.js)",
+      "Bash(node _fix_mojibake.js)",
+      "Bash(node _create_ai_chat_history.js)",
+      "Bash(rm -f _create_ai_chat_history.js)",
+      "Bash(node -e ' *)"
+    ]
+  }
+}
