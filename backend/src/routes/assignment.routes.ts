@@ -3,6 +3,8 @@ import { body, param, query, validationResult } from 'express-validator';
 import { DatabaseService } from '../services/database.service';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.middleware';
 import { BadRequestError, NotFoundError } from '../middleware/error.middleware';
+import { AuditService } from '../services/audit.service';
+import { ReminderService } from '../services/reminder.service';
 
 const router = Router();
 
@@ -266,6 +268,15 @@ router.post(
         }
       }
 
+      if (createdAssignments.length > 0) {
+        await AuditService.log(req.user!.tenantId, req.user!.id, 'COURSE_ASSIGNMENT_CREATED', 'course_assignments', courseId, {
+          courseId,
+          assignmentType,
+          targetCount: createdAssignments.length,
+          isMandatory: isMandatory || false,
+        });
+      }
+
       res.status(201).json({
         success: true,
         data: createdAssignments,
@@ -296,6 +307,8 @@ router.delete(
           tenantId: req.user!.tenantId,
         }
       );
+
+      await AuditService.log(req.user!.tenantId, req.user!.id, 'COURSE_ASSIGNMENT_DELETED', 'course_assignments', assignmentId);
 
       res.json({
         success: true,
@@ -398,6 +411,19 @@ router.get('/my-courses', authenticate, async (req: AuthRequest, res, next) => {
         moduleCount: c.module_count,
       })),
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @route POST /api/v1/assignments/reminders/run
+ * @desc Manually trigger the due-date reminder/escalation job (admin only, for testing/on-demand runs)
+ */
+router.post('/reminders/run', authenticate, authorize('admin'), async (req: AuthRequest, res, next) => {
+  try {
+    const result = await ReminderService.runDailyAssignmentReminders();
+    res.json({ success: true, data: result });
   } catch (error) {
     next(error);
   }

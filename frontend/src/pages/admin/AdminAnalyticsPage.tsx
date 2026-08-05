@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -28,6 +28,22 @@ export default function AdminAnalyticsPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['admin-analytics'],
     queryFn: () => api.analytics.getDashboard(),
+  })
+
+  const { data: courses = [] } = useQuery({
+    queryKey: ['admin-analytics-courses'],
+    queryFn: () => api.courses.list({ limit: 100 }),
+  })
+
+  const [dropoffCourseId, setDropoffCourseId] = useState<string>('')
+
+  const { data: dropoff, isLoading: dropoffLoading } = useQuery({
+    queryKey: ['course-lesson-dropoff', dropoffCourseId],
+    queryFn: async () => {
+      const response = await api.get(`/analytics/courses/${dropoffCourseId}/lesson-dropoff`)
+      return response.data.data
+    },
+    enabled: !!dropoffCourseId,
   })
 
   if (isLoading) {
@@ -181,6 +197,7 @@ export default function AdminAnalyticsPage() {
           <TabsTrigger value="users">Utilisateurs</TabsTrigger>
           <TabsTrigger value="courses">Cours</TabsTrigger>
           <TabsTrigger value="engagement">Engagement</TabsTrigger>
+          <TabsTrigger value="dropoff">Abandon par leçon</TabsTrigger>
         </TabsList>
 
         <TabsContent value="users" className="mt-4">
@@ -273,6 +290,70 @@ export default function AdminAnalyticsPage() {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+        <TabsContent value="dropoff" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Où les apprenants décrochent</CardTitle>
+              <CardDescription>
+                Pourcentage des apprenants inscrits ayant atteint chaque leçon, dans l'ordre du cours
+              </CardDescription>
+              <div className="pt-2">
+                <Select value={dropoffCourseId} onValueChange={setDropoffCourseId}>
+                  <SelectTrigger className="w-full md:w-[320px]">
+                    <SelectValue placeholder="Choisir un cours" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {courses.map((course: any) => (
+                      <SelectItem key={course.id} value={String(course.id)}>
+                        {course.title}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {!dropoffCourseId && (
+                <p className="text-sm text-muted-foreground">Sélectionnez un cours pour voir le funnel de progression.</p>
+              )}
+              {dropoffCourseId && dropoffLoading && <PageLoading />}
+              {dropoffCourseId && dropoff && dropoff.funnel.length === 0 && (
+                <p className="text-sm text-muted-foreground">Ce cours n'a pas encore de leçons.</p>
+              )}
+              {dropoffCourseId && dropoff && dropoff.funnel.length > 0 && (
+                <div className="space-y-4">
+                  <p className="text-sm text-muted-foreground">
+                    {dropoff.enrolledTotal} apprenant(s) inscrit(s)
+                  </p>
+                  {dropoff.funnel.map((lesson: any) => (
+                    <div key={lesson.lessonId} className="space-y-1">
+                      <div className="flex items-center justify-between text-sm">
+                        <span>
+                          {lesson.position}. {lesson.lessonTitle}
+                          <span className="text-muted-foreground"> — {lesson.moduleTitle}</span>
+                        </span>
+                        <span className="font-medium">
+                          {lesson.completedCount} ({lesson.reachRatePercent}%)
+                          {lesson.dropFromPrevious > 0 && (
+                            <span className="text-red-600 ml-2">-{lesson.dropFromPrevious}</span>
+                          )}
+                        </span>
+                      </div>
+                      <div className="h-2 rounded-full bg-muted overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all ${
+                            lesson.reachRatePercent >= 70 ? 'bg-green-500' : lesson.reachRatePercent >= 40 ? 'bg-yellow-500' : 'bg-red-500'
+                          }`}
+                          style={{ width: `${lesson.reachRatePercent}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>

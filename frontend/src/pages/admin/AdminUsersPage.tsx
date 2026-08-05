@@ -53,6 +53,9 @@ export default function AdminUsersPage() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [importResult, setImportResult] = useState<any>(null)
   const [selectedUser, setSelectedUser] = useState<any>(null)
   const [newUser, setNewUser] = useState({
     firstName: '',
@@ -138,6 +141,40 @@ export default function AdminUsersPage() {
       })
     },
   })
+
+  const importMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData()
+      formData.append('file', file)
+      const response = await api.post('/users/import', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      return response.data.data
+    },
+    onSuccess: (data) => {
+      setImportResult(data)
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+      toast({ title: 'Import terminé', description: `${data.created} utilisateur(s) créé(s)` })
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Erreur',
+        description: error.response?.data?.error?.message || "Impossible d'importer le fichier",
+        variant: 'destructive',
+      })
+    },
+  })
+
+  const handleImportSubmit = () => {
+    if (!importFile) return
+    importMutation.mutate(importFile)
+  }
+
+  const closeImportDialog = () => {
+    setIsImportDialogOpen(false)
+    setImportFile(null)
+    setImportResult(null)
+  }
 
   const handleEditUser = (user: any) => {
     setSelectedUser(user)
@@ -256,7 +293,7 @@ export default function AdminUsersPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline">
+          <Button variant="outline" onClick={() => setIsImportDialogOpen(true)}>
             <Upload className="h-4 w-4 mr-2" />
             Importer
           </Button>
@@ -640,6 +677,60 @@ export default function AdminUsersPage() {
             </Button>
             <Button onClick={handleUpdateUser} disabled={updateMutation.isPending}>
               {updateMutation.isPending ? 'Enregistrement...' : 'Enregistrer'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import CSV Dialog */}
+      <Dialog open={isImportDialogOpen} onOpenChange={(open) => (open ? setIsImportDialogOpen(true) : closeImportDialog())}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Importer des utilisateurs (CSV)</DialogTitle>
+            <DialogDescription>
+              Colonnes attendues : email, displayName, role, enterpriseCode, directionCode, serviceCode
+              (les colonnes *Code sont facultatives). Un mot de passe temporaire est généré et envoyé par email.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="importFile">Fichier CSV</Label>
+              <Input
+                id="importFile"
+                type="file"
+                accept=".csv,text/csv"
+                onChange={(e) => {
+                  setImportFile(e.target.files?.[0] || null)
+                  setImportResult(null)
+                }}
+              />
+            </div>
+
+            {importResult && (
+              <div className="space-y-2 max-h-64 overflow-y-auto border rounded-md p-3 text-sm">
+                <p className="font-medium">
+                  {importResult.created} créé(s), {importResult.skipped} ignoré(s), {importResult.errors} erreur(s)
+                  {' '}sur {importResult.totalRows} ligne(s)
+                </p>
+                {importResult.results
+                  .filter((r: any) => r.status !== 'created')
+                  .map((r: any, i: number) => (
+                    <div key={i} className="flex justify-between gap-2">
+                      <span>Ligne {r.line} — {r.email || '(email manquant)'}</span>
+                      <span className={r.status === 'error' ? 'text-destructive' : 'text-muted-foreground'}>
+                        {r.status === 'error' ? r.message : 'déjà existant'}
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeImportDialog} disabled={importMutation.isPending}>
+              Fermer
+            </Button>
+            <Button onClick={handleImportSubmit} disabled={!importFile || importMutation.isPending}>
+              {importMutation.isPending ? 'Import en cours...' : 'Importer'}
             </Button>
           </DialogFooter>
         </DialogContent>

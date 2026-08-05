@@ -18,12 +18,14 @@ import { config } from './config';
 import { logger } from './utils/logger';
 import { DatabaseService } from './services/database.service';
 import { setupSocketIO } from './socket';
+import { startScheduledJobs } from './jobs';
 
 // Import routes
 import authRoutes from './routes/auth.routes';
 import userRoutes from './routes/user.routes';
 import organizationRoutes from './routes/organization.routes';
 import courseRoutes from './routes/course.routes';
+import enrollmentRoutes from './routes/enrollment.routes';
 import moduleRoutes from './routes/module.routes';
 import lessonRoutes from './routes/lesson.routes';
 import contentRoutes from './routes/content.routes';
@@ -43,6 +45,7 @@ import webhookRoutes from './routes/webhook.routes';
 import searchRoutes from './routes/search.routes';
 import assignmentRoutes from './routes/assignment.routes';
 import settingsRoutes from './routes/settings.routes';
+import logsRoutes from './routes/logs.routes';
 
 // Import middleware
 import { errorHandler } from './middleware/error.middleware';
@@ -146,6 +149,7 @@ class App {
     apiRouter.use('/users', userRoutes);
     apiRouter.use('/organizations', organizationRoutes);
     apiRouter.use('/courses', courseRoutes);
+    apiRouter.use('/enrollments', enrollmentRoutes);
     apiRouter.use('/modules', moduleRoutes);
     apiRouter.use('/lessons', lessonRoutes);
     apiRouter.use('/contents', contentRoutes);
@@ -165,6 +169,7 @@ class App {
     apiRouter.use('/search', searchRoutes);
     apiRouter.use('/assignments', assignmentRoutes);
     apiRouter.use('/settings', settingsRoutes);
+    apiRouter.use('/logs', logsRoutes);
 
     this.app.use('/api/v1', apiRouter);
 
@@ -193,6 +198,8 @@ class App {
         logger.info(`📚 API documentation available at http://${config.host}:${config.port}/api/v1`);
         logger.info(`🔌 Socket.IO ready for connections`);
       });
+
+      startScheduledJobs();
 
       // Graceful shutdown
       process.on('SIGTERM', () => this.shutdown());

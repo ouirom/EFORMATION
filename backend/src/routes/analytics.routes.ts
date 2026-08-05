@@ -338,6 +338,71 @@ router.get('/courses', authenticate, authorize('admin', 'director', 'manager'), 
 });
 
 /**
+ * @route GET /api/v1/analytics/courses/:id/lesson-dropoff
+ * @desc For a given course, the completion funnel across its lessons (in order),
+ *       so admins can see exactly where learners abandon the course.
+ */
+router.get(
+  '/courses/:id/lesson-dropoff',
+  authenticate,
+  authorize('admin', 'director', 'manager'),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const tenantId = req.user!.tenantId;
+      const courseId = parseInt(req.params.id, 10);
+
+      const [enrolledResult, lessons] = await Promise.all([
+        DatabaseService.query<{ total: number }>(
+          `SELECT COUNT(DISTINCT user_id) as total FROM enrollments WHERE course_id = @courseId`,
+          { courseId }
+        ),
+        DatabaseService.query<any>(
+          `SELECT l.id as lesson_id, l.title, m.title as module_title,
+                  (SELECT COUNT(DISTINCT lp.user_id) FROM lesson_progress lp
+                   WHERE lp.lesson_id = l.id AND lp.status = 'completed') as completed_count
+           FROM lessons l
+           JOIN modules m ON m.id = l.module_id
+           WHERE m.course_id = @courseId AND m.tenant_id = @tenantId
+           ORDER BY m.position, l.position`,
+          { courseId, tenantId }
+        ),
+      ]);
+
+      const enrolledTotal = enrolledResult[0]?.total || 0;
+      let previousCount = enrolledTotal;
+
+      const funnel = lessons.map((lesson: any, index: number) => {
+        const completedCount = lesson.completed_count || 0;
+        const reachRate = enrolledTotal > 0 ? Math.round((completedCount / enrolledTotal) * 1000) / 10 : 0;
+        const dropFromPrevious = index === 0 ? 0 : Math.max(previousCount - completedCount, 0);
+        previousCount = completedCount;
+
+        return {
+          lessonId: lesson.lesson_id,
+          lessonTitle: lesson.title,
+          moduleTitle: lesson.module_title,
+          position: index + 1,
+          completedCount,
+          reachRatePercent: reachRate,
+          dropFromPrevious,
+        };
+      });
+
+      res.json({
+        success: true,
+        data: {
+          courseId,
+          enrolledTotal,
+          funnel,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
  * @route GET /api/v1/analytics/learning
  * @desc Get learning analytics
  */

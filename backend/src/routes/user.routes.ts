@@ -1,12 +1,18 @@
 import { Router } from 'express';
 import { body, validationResult } from 'express-validator';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
+import multer from 'multer';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.middleware';
 import { DatabaseService } from '../services/database.service';
+import { AuditService } from '../services/audit.service';
+import { NotificationService } from '../services/notification.service';
 import { BadRequestError, NotFoundError, ConflictError } from '../middleware/error.middleware';
 import { config } from '../config';
+import { parseCsv } from '../utils/csv';
 
 const router = Router();
+const csvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 } });
 
 const validate = (req: any) => {
   const errors = validationResult(req);
@@ -83,6 +89,11 @@ router.post(
 
       const userId = result[0].id;
 
+      await AuditService.log(req.user!.tenantId, req.user!.id, 'USER_CREATED', 'users', userId, {
+        email: req.body.email,
+        role: req.body.role,
+      });
+
       // Get created user
       const users = await DatabaseService.query<any>(
         `SELECT u.id, u.email, u.username, u.display_name, u.avatar_url, u.role, u.is_active,
@@ -99,6 +110,163 @@ router.post(
       res.status(201).json({
         success: true,
         data: users[0],
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+interface ImportRowResult {
+  line: number;
+  email: string;
+  status: 'created' | 'skipped' | 'error';
+  message?: string;
+}
+
+const ALLOWED_ROLES = ['admin', 'director', 'manager', 'supervisor', 'agent'];
+const MAX_IMPORT_ROWS = 500;
+
+/**
+ * @route POST /api/v1/users/import
+ * @desc Bulk-create users from a CSV file (columns: email, displayName, role,
+ *       enterpriseCode, directionCode, serviceCode — the *Code columns are optional
+ *       and matched against the org units' `code` field for this tenant).
+ */
+router.post(
+  '/import',
+  authenticate,
+  authorize('admin', 'director'),
+  csvUpload.single('file'),
+  async (req: AuthRequest, res, next) => {
+    try {
+      if (!req.file) {
+        throw BadRequestError('CSV file is required (field name: file)');
+      }
+
+      const rows = parseCsv(req.file.buffer.toString('utf-8'));
+      if (rows.length === 0) {
+        throw BadRequestError('CSV file has no data rows');
+      }
+      if (rows.length > MAX_IMPORT_ROWS) {
+        throw BadRequestError(`CSV file has too many rows (max ${MAX_IMPORT_ROWS})`);
+      }
+
+      const tenantId = req.user!.tenantId;
+
+      // Preload org-unit code -> id lookups so we don't run a query per row.
+      const [enterprises, directions, services] = await Promise.all([
+        DatabaseService.query<{ id: number; code: string }>(
+          'SELECT id, code FROM enterprises WHERE tenant_id = @tenantId AND code IS NOT NULL',
+          { tenantId }
+        ),
+        DatabaseService.query<{ id: number; code: string }>(
+          'SELECT id, code FROM directions WHERE tenant_id = @tenantId AND code IS NOT NULL',
+          { tenantId }
+        ),
+        DatabaseService.query<{ id: number; code: string }>(
+          'SELECT id, code FROM services WHERE tenant_id = @tenantId AND code IS NOT NULL',
+          { tenantId }
+        ),
+      ]);
+      const enterpriseByCode = new Map(enterprises.map((e) => [e.code, e.id]));
+      const directionByCode = new Map(directions.map((d) => [d.code, d.id]));
+      const serviceByCode = new Map(services.map((s) => [s.code, s.id]));
+
+      const existingEmails = await DatabaseService.query<{ email: string }>(
+        'SELECT email FROM users WHERE tenant_id = @tenantId',
+        { tenantId }
+      );
+      const knownEmails = new Set(existingEmails.map((u) => u.email.toLowerCase()));
+
+      const results: ImportRowResult[] = [];
+      let created = 0;
+
+      for (let i = 0; i < rows.length; i++) {
+        const line = i + 2; // +1 for header, +1 for 1-based line numbers
+        const row = rows[i];
+        const email = (row.email || '').toLowerCase().trim();
+        const displayName = (row.displayName || '').trim();
+        const role = (row.role || 'agent').trim();
+
+        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          results.push({ line, email, status: 'error', message: 'Invalid or missing email' });
+          continue;
+        }
+        if (!displayName) {
+          results.push({ line, email, status: 'error', message: 'Missing displayName' });
+          continue;
+        }
+        if (!ALLOWED_ROLES.includes(role)) {
+          results.push({ line, email, status: 'error', message: `Invalid role "${role}"` });
+          continue;
+        }
+        if (role === 'admin' && req.user!.role === 'director') {
+          results.push({ line, email, status: 'error', message: 'Directors cannot create admin users' });
+          continue;
+        }
+        if (knownEmails.has(email)) {
+          results.push({ line, email, status: 'skipped', message: 'Email already registered' });
+          continue;
+        }
+
+        const enterpriseId = row.enterpriseCode ? enterpriseByCode.get(row.enterpriseCode.trim()) ?? null : null;
+        const directionId = row.directionCode ? directionByCode.get(row.directionCode.trim()) ?? null : null;
+        const serviceId = row.serviceCode ? serviceByCode.get(row.serviceCode.trim()) ?? null : null;
+
+        try {
+          const tempPassword = crypto.randomBytes(9).toString('base64url');
+          const passwordHash = await bcrypt.hash(tempPassword, config.bcryptRounds);
+          const username = email.split('@')[0] + '_' + Date.now().toString(36) + i;
+
+          const result = await DatabaseService.query<{ id: number }>(
+            `INSERT INTO users (
+              tenant_id, email, username, password_hash, display_name, role,
+              enterprise_id, direction_id, service_id, is_active
+            )
+            OUTPUT INSERTED.id
+            VALUES (
+              @tenantId, @email, @username, @passwordHash, @displayName, @role,
+              @enterpriseId, @directionId, @serviceId, 1
+            )`,
+            { tenantId, email, username, passwordHash, displayName, role, enterpriseId, directionId, serviceId }
+          );
+
+          knownEmails.add(email);
+          created++;
+          results.push({ line, email, status: 'created' });
+
+          try {
+            await NotificationService.send({
+              tenantId,
+              userId: result[0].id,
+              channel: 'email',
+              subject: 'Votre compte E-Formation a été créé',
+              body: `Bonjour ${displayName},\n\nVotre compte a été créé. Identifiant : ${email}\nMot de passe temporaire : ${tempPassword}\n\nMerci de le changer dès votre première connexion.`,
+              actionUrl: `${config.frontendUrl}/login`,
+            });
+          } catch (notifyError) {
+            // Account creation still succeeds even if the welcome email fails to send.
+          }
+        } catch (error) {
+          results.push({ line, email, status: 'error', message: (error as Error).message });
+        }
+      }
+
+      await AuditService.log(tenantId, req.user!.id, 'USERS_IMPORTED', 'users', null, {
+        totalRows: rows.length,
+        created,
+      });
+
+      res.status(201).json({
+        success: true,
+        data: {
+          totalRows: rows.length,
+          created,
+          skipped: results.filter((r) => r.status === 'skipped').length,
+          errors: results.filter((r) => r.status === 'error').length,
+          results,
+        },
       });
     } catch (error) {
       next(error);
@@ -285,6 +453,15 @@ router.put(
            WHERE id = @userId AND tenant_id = @tenantId`,
           params
         );
+
+        // Only the fields actually changed, not the whole body — keeps the trail readable
+        // and avoids ever writing a password/token into a log by accident.
+        const changedFields = Object.keys(req.body).filter((k) =>
+          ['displayName', 'role', 'isActive', 'enterpriseId', 'directionId', 'serviceId', 'avatarUrl'].includes(k)
+        );
+        await AuditService.log(req.user!.tenantId, req.user!.id, 'USER_UPDATED', 'users', userId, {
+          fields: changedFields,
+        });
       }
 
       const users = await DatabaseService.query<any>(
@@ -321,6 +498,8 @@ router.delete('/:id', authenticate, authorize('admin'), async (req: AuthRequest,
        WHERE id = @userId AND tenant_id = @tenantId`,
       { userId, tenantId: req.user!.tenantId }
     );
+
+    await AuditService.log(req.user!.tenantId, req.user!.id, 'USER_DELETED', 'users', userId);
 
     res.json({
       success: true,

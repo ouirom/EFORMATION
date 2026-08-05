@@ -4,6 +4,12 @@ import { LessonService } from '../services/course.service';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.middleware';
 import { BadRequestError } from '../middleware/error.middleware';
 import { DatabaseService } from '../services/database.service';
+import { AuditService } from '../services/audit.service';
+
+// A lesson revisited within this window is treated as normal in-session navigation,
+// not a deliberate return to the training — avoids inflating the "resume" count with
+// routine back-and-forth clicks between lessons of the same course.
+const RESUME_GAP_MS = 30 * 60 * 1000;
 
 const router = Router();
 
@@ -233,14 +239,30 @@ router.post('/:id/start', authenticate, async (req: AuthRequest, res, next) => {
     );
 
     if (existing.length > 0) {
+      // A genuine return to training after a break — not routine navigation between
+      // lessons in the same active session — counts as a course "resume".
+      const lastAccessedAt = existing[0].last_accessed_at ? new Date(existing[0].last_accessed_at).getTime() : 0;
+      if (Date.now() - lastAccessedAt > RESUME_GAP_MS) {
+        await AuditService.log(tenantId, userId, 'COURSE_RESUMED', 'courses', courseId, { lessonId });
+      }
+
       // Update last accessed
       await DatabaseService.query(
-        `UPDATE lesson_progress 
+        `UPDATE lesson_progress
          SET last_accessed_at = GETDATE(), status = CASE WHEN status = 'not_started' THEN 'in_progress' ELSE status END
          WHERE lesson_id = @lessonId AND user_id = @userId AND tenant_id = @tenantId`,
         { lessonId, userId, tenantId }
       );
     } else {
+      // First time this user touches ANY lesson in this course? Log a course start.
+      const anyProgressInCourse = await DatabaseService.query<{ id: number }>(
+        `SELECT TOP 1 id FROM lesson_progress WHERE user_id = @userId AND tenant_id = @tenantId AND course_id = @courseId`,
+        { userId, tenantId, courseId }
+      );
+      if (anyProgressInCourse.length === 0) {
+        await AuditService.log(tenantId, userId, 'COURSE_STARTED', 'courses', courseId, { lessonId });
+      }
+
       // Create new progress record
       await DatabaseService.query(
         `INSERT INTO lesson_progress (tenant_id, user_id, lesson_id, course_id, status, progress_percent, started_at, last_accessed_at)
@@ -332,14 +354,41 @@ router.post('/:id/complete', authenticate, async (req: AuthRequest, res, next) =
     if (courseProgress.length > 0) {
       const { course_id, total_lessons, completed_lessons } = courseProgress[0];
       const progressPercent = Math.round((completed_lessons / total_lessons) * 100);
-      
+
+      // Safety net: a learner can reach a lesson via a direct assignment link without
+      // ever hitting the explicit "Enroll" action, so completing a lesson may be the
+      // first evidence we have of their enrollment.
+      const existingEnrollment = await DatabaseService.query<{ id: number }>(
+        `SELECT id FROM enrollments WHERE course_id = @courseId AND user_id = @userId AND tenant_id = @tenantId`,
+        { courseId: course_id, userId, tenantId }
+      );
+
+      if (existingEnrollment.length === 0) {
+        await DatabaseService.execute(
+          `INSERT INTO enrollments (tenant_id, user_id, course_id, progress_percent, enrolled_at, started_at)
+           VALUES (@tenantId, @userId, @courseId, 0, SYSUTCDATETIME(), SYSUTCDATETIME())`,
+          { tenantId, userId, courseId: course_id }
+        );
+      }
+
       await DatabaseService.query(
-        `UPDATE enrollments 
+        `UPDATE enrollments
          SET progress_percent = @progressPercent,
              completed_at = CASE WHEN @progressPercent = 100 THEN GETDATE() ELSE completed_at END
          WHERE course_id = @courseId AND user_id = @userId AND tenant_id = @tenantId`,
         { courseId: course_id, userId, tenantId, progressPercent }
       );
+
+      if (progressPercent === 100) {
+        const totalTime = await DatabaseService.query<{ total_seconds: number }>(
+          `SELECT SUM(time_spent_seconds) as total_seconds FROM lesson_progress
+           WHERE user_id = @userId AND tenant_id = @tenantId AND course_id = @courseId`,
+          { userId, tenantId, courseId: course_id }
+        );
+        await AuditService.log(tenantId, userId, 'COURSE_COMPLETED', 'courses', course_id, {
+          totalTimeSeconds: totalTime[0]?.total_seconds || 0,
+        });
+      }
     }
 
     const progress = await DatabaseService.query<any>(
