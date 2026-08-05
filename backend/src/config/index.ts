@@ -1,6 +1,22 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+const DEFAULT_JWT_SECRET = 'your-super-secret-jwt-key-change-in-production';
+const DEFAULT_JWT_REFRESH_SECRET = 'your-refresh-secret-key-change-in-production';
+
+// Refuse to boot in production with a missing/placeholder JWT secret — those values
+// are committed in this repo's history, so leaving the fallback in place in prod
+// would let anyone forge valid auth tokens.
+if (process.env.NODE_ENV === 'production') {
+  const secret = process.env.JWT_SECRET;
+  const refreshSecret = process.env.JWT_REFRESH_SECRET;
+  if (!secret || secret === DEFAULT_JWT_SECRET || !refreshSecret || refreshSecret === DEFAULT_JWT_REFRESH_SECRET) {
+    throw new Error(
+      'JWT_SECRET and JWT_REFRESH_SECRET must be set to unique, non-default values when NODE_ENV=production'
+    );
+  }
+}
+
 export const config = {
   // Server
   nodeEnv: process.env.NODE_ENV || 'development',
@@ -97,6 +113,18 @@ export const config = {
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID || '',
     clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+  },
+
+  // LDAP / Active Directory
+  ldap: {
+    url: process.env.LDAP_URL || '',
+    bindDN: process.env.LDAP_BIND_DN || '',
+    bindPassword: process.env.LDAP_BIND_PASSWORD || '',
+    searchBase: process.env.LDAP_SEARCH_BASE || '',
+    // {{username}} is replaced with the submitted login (escaped against filter injection)
+    searchFilter: process.env.LDAP_SEARCH_FILTER || '(|(sAMAccountName={{username}})(mail={{username}}))',
+    emailAttribute: process.env.LDAP_EMAIL_ATTRIBUTE || 'mail',
+    nameAttribute: process.env.LDAP_NAME_ATTRIBUTE || 'displayName',
   },
   
   // Zoom

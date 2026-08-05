@@ -1,1 +1,18 @@
 node_modules
+
+# Secrets
+.env
+.env.local
+backend/.env
+
+# Build artifacts
+backend/dist
+frontend/dist
+build.log
+
+# User-uploaded content (not source)
+backend/uploads
+
+# Database exports (may contain real data)
+db/exportation.bacpac
+db/*.bacpac
