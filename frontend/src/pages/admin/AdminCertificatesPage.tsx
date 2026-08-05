@@ -53,6 +53,7 @@ export default function AdminCertificatesPage() {
   const [activeTab, setActiveTab] = useState<'certificates' | 'templates'>('certificates')
   const [isTemplateDialogOpen, setIsTemplateDialogOpen] = useState(false)
   const [editingTemplate, setEditingTemplate] = useState<CertificateTemplate | null>(null)
+  const [previewTemplate, setPreviewTemplate] = useState<CertificateTemplate | null>(null)
   const [templateFormData, setTemplateFormData] = useState({
     name: '',
     description: '',
@@ -157,6 +158,19 @@ export default function AdminCertificatesPage() {
     } else {
       createTemplateMutation.mutate(templateFormData)
     }
+  }
+
+  const renderTemplatePreview = (templateHtml: string) => {
+    const sampleValues: Record<string, string> = {
+      userName: 'Jean Dupont',
+      courseName: 'Nom du cours',
+      date: formatDate(new Date().toISOString()),
+      certificateNumber: 'CERT-EXEMPLE-0001',
+    }
+    return Object.entries(sampleValues).reduce(
+      (html, [key, value]) => html.split(`{${key}}`).join(value),
+      templateHtml
+    )
   }
 
   const filteredCertificates = certificates.filter((cert) =>
@@ -440,7 +454,7 @@ export default function AdminCertificatesPage() {
                       <Edit className="h-4 w-4 mr-1" />
                       Modifier
                     </Button>
-                    <Button variant="outline" size="sm">
+                    <Button variant="outline" size="sm" onClick={() => setPreviewTemplate(template)}>
                       <Eye className="h-4 w-4 mr-1" />
                       Aperçu
                     </Button>
@@ -472,6 +486,35 @@ export default function AdminCertificatesPage() {
                 </Button>
                 <Button onClick={handleSubmitTemplate} disabled={updateTemplateMutation.isPending}>
                   {updateTemplateMutation.isPending ? 'Mise à jour...' : 'Enregistrer'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Preview Template Dialog */}
+          <Dialog open={!!previewTemplate} onOpenChange={(open) => !open && setPreviewTemplate(null)}>
+            <DialogContent className="max-w-3xl">
+              <DialogHeader>
+                <DialogTitle>Aperçu — {previewTemplate?.name}</DialogTitle>
+                <DialogDescription>
+                  Rendu avec des données d'exemple. Ceci ne reflète pas encore la mise en page du PDF généré.
+                </DialogDescription>
+              </DialogHeader>
+              {previewTemplate?.templateHtml ? (
+                <iframe
+                  title="Aperçu du template"
+                  className="w-full h-96 border rounded-md bg-white"
+                  sandbox=""
+                  srcDoc={renderTemplatePreview(previewTemplate.templateHtml)}
+                />
+              ) : (
+                <p className="text-sm text-muted-foreground py-8 text-center">
+                  Ce template n'a pas encore de contenu HTML.
+                </p>
+              )}
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setPreviewTemplate(null)}>
+                  Fermer
                 </Button>
               </DialogFooter>
             </DialogContent>
