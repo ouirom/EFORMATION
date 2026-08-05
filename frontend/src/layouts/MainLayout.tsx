@@ -1,8 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { useIdleTimeout } from '@/hooks/useIdleTimeout'
 import { SessionTimeoutDialog } from '@/components/SessionTimeoutDialog'
+import { QuickSearch } from '@/components/QuickSearch'
+import { ProductTour } from '@/components/ProductTour'
+import { openGlobalHelp } from '@/components/GlobalHelp'
+import { userTourSteps, adminTourSteps } from '@/lib/tourSteps'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import {
@@ -38,14 +42,17 @@ import {
   Newspaper,
   UserPlus,
   Mail,
+  ScrollText,
+  HelpCircle,
+  LifeBuoy,
 } from 'lucide-react'
 
 const mainNavItems = [
-  { icon: LayoutDashboard, label: 'Tableau de bord', path: '/dashboard' },
-  { icon: BookOpen, label: 'Formations', path: '/courses' },
-  { icon: Video, label: 'Sessions live', path: '/live' },
+  { icon: LayoutDashboard, label: 'Tableau de bord', path: '/dashboard', tourId: 'dashboard' },
+  { icon: BookOpen, label: 'Formations', path: '/courses', tourId: 'courses' },
+  { icon: Video, label: 'Sessions live', path: '/live', tourId: 'live' },
   { icon: MessageSquare, label: 'Chat', path: '/chat' },
-  { icon: Award, label: 'Badges', path: '/badges' },
+  { icon: Award, label: 'Badges', path: '/badges', tourId: 'badges' },
   { icon: GraduationCap, label: 'Certificats', path: '/certificates' },
   { icon: Bell, label: 'Notifications', path: '/notifications' },
   { icon: Newspaper, label: 'Blog', path: '/blog' },
@@ -54,19 +61,24 @@ const mainNavItems = [
 ]
 
 const adminNavItems = [
-  { icon: BarChart3, label: 'Analytics', path: '/admin/analytics' },
-  { icon: Users, label: 'Utilisateurs', path: '/admin/users' },
-  { icon: BookOpen, label: 'Cours', path: '/admin/courses' },
+  { icon: BarChart3, label: 'Analytics', path: '/admin/analytics', tourId: 'analytics' },
+  { icon: Users, label: 'Utilisateurs', path: '/admin/users', tourId: 'users' },
+  { icon: BookOpen, label: 'Cours', path: '/admin/courses', tourId: 'courses' },
   { icon: UserPlus, label: 'Attributions', path: '/admin/assignments' },
   { icon: Award, label: 'Badges', path: '/admin/badges' },
   { icon: GraduationCap, label: 'Certificats', path: '/admin/certificates' },
-  { icon: Video, label: 'Sessions live', path: '/admin/live-sessions' },
+  { icon: Video, label: 'Sessions live', path: '/admin/live-sessions', tourId: 'live-sessions' },
   { icon: Bell, label: 'Notifications', path: '/admin/notifications' },
   { icon: Newspaper, label: 'Blog', path: '/admin/blog' },
   { icon: FileText, label: 'Rapports', path: '/admin/reports' },
   { icon: Building2, label: 'Organisation', path: '/admin/organization' },
   { icon: Mail, label: 'Email', path: '/admin/email-settings' },
+  { icon: ScrollText, label: 'Journaux d\'audit', path: '/admin/logs', tourId: 'logs' },
 ]
+
+function tourSeenKey(section: 'main' | 'admin') {
+  return `eformation_tour_seen_${section}`
+}
 
 export default function MainLayout() {
   const { user, logout } = useAuth()
@@ -74,10 +86,26 @@ export default function MainLayout() {
   const navigate = useNavigate()
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [tourOpen, setTourOpen] = useState(false)
 
   const isAdmin = user?.role === 'admin' || user?.role === 'director' || user?.role === 'manager'
   const isAdminSection = location.pathname.startsWith('/admin')
   const navItems = isAdminSection ? adminNavItems : mainNavItems
+  const tourSection = isAdminSection ? 'admin' : 'main'
+  const tourSteps = isAdminSection ? adminTourSteps : userTourSteps
+
+  useEffect(() => {
+    if (!localStorage.getItem(tourSeenKey(tourSection))) {
+      const timer = setTimeout(() => setTourOpen(true), 600)
+      return () => clearTimeout(timer)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tourSection])
+
+  const closeTour = () => {
+    localStorage.setItem(tourSeenKey(tourSection), '1')
+    setTourOpen(false)
+  }
 
   const handleLogout = () => {
     logout()
@@ -135,7 +163,7 @@ export default function MainLayout() {
         {/* Logo */}
         <div className="flex h-16 items-center justify-between px-4 border-b">
           {!sidebarCollapsed && (
-            <Link to="/" className="flex items-center gap-2">
+            <Link to="/" className="flex items-center gap-2" data-tour="logo">
               <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
                 <span className="text-lg font-bold text-primary-foreground">E</span>
               </div>
@@ -166,6 +194,7 @@ export default function MainLayout() {
                 size="sm"
                 className={cn("w-full justify-start", sidebarCollapsed && "justify-center px-2")}
                 onClick={() => navigate(isAdminSection ? '/dashboard' : '/admin/users')}
+                data-tour="section-toggle"
               >
                 {isAdminSection ? <User className="h-4 w-4" /> : <Settings className="h-4 w-4" />}
                 {!sidebarCollapsed && (
@@ -178,7 +207,12 @@ export default function MainLayout() {
           {navItems.map((item) => {
             const isActive = location.pathname === item.path
             return (
-              <Link key={item.path} to={item.path} onClick={() => setMobileMenuOpen(false)}>
+              <Link
+                key={item.path}
+                to={item.path}
+                onClick={() => setMobileMenuOpen(false)}
+                data-tour={item.tourId ? `nav-${item.tourId}` : undefined}
+              >
                 <Button
                   variant={isActive ? "secondary" : "ghost"}
                   className={cn(
@@ -231,21 +265,34 @@ export default function MainLayout() {
         {/* Desktop Header */}
         <header className="sticky top-0 z-30 hidden md:flex h-16 items-center gap-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-6">
           {/* Search */}
-          <div className="flex-1 max-w-md">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <input
-                type="search"
-                placeholder="Rechercher..."
-                className="w-full rounded-md border border-input bg-background pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-              />
-            </div>
+          <div className="flex-1 max-w-md" data-tour="search">
+            <QuickSearch />
           </div>
 
           {/* Right Section */}
           <div className="flex items-center gap-4">
+            {/* Contextual help for the current page (F1 also opens it) */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => openGlobalHelp()}
+              title="Aide de cette page (F1)"
+            >
+              <LifeBuoy className="h-5 w-5" />
+            </Button>
+
+            {/* Guided tour */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setTourOpen(true)}
+              title="Lancer la visite guidée"
+            >
+              <HelpCircle className="h-5 w-5" />
+            </Button>
+
             {/* Notifications */}
-            <Button variant="ghost" size="icon" className="relative">
+            <Button variant="ghost" size="icon" className="relative" data-tour="notifications">
               <Bell className="h-5 w-5" />
               <Badge className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-[10px]">
                 3
@@ -253,7 +300,7 @@ export default function MainLayout() {
             </Button>
 
             {/* User Menu */}
-            <UserMenu user={user} onLogout={handleLogout} />
+            <UserMenu user={user} onLogout={handleLogout} dataTour="user-menu" />
           </div>
         </header>
 
@@ -262,15 +309,17 @@ export default function MainLayout() {
           <Outlet />
         </main>
       </div>
+
+      {tourOpen && <ProductTour steps={tourSteps} onFinish={closeTour} />}
     </div>
   )
 }
 
-function UserMenu({ user, onLogout }: { user: any; onLogout: () => void }) {
+function UserMenu({ user, onLogout, dataTour }: { user: any; onLogout: () => void; dataTour?: string }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="relative h-10 w-10 rounded-full">
+        <Button variant="ghost" className="relative h-10 w-10 rounded-full" data-tour={dataTour}>
           <Avatar className="h-10 w-10">
             <AvatarImage src={user?.avatarUrl} />
             <AvatarFallback>
