@@ -10,7 +10,7 @@ export default defineConfig({
     },
   },
   server: {
-    port: 3000,
+    port: Number(process.env.PORT) || 3000,
     proxy: {
       // Toutes les requêtes /api/* → backend Express (port 3001)
       '/api': {

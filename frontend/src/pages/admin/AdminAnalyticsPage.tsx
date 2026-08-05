@@ -27,7 +27,7 @@ import { api } from '@/services/api'
 export default function AdminAnalyticsPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['admin-analytics'],
-    queryFn: () => api.analytics.getDashboard(),
+    queryFn: () => api.analytics.getAdminDashboard(),
   })
 
   const { data: courses = [] } = useQuery({
@@ -50,20 +50,23 @@ export default function AdminAnalyticsPage() {
     return <PageLoading />
   }
 
-  const stats = data || {
-    totalUsers: 1250,
-    activeUsers: 890,
-    totalCourses: 45,
-    completedCourses: 3450,
-    totalHours: 12500,
-    avgCompletionRate: 72,
-    newUsersThisMonth: 85,
-    coursesThisMonth: 5,
+  // GET /analytics/dashboard groups fields under users/courses/enrollments/completions
+  // rather than the flat shape this page renders, and doesn't compute period-over-period
+  // trends at all — map defensively so a missing field never crashes the page.
+  const stats = {
+    totalUsers: data?.users?.total ?? 0,
+    activeUsers: data?.users?.active ?? 0,
+    totalCourses: data?.courses?.total ?? 0,
+    completedCourses: data?.completions?.total ?? 0,
+    totalHours: 0,
+    avgCompletionRate: data?.enrollments?.averageProgress ?? 0,
+    newUsersThisMonth: data?.users?.new ?? 0,
+    coursesThisMonth: data?.courses?.new ?? 0,
     trends: {
-      users: 12,
-      courses: 8,
-      hours: 15,
-      completion: -3,
+      users: 0,
+      courses: 0,
+      hours: 0,
+      completion: 0,
     },
   }
 
