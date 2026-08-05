@@ -27,12 +27,11 @@ router.get('/', authenticate, async (req: AuthRequest, res, next) => {
     const userId = req.query.userId as string;
     const courseId = req.query.courseId as string;
 
-    let query = `SELECT c.*, u.display_name as user_name, u.email as user_email,
-                        co.title as course_title, f.storage_key as pdf_url
+    let query = `SELECT c.id, c.user_id, c.course_id, c.template_id, c.serial, c.issued_at, c.expires_at, c.revoked_at,
+                        u.display_name as user_name, co.title as course_name
                  FROM certificates c
                  JOIN users u ON c.user_id = u.id
                  JOIN courses co ON c.course_id = co.id
-                 LEFT JOIN file_assets f ON c.pdf_file_id = f.id
                  WHERE c.tenant_id = @tenantId`;
     const params: Record<string, any> = { tenantId: req.user!.tenantId };
 
@@ -54,7 +53,22 @@ router.get('/', authenticate, async (req: AuthRequest, res, next) => {
     query += ' ORDER BY c.issued_at DESC';
 
     const certificates = await DatabaseService.query<any>(query, params);
-    res.json({ success: true, data: certificates });
+    res.json({
+      success: true,
+      data: certificates.map((c: any) => ({
+        id: c.id,
+        userId: c.user_id,
+        courseId: c.course_id,
+        templateId: c.template_id,
+        certificateNumber: c.serial,
+        issuedAt: c.issued_at,
+        expiresAt: c.expires_at,
+        verificationUrl: `${config.certificateVerifyUrl}/${c.serial}`,
+        status: c.revoked_at ? 'revoked' : 'issued',
+        userName: c.user_name,
+        courseName: c.course_name,
+      })),
+    });
   } catch (error) {
     next(error);
   }
@@ -115,6 +129,202 @@ router.get('/expiring-soon', authenticate, authorize('admin', 'director', 'manag
     );
 
     res.json({ success: true, data: certificates });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ==================== CERTIFICATE TEMPLATES ====================
+
+/**
+ * @route GET /api/v1/certificates/templates
+ * @desc List certificate templates for the current tenant
+ */
+router.get('/templates', authenticate, authorize('admin', 'director', 'manager'), async (req: AuthRequest, res, next) => {
+  try {
+    const templates = await DatabaseService.query<any>(
+      `SELECT id, name, description, template_html, is_default
+       FROM certificate_templates WHERE tenant_id = @tenantId ORDER BY name`,
+      { tenantId: req.user!.tenantId }
+    );
+
+    res.json({
+      success: true,
+      data: templates.map((t: any) => ({
+        id: t.id,
+        name: t.name,
+        description: t.description,
+        templateHtml: t.template_html,
+        isDefault: t.is_default,
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @route POST /api/v1/certificates/templates
+ * @desc Create a certificate template
+ */
+router.post(
+  '/templates',
+  authenticate,
+  authorize('admin', 'director'),
+  [body('name').notEmpty().trim(), body('description').optional({ nullable: true }).trim(), body('templateHtml').optional({ nullable: true })],
+  async (req: AuthRequest, res, next) => {
+    try {
+      validate(req);
+      const { name, description, templateHtml, isDefault } = req.body;
+      const tenantId = req.user!.tenantId;
+
+      // Only one default template per tenant
+      if (isDefault) {
+        await DatabaseService.execute(
+          'UPDATE certificate_templates SET is_default = 0 WHERE tenant_id = @tenantId',
+          { tenantId }
+        );
+      }
+
+      const result = await DatabaseService.query<{ id: number }>(
+        `INSERT INTO certificate_templates (tenant_id, name, description, template_html, is_default)
+         OUTPUT INSERTED.id
+         VALUES (@tenantId, @name, @description, @templateHtml, @isDefault)`,
+        { tenantId, name, description: description || null, templateHtml: templateHtml || null, isDefault: !!isDefault }
+      );
+
+      res.status(201).json({
+        success: true,
+        data: { id: result[0].id, name, description, templateHtml, isDefault: !!isDefault },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * @route PUT /api/v1/certificates/templates/:id
+ * @desc Update a certificate template
+ */
+router.put(
+  '/templates/:id',
+  authenticate,
+  authorize('admin', 'director'),
+  [body('name').optional().trim(), body('description').optional({ nullable: true }).trim(), body('templateHtml').optional({ nullable: true })],
+  async (req: AuthRequest, res, next) => {
+    try {
+      validate(req);
+      const templateId = parseInt(req.params.id, 10);
+      const tenantId = req.user!.tenantId;
+      const { name, description, templateHtml, isDefault } = req.body;
+
+      const existing = await DatabaseService.query<{ id: number }>(
+        'SELECT id FROM certificate_templates WHERE id = @id AND tenant_id = @tenantId',
+        { id: templateId, tenantId }
+      );
+      if (existing.length === 0) {
+        throw NotFoundError('Certificate template');
+      }
+
+      if (isDefault) {
+        await DatabaseService.execute(
+          'UPDATE certificate_templates SET is_default = 0 WHERE tenant_id = @tenantId',
+          { tenantId }
+        );
+      }
+
+      const updateFields: string[] = [];
+      const params: Record<string, any> = { id: templateId, tenantId };
+      if (name !== undefined) { updateFields.push('name = @name'); params.name = name; }
+      if (description !== undefined) { updateFields.push('description = @description'); params.description = description; }
+      if (templateHtml !== undefined) { updateFields.push('template_html = @templateHtml'); params.templateHtml = templateHtml; }
+      if (isDefault !== undefined) { updateFields.push('is_default = @isDefault'); params.isDefault = !!isDefault; }
+
+      if (updateFields.length > 0) {
+        await DatabaseService.execute(
+          `UPDATE certificate_templates SET ${updateFields.join(', ')}, updated_at = SYSUTCDATETIME()
+           WHERE id = @id AND tenant_id = @tenantId`,
+          params
+        );
+      }
+
+      const updated = await DatabaseService.query<any>(
+        'SELECT id, name, description, template_html, is_default FROM certificate_templates WHERE id = @id',
+        { id: templateId }
+      );
+
+      res.json({
+        success: true,
+        data: {
+          id: updated[0].id,
+          name: updated[0].name,
+          description: updated[0].description,
+          templateHtml: updated[0].template_html,
+          isDefault: updated[0].is_default,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * @route DELETE /api/v1/certificates/templates/:id
+ * @desc Delete a certificate template (the default template cannot be deleted)
+ */
+router.delete('/templates/:id', authenticate, authorize('admin', 'director'), async (req: AuthRequest, res, next) => {
+  try {
+    const templateId = parseInt(req.params.id, 10);
+    const tenantId = req.user!.tenantId;
+
+    const existing = await DatabaseService.query<{ id: number; is_default: boolean }>(
+      'SELECT id, is_default FROM certificate_templates WHERE id = @id AND tenant_id = @tenantId',
+      { id: templateId, tenantId }
+    );
+    if (existing.length === 0) {
+      throw NotFoundError('Certificate template');
+    }
+    if (existing[0].is_default) {
+      throw BadRequestError('The default template cannot be deleted');
+    }
+
+    await DatabaseService.execute(
+      'DELETE FROM certificate_templates WHERE id = @id AND tenant_id = @tenantId',
+      { id: templateId, tenantId }
+    );
+
+    res.json({ success: true, message: 'Template deleted' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @route PUT /api/v1/certificates/:id/revoke
+ * @desc Revoke an issued certificate
+ */
+router.put('/:id/revoke', authenticate, authorize('admin', 'director'), async (req: AuthRequest, res, next) => {
+  try {
+    const certificateId = parseInt(req.params.id, 10);
+    const tenantId = req.user!.tenantId;
+
+    const existing = await DatabaseService.query<{ id: number }>(
+      'SELECT id FROM certificates WHERE id = @id AND tenant_id = @tenantId',
+      { id: certificateId, tenantId }
+    );
+    if (existing.length === 0) {
+      throw NotFoundError('Certificate');
+    }
+
+    await DatabaseService.execute(
+      `UPDATE certificates SET revoked_at = SYSUTCDATETIME(), revoked_by = @revokedBy
+       WHERE id = @id AND tenant_id = @tenantId AND revoked_at IS NULL`,
+      { id: certificateId, tenantId, revokedBy: req.user!.id }
+    );
+
+    res.json({ success: true, message: 'Certificate revoked' });
   } catch (error) {
     next(error);
   }
@@ -203,11 +413,21 @@ router.post(
     body('userId').isInt(),
     body('courseId').isInt(),
     body('validityMonths').optional({ nullable: true }).isInt({ min: 1 }),
+    body('templateId').optional({ nullable: true }).isInt(),
   ],
   async (req: AuthRequest, res, next) => {
     try {
       validate(req);
       const { userId, courseId, validityMonths } = req.body;
+      let templateId = req.body.templateId || null;
+
+      if (!templateId) {
+        const defaultTemplate = await DatabaseService.query<{ id: number }>(
+          'SELECT TOP 1 id FROM certificate_templates WHERE tenant_id = @tenantId AND is_default = 1',
+          { tenantId: req.user!.tenantId }
+        );
+        templateId = defaultTemplate[0]?.id || null;
+      }
 
       // Check if certificate already exists
       const existing = await DatabaseService.query<any>(
@@ -240,17 +460,19 @@ router.post(
 
       // Create certificate record (serial will be generated by trigger)
       const result = await DatabaseService.query<{ id: number }>(
-        `INSERT INTO certificates (tenant_id, user_id, course_id, serial, validity_months, expires_at)
+        `INSERT INTO certificates (tenant_id, user_id, course_id, serial, validity_months, expires_at, template_id)
          OUTPUT INSERTED.id
          VALUES (
            @tenantId, @userId, @courseId, '', @validityMonths,
-           CASE WHEN @validityMonths IS NOT NULL THEN DATEADD(month, @validityMonths, SYSUTCDATETIME()) ELSE NULL END
+           CASE WHEN @validityMonths IS NOT NULL THEN DATEADD(month, @validityMonths, SYSUTCDATETIME()) ELSE NULL END,
+           @templateId
          )`,
         {
           tenantId: req.user!.tenantId,
           userId,
           courseId,
           validityMonths: validityMonths || null,
+          templateId,
         }
       );
 
