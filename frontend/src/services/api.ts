@@ -15,7 +15,8 @@ interface ExtendedAPI extends AxiosInstance {
     update: (id: number, data: any) => Promise<any>;
     delete: (id: number) => Promise<any>;
     publish: (id: number) => Promise<any>;
-    archive: (id: number) => Promise<any>;
+    unpublish: (id: number) => Promise<any>;
+    clone: (id: number) => Promise<any>;
   };
   chat: {
     getConversations: () => Promise<any[]>;
@@ -71,6 +72,13 @@ interface ExtendedAPI extends AxiosInstance {
     updateEmail: (data: any) => Promise<any>;
     testEmail: (to: string) => Promise<any>;
   };
+  logs: {
+    list: (params?: any) => Promise<any>;
+    getActions: () => Promise<{ actions: string[]; entities: string[] }>;
+    export: (params?: any) => Promise<Blob>;
+    training: (params?: any) => Promise<any>;
+    trainingExport: (params?: any) => Promise<Blob>;
+  };
   assignments: {
     list: (courseId?: number) => Promise<any[]>;
     create: (data: any) => Promise<any>;
@@ -121,6 +129,42 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
+// Shared by the reactive 401 handler below and the proactive refresh triggered by
+// user activity (useIdleTimeout) — a single in-flight promise so concurrent callers
+// (e.g. several requests 401ing at once, or activity firing mid-request) reuse the
+// same refresh instead of racing multiple /auth/refresh calls.
+let refreshInFlight: Promise<string> | null = null;
+
+export async function refreshAccessToken(): Promise<string> {
+  if (refreshInFlight) return refreshInFlight;
+
+  refreshInFlight = (async () => {
+    const refreshToken = localStorage.getItem('refreshToken');
+    if (!refreshToken) {
+      throw new Error('No refresh token');
+    }
+
+    const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
+      refreshToken,
+    });
+
+    // FIX: certains backends enveloppent dans data.data, d'autres non
+    const newToken =
+      response.data?.data?.accessToken ?? response.data?.accessToken;
+    if (!newToken) throw new Error('No access token in refresh response');
+
+    localStorage.setItem('accessToken', newToken);
+    setAuthToken(newToken);
+    return newToken;
+  })();
+
+  try {
+    return await refreshInFlight;
+  } finally {
+    refreshInFlight = null;
+  }
+}
+
 // Response interceptor to handle token refresh
 api.interceptors.response.use(
   (response) => response,
@@ -136,27 +180,16 @@ api.interceptors.response.use(
       originalRequest._retry = true;
 
       try {
-        const refreshToken = localStorage.getItem('refreshToken');
-        if (!refreshToken) {
-          throw new Error('No refresh token');
-        }
-
-        const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
-          refreshToken,
-        });
-
-        // FIX: certains backends enveloppent dans data.data, d'autres non
-        const newToken =
-          response.data?.data?.accessToken ?? response.data?.accessToken;
-        if (!newToken) throw new Error('No access token in refresh response');
-
-        localStorage.setItem('accessToken', newToken);
+        const newToken = await refreshAccessToken();
         originalRequest.headers.Authorization = `Bearer ${newToken}`;
-
         return api(originalRequest);
       } catch {
         localStorage.removeItem('accessToken');
         localStorage.removeItem('refreshToken');
+        // So the next successful login lands back where the user was — read by
+        // AuthContext's applySession(). This is a hard redirect (not React Router),
+        // so window.location is still the current page's path at this point.
+        sessionStorage.setItem('postLoginRedirect', window.location.pathname + window.location.search);
         window.location.href = '/login';
         return Promise.reject(error);
       }
@@ -184,7 +217,8 @@ api.courses = {
   update: (id: number, data: any) => api.put(`/courses/${id}`, data).then(r => r.data.data),
   delete: (id: number) => api.delete(`/courses/${id}`).then(r => r.data),
   publish: (id: number) => api.post(`/courses/${id}/publish`).then(r => r.data.data),
-  archive: (id: number) => api.post(`/courses/${id}/archive`).then(r => r.data.data),
+  unpublish: (id: number) => api.post(`/courses/${id}/unpublish`).then(r => r.data.data),
+  clone: (id: number) => api.post(`/courses/${id}/clone`).then(r => r.data.data),
 };
 
 api.chat = {
@@ -255,6 +289,14 @@ api.settings = {
   getEmail: () => api.get('/settings/email').then(r => r.data.data),
   updateEmail: (data: any) => api.put('/settings/email', data).then(r => r.data),
   testEmail: (to: string) => api.post('/settings/email/test', { to }).then(r => r.data),
+};
+
+api.logs = {
+  list: (params?: any) => api.get('/logs', { params }).then(r => r.data),
+  getActions: () => api.get('/logs/actions').then(r => r.data.data),
+  export: (params?: any) => api.get('/logs/export', { params, responseType: 'blob' }).then(r => r.data),
+  training: (params?: any) => api.get('/logs/training', { params }).then(r => r.data),
+  trainingExport: (params?: any) => api.get('/logs/training/export', { params, responseType: 'blob' }).then(r => r.data),
 };
 
 api.assignments = {

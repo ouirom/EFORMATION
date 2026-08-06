@@ -1,7 +1,9 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from '@/components/ui/toaster';
+import { GlobalHelp } from '@/components/GlobalHelp';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { SocketProvider } from '@/contexts/SocketContext';
+import { SessionTimeoutProvider } from '@/contexts/SessionTimeoutContext';
 
 // Layouts
 import MainLayout from '@/layouts/MainLayout';
@@ -12,6 +14,7 @@ import LoginPage from '@/pages/auth/LoginPage';
 import RegisterPage from '@/pages/auth/RegisterPage';
 import ForgotPasswordPage from '@/pages/auth/ForgotPasswordPage';
 import ResetPasswordPage from '@/pages/auth/ResetPasswordPage';
+import SSOCallbackPage from '@/pages/auth/SSOCallbackPage';
 
 // Main Pages
 import DashboardPage from '@/pages/DashboardPage';
@@ -44,6 +47,7 @@ import AdminBlogPage from '@/pages/admin/AdminBlogPage';
 import AdminReportsPage from '@/pages/admin/AdminReportsPage';
 import AdminOrganizationPage from '@/pages/admin/AdminOrganizationPage';
 import AdminEmailSettingsPage from '@/pages/admin/AdminEmailSettingsPage';
+import AdminLogsPage from '@/pages/admin/AdminLogsPage';
 
 // Quiz Pages
 import { LessonQuizzesPage } from '@/pages/LessonQuizzesPage';
@@ -76,6 +80,7 @@ function App() {
   return (
     <AuthProvider>
       <SocketProvider>
+      <SessionTimeoutProvider>
         <Routes>
           {/* Auth Routes */}
           <Route element={<AuthLayout />}>
@@ -83,6 +88,7 @@ function App() {
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
+            <Route path="/auth/callback/:provider" element={<SSOCallbackPage />} />
           </Route>
 
           {/* Main App Routes */}
@@ -137,6 +143,7 @@ function App() {
             <Route path="reports" element={<AdminReportsPage />} />
             <Route path="organization" element={<AdminOrganizationPage />} />
             <Route path="email-settings" element={<AdminEmailSettingsPage />} />
+            <Route path="logs" element={<AdminLogsPage />} />
             <Route path="analytics" element={<AdminAnalyticsPage />} />
           </Route>
 
@@ -144,6 +151,8 @@ function App() {
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
         <Toaster />
+        <GlobalHelp />
+      </SessionTimeoutProvider>
       </SocketProvider>
     </AuthProvider>
   );

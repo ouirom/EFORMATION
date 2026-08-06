@@ -15,6 +15,7 @@ import {
   Volume2,
   VolumeX,
   Maximize,
+  Minimize,
   CheckCircle,
   FileText,
   Download,
@@ -27,6 +28,7 @@ import {
 } from 'lucide-react'
 import { api } from '@/services/api'
 import { fileService } from '@/services/file.service'
+import { useSessionTimeoutContext, idleLimitForLessonDuration } from '@/contexts/SessionTimeoutContext'
 
 // <video>/<iframe> elements can't send an Authorization header, so the token
 // travels as a query param for this one streaming endpoint.
@@ -81,6 +83,7 @@ export default function LessonPage() {
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const videoRef = useRef<HTMLVideoElement>(null)
+  const pageContainerRef = useRef<HTMLDivElement>(null)
   const startTimeRef = useRef<number>(Date.now())
   const lastUpdateRef = useRef<number>(Date.now())
 
@@ -88,6 +91,7 @@ export default function LessonPage() {
   const [isMuted, setIsMuted] = useState(false)
   const [progress, setProgress] = useState(0)
   const [activeTab, setActiveTab] = useState('content')
+  const [isPageFullscreen, setIsPageFullscreen] = useState(false)
 
   // Fetch lesson progress
   const { data: lessonProgress } = useQuery<LessonProgress>({
@@ -138,6 +142,14 @@ export default function LessonPage() {
       return response.data.data || []
     },
   })
+
+  // While this lesson is open, give the user more idle leeway than the app-wide
+  // default, proportional to how long the lesson is meant to take.
+  const { setIdleLimitOverrideMs } = useSessionTimeoutContext()
+  useEffect(() => {
+    setIdleLimitOverrideMs(idleLimitForLessonDuration(lesson?.duration_min))
+    return () => setIdleLimitOverrideMs(null)
+  }, [lesson?.duration_min, setIdleLimitOverrideMs])
 
   const completeMutation = useMutation({
     mutationFn: async () => {
@@ -260,6 +272,29 @@ export default function LessonPage() {
     }
   }
 
+  const togglePageFullscreen = () => {
+    const el = pageContainerRef.current
+    if (!el) return
+    if (document.fullscreenElement) {
+      document.exitFullscreen()
+    } else {
+      el.requestFullscreen().catch(() => {
+        toast({
+          title: 'Plein écran indisponible',
+          description: "Votre navigateur a refusé le passage en plein écran.",
+          variant: 'destructive',
+        })
+      })
+    }
+  }
+
+  // Keep the button/icon in sync when fullscreen is exited via Esc or the browser's own UI.
+  useEffect(() => {
+    const handleFullscreenChange = () => setIsPageFullscreen(!!document.fullscreenElement)
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
+  }, [])
+
   // A plain <a href="/api/v1/files/:id/download"> can't carry the access token
   // (it lives in localStorage, not a cookie), so every such link 401'd. Route
   // downloads through the authenticated blob helper instead.
@@ -378,7 +413,7 @@ export default function LessonPage() {
   const StatusIcon = statusInfo.icon
 
   return (
-    <div className="min-h-screen bg-background">
+    <div ref={pageContainerRef} className="min-h-screen bg-background overflow-y-auto">
       {/* Header with Progress Indicator */}
       <div className="border-b bg-card">
         <div className="container mx-auto px-4 py-4">
@@ -417,7 +452,15 @@ export default function LessonPage() {
                   <span>{lessonProgress?.progress_percent || 0}%</span>
                 </div>
               )}
-              <Button 
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={togglePageFullscreen}
+                title={isPageFullscreen ? 'Quitter le plein écran' : 'Ouvrir le cours en plein écran'}
+              >
+                {isPageFullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
+              </Button>
+              <Button
                 onClick={() => completeMutation.mutate()}
                 variant={lessonProgress?.status === 'completed' ? 'outline' : 'default'}
                 disabled={lessonProgress?.status === 'completed'}

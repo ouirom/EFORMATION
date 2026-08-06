@@ -20,6 +20,8 @@ interface AuthContextType {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (data: RegisterData) => Promise<void>;
+  loginWithLdap: (username: string, password: string) => Promise<void>;
+  completeSSOLogin: (provider: 'google' | 'azure', code: string) => Promise<void>;
   logout: () => void;
   updateUser: (data: Partial<User>) => void;
 }
@@ -60,28 +62,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     initAuth();
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const response = await api.post('/auth/login', { email, password });
-    const { user: userData, accessToken, refreshToken } = response.data.data;
-
+  // Shared by every login path (local, LDAP, SSO callback) — FIX: navigate happens
+  // here so callers never need to navigate after calling one of these methods.
+  const applySession = useCallback((userData: User, accessToken: string, refreshToken?: string) => {
     localStorage.setItem('accessToken', accessToken);
     if (refreshToken) localStorage.setItem('refreshToken', refreshToken);
     setAuthToken(accessToken);
     setUser(userData);
-    // FIX: navigate est fait ici — LoginPage ne doit PAS naviguer après login()
-    navigate('/dashboard', { replace: true });
+    // If this login followed a session-timeout logout, return to the page the
+    // user was on instead of dumping them back on the generic dashboard.
+    const redirectTo = sessionStorage.getItem('postLoginRedirect');
+    sessionStorage.removeItem('postLoginRedirect');
+    navigate(redirectTo || '/dashboard', { replace: true });
   }, [navigate]);
+
+  const login = useCallback(async (email: string, password: string) => {
+    const response = await api.post('/auth/login', { email, password });
+    const { user: userData, accessToken, refreshToken } = response.data.data;
+    applySession(userData, accessToken, refreshToken);
+  }, [applySession]);
 
   const register = useCallback(async (data: RegisterData) => {
     const response = await api.post('/auth/register', data);
     const { user: userData, accessToken, refreshToken } = response.data.data;
+    applySession(userData, accessToken, refreshToken);
+  }, [applySession]);
 
-    localStorage.setItem('accessToken', accessToken);
-    if (refreshToken) localStorage.setItem('refreshToken', refreshToken);
-    setAuthToken(accessToken);
-    setUser(userData);
-    navigate('/dashboard', { replace: true });
-  }, [navigate]);
+  const loginWithLdap = useCallback(async (username: string, password: string) => {
+    const response = await api.post('/auth/ldap/login', { username, password });
+    const { user: userData, accessToken, refreshToken } = response.data.data;
+    applySession(userData, accessToken, refreshToken);
+  }, [applySession]);
+
+  const completeSSOLogin = useCallback(async (provider: 'google' | 'azure', code: string) => {
+    const response = await api.post(`/auth/sso/${provider}/callback`, { code });
+    const { user: userData, accessToken, refreshToken } = response.data.data;
+    applySession(userData, accessToken, refreshToken);
+  }, [applySession]);
 
   const logout = useCallback(() => {
     api.post('/auth/logout').catch(() => {});
@@ -104,6 +121,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoading,
         login,
         register,
+        loginWithLdap,
+        completeSSOLogin,
         logout,
         updateUser,
       }}

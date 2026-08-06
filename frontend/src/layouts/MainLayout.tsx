@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
+import { useSessionTimeoutContext } from '@/contexts/SessionTimeoutContext'
 import { useIdleTimeout } from '@/hooks/useIdleTimeout'
+import { refreshAccessToken } from '@/services/api'
 import { SessionTimeoutDialog } from '@/components/SessionTimeoutDialog'
 import { QuickSearch } from '@/components/QuickSearch'
 import { ProductTour } from '@/components/ProductTour'
@@ -112,14 +114,30 @@ export default function MainLayout() {
     navigate('/login')
   }
 
-  const { isWarning, secondsLeft, stayActive } = useIdleTimeout(() => {
-    // Survives the hard `window.location.href` redirect the API client's 401
-    // interceptor may trigger from a request that was already in flight —
-    // that redirect drops any query string, so the flag can't live there alone.
-    sessionStorage.setItem('sessionTimeout', '1')
-    logout()
-    navigate('/login?timeout=1')
-  })
+  const { idleLimitOverrideMs } = useSessionTimeoutContext()
+
+  const { isWarning, secondsLeft, stayActive } = useIdleTimeout(
+    () => {
+      // Survives the hard `window.location.href` redirect the API client's 401
+      // interceptor may trigger from a request that was already in flight —
+      // that redirect drops any query string, so the flag can't live there alone.
+      sessionStorage.setItem('sessionTimeout', '1')
+      // So the next successful login lands back where the user was, not on the
+      // generic dashboard — read by AuthContext's applySession().
+      sessionStorage.setItem('postLoginRedirect', location.pathname + location.search)
+      logout()
+      navigate('/login?timeout=1')
+    },
+    {
+      idleLimitMs: idleLimitOverrideMs ?? undefined,
+      onActivity: () => {
+        refreshAccessToken().catch(() => {
+          // A failed proactive refresh isn't fatal — the reactive 401 handler
+          // (or the idle-timeout warning) still covers session expiry.
+        })
+      },
+    }
+  )
 
   return (
     <div className="min-h-screen bg-background">
