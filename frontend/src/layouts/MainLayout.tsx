@@ -48,6 +48,7 @@ import {
   HelpCircle,
   LifeBuoy,
   Globe,
+  UploadCloud,
 } from 'lucide-react'
 
 const mainNavItems = [
@@ -75,6 +76,7 @@ const adminNavItems = [
   { icon: Newspaper, label: 'Blog', path: '/admin/blog' },
   { icon: FileText, label: 'Rapports', path: '/admin/reports' },
   { icon: Building2, label: 'Organisation', path: '/admin/organization' },
+  { icon: UploadCloud, label: 'Import de données', path: '/admin/import' },
   { icon: Mail, label: 'Email', path: '/admin/email-settings' },
   { icon: ScrollText, label: 'Journaux d\'audit', path: '/admin/logs', tourId: 'logs' },
 ]

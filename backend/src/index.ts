@@ -47,6 +47,7 @@ import assignmentRoutes from './routes/assignment.routes';
 import platformRoutes from './routes/platform.routes';
 import settingsRoutes from './routes/settings.routes';
 import logsRoutes from './routes/logs.routes';
+import importRoutes from './routes/import.routes';
 
 // Import middleware
 import { errorHandler } from './middleware/error.middleware';
@@ -172,6 +173,7 @@ class App {
     apiRouter.use('/platform', platformRoutes);
     apiRouter.use('/settings', settingsRoutes);
     apiRouter.use('/logs', logsRoutes);
+    apiRouter.use('/import', importRoutes);
 
     this.app.use('/api/v1', apiRouter);
 

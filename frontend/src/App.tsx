@@ -47,6 +47,7 @@ import AdminNotificationsPage from '@/pages/admin/AdminNotificationsPage';
 import AdminBlogPage from '@/pages/admin/AdminBlogPage';
 import AdminReportsPage from '@/pages/admin/AdminReportsPage';
 import AdminOrganizationPage from '@/pages/admin/AdminOrganizationPage';
+import AdminImportPage from '@/pages/admin/AdminImportPage';
 import AdminEmailSettingsPage from '@/pages/admin/AdminEmailSettingsPage';
 import AdminLogsPage from '@/pages/admin/AdminLogsPage';
 import AdminPlatformPage from '@/pages/admin/AdminPlatformPage';
@@ -145,6 +146,7 @@ function App() {
             <Route path="blog" element={<AdminBlogPage />} />
             <Route path="reports" element={<AdminReportsPage />} />
             <Route path="organization" element={<AdminOrganizationPage />} />
+            <Route path="import" element={<AdminImportPage />} />
             <Route path="email-settings" element={<AdminEmailSettingsPage />} />
             <Route path="logs" element={<AdminLogsPage />} />
             <Route path="analytics" element={<AdminAnalyticsPage />} />

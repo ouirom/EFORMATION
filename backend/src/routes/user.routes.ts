@@ -9,10 +9,10 @@ import { AuditService } from '../services/audit.service';
 import { NotificationService } from '../services/notification.service';
 import { BadRequestError, NotFoundError, ConflictError } from '../middleware/error.middleware';
 import { config } from '../config';
-import { parseCsv } from '../utils/csv';
+import { parseSpreadsheet } from '../utils/xlsx';
 
 const router = Router();
-const csvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 } });
+const csvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 const ALLOWED_ROLES = ['super_admin', 'admin', 'director', 'manager', 'supervisor', 'agent'];
 
 const validate = (req: any) => {
@@ -133,9 +133,10 @@ const MAX_IMPORT_ROWS = 500;
 
 /**
  * @route POST /api/v1/users/import
- * @desc Bulk-create users from a CSV file (columns: email, displayName, role,
- *       enterpriseCode, directionCode, serviceCode — the *Code columns are optional
- *       and matched against the org units' `code` field for this tenant).
+ * @desc Bulk-create users from a CSV or Excel (.xlsx) file (columns: email, displayName,
+ *       role, enterpriseCode, directionCode, serviceCode — the *Code columns are optional
+ *       and matched against the org units' `code` field for this tenant). A downloadable
+ *       .xlsx template is available at GET /import/users/template.
  */
 router.post(
   '/import',
@@ -145,15 +146,15 @@ router.post(
   async (req: AuthRequest, res, next) => {
     try {
       if (!req.file) {
-        throw BadRequestError('CSV file is required (field name: file)');
+        throw BadRequestError('File is required (field name: file)');
       }
 
-      const rows = parseCsv(req.file.buffer.toString('utf-8'));
+      const rows = await parseSpreadsheet(req.file);
       if (rows.length === 0) {
-        throw BadRequestError('CSV file has no data rows');
+        throw BadRequestError('The file has no data rows');
       }
       if (rows.length > MAX_IMPORT_ROWS) {
-        throw BadRequestError(`CSV file has too many rows (max ${MAX_IMPORT_ROWS})`);
+        throw BadRequestError(`The file has too many rows (max ${MAX_IMPORT_ROWS})`);
       }
 
       const tenantId = req.user!.tenantId;
