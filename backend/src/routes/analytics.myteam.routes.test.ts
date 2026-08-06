@@ -69,6 +69,26 @@ describe('GET /analytics/my-team', () => {
     ]);
   });
 
+  it("passes the manager's role level so the query excludes peers/superiors in the same service", async () => {
+    const token = tokenFor({ id: 1, tenantId: 10, email: 'manager@test.com', role: 'manager', serviceId: 5 });
+
+    mockedQuery.mockImplementation((query: string, params: any) => {
+      if (query.includes('FROM users WHERE id = @id')) return Promise.resolve([mockAuthLookup()]);
+      if (query.includes('FROM users u') && query.includes('LEFT JOIN')) {
+        expect(params.requesterLevel).toBe(3); // manager's own level
+        expect(query).toContain("WHEN 'manager' THEN 3");
+        return Promise.resolve([]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const response = await request(makeApp())
+      .get('/analytics/my-team')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.status).toBe(200);
+  });
+
   it('returns an empty team for a director with no direction assigned', async () => {
     const token = tokenFor({ id: 1, tenantId: 10, email: 'director@test.com', role: 'director' });
 

@@ -100,8 +100,10 @@ export const authenticate = (req: any, res: any, next: any) => {
   return authenticateHandler(req as AuthRequest, res, next);
 };
 
-// Role hierarchy
-const ROLE_HIERARCHY: Record<string, number> = {
+// Role hierarchy — exported so routes/services that need to compare two users'
+// levels (e.g. "can only view subordinates") share this single source of truth
+// instead of re-declaring the ranking.
+export const ROLE_HIERARCHY: Record<string, number> = {
   super_admin: 6,
   admin: 5,
   director: 4,

@@ -1,4 +1,5 @@
 import { DatabaseService } from './database.service';
+import { ROLE_HIERARCHY } from '../middleware/auth.middleware';
 
 export interface TeamMember {
   id: number;
@@ -24,26 +25,34 @@ interface Requester {
 export class TeamService {
   /**
    * The users hierarchically attached to `requester`, scoped by their role:
-   * director -> everyone in their direction, manager -> their service,
-   * supervisor -> agents in their service (the schema has no finer-grained
-   * supervisor-to-agent assignment, so service is the closest available scope).
-   * admin/super_admin see the whole tenant. Shared by GET /analytics/my-team and
-   * the team-report cron job so both read the exact same scoping + activity data.
+   * director -> subordinates (manager/supervisor/agent) in their direction,
+   * manager -> subordinates (supervisor/agent) in their service, supervisor ->
+   * agents in their service (the schema has no finer-grained supervisor-to-agent
+   * assignment, so service is the closest available scope). Peers and superiors
+   * within the same org unit are never included — a director's team excludes
+   * other directors, a manager's excludes other managers, etc. admin/super_admin
+   * see the whole tenant. Shared by GET /analytics/my-team and the team-report
+   * cron job so both read the exact same scoping + activity data.
    */
   static async getTeamActivity(requester: Requester): Promise<TeamMember[]> {
     const { tenantId, id: requesterId, role, directionId, serviceId } = requester;
 
     let scopeClause = '1 = 0'; // no scope resolved -> no results, rather than leaking the whole tenant
     const params: Record<string, any> = { tenantId, requesterId };
+    const roleLevelSql = `CASE u.role
+      WHEN 'super_admin' THEN 6 WHEN 'admin' THEN 5 WHEN 'director' THEN 4
+      WHEN 'manager' THEN 3 WHEN 'supervisor' THEN 2 WHEN 'agent' THEN 1 ELSE 0 END`;
 
     if (role === 'admin' || role === 'super_admin') {
       scopeClause = 'u.id <> @requesterId';
     } else if (role === 'director' && directionId) {
-      scopeClause = 'u.direction_id = @directionId AND u.id <> @requesterId';
+      scopeClause = `u.direction_id = @directionId AND (${roleLevelSql}) < @requesterLevel`;
       params.directionId = directionId;
+      params.requesterLevel = ROLE_HIERARCHY[role];
     } else if (role === 'manager' && serviceId) {
-      scopeClause = 'u.service_id = @serviceId AND u.id <> @requesterId';
+      scopeClause = `u.service_id = @serviceId AND (${roleLevelSql}) < @requesterLevel`;
       params.serviceId = serviceId;
+      params.requesterLevel = ROLE_HIERARCHY[role];
     } else if (role === 'supervisor' && serviceId) {
       scopeClause = "u.service_id = @serviceId AND u.role = 'agent'";
       params.serviceId = serviceId;

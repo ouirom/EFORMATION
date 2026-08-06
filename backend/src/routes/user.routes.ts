@@ -3,11 +3,11 @@ import { body, validationResult } from 'express-validator';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import multer from 'multer';
-import { authenticate, authorize, AuthRequest } from '../middleware/auth.middleware';
+import { authenticate, authorize, AuthRequest, ROLE_HIERARCHY } from '../middleware/auth.middleware';
 import { DatabaseService } from '../services/database.service';
 import { AuditService } from '../services/audit.service';
 import { NotificationService } from '../services/notification.service';
-import { BadRequestError, NotFoundError, ConflictError } from '../middleware/error.middleware';
+import { BadRequestError, NotFoundError, ConflictError, ForbiddenError } from '../middleware/error.middleware';
 import { config } from '../config';
 import { parseSpreadsheet } from '../utils/xlsx';
 
@@ -317,13 +317,20 @@ router.get('/', authenticate, authorize('admin', 'director', 'manager'), async (
       params.serviceId = parseInt(serviceId, 10);
     }
 
-    // Apply scope restrictions for non-admins
+    // Apply scope restrictions for non-admins: directors/managers only ever see
+    // their subordinates (strictly lower role level) within their own org unit —
+    // never peers or superiors, even ones attached to the same direction/service.
+    const roleLevelSql = `CASE u.role
+      WHEN 'super_admin' THEN 6 WHEN 'admin' THEN 5 WHEN 'director' THEN 4
+      WHEN 'manager' THEN 3 WHEN 'supervisor' THEN 2 WHEN 'agent' THEN 1 ELSE 0 END`;
     if (req.user!.role === 'director' && req.user!.directionId) {
-      whereClause += ' AND u.direction_id = @userDirectionId';
+      whereClause += ` AND u.direction_id = @userDirectionId AND (${roleLevelSql}) < @requesterLevel`;
       params.userDirectionId = req.user!.directionId;
+      params.requesterLevel = ROLE_HIERARCHY[req.user!.role];
     } else if (req.user!.role === 'manager' && req.user!.serviceId) {
-      whereClause += ' AND u.service_id = @userServiceId';
+      whereClause += ` AND u.service_id = @userServiceId AND (${roleLevelSql}) < @requesterLevel`;
       params.userServiceId = req.user!.serviceId;
+      params.requesterLevel = ROLE_HIERARCHY[req.user!.role];
     }
 
     const [countResult, users] = await Promise.all([
@@ -368,6 +375,7 @@ router.get('/', authenticate, authorize('admin', 'director', 'manager'), async (
 router.get('/:id', authenticate, async (req: AuthRequest, res, next) => {
   try {
     const userId = parseInt(req.params.id, 10);
+    const requester = req.user!;
 
     const users = await DatabaseService.query<any>(
       `SELECT u.id, u.email, u.username, u.display_name, u.avatar_url, u.role, u.is_active,
@@ -378,16 +386,36 @@ router.get('/:id', authenticate, async (req: AuthRequest, res, next) => {
        LEFT JOIN directions d ON u.direction_id = d.id
        LEFT JOIN services s ON u.service_id = s.id
        WHERE u.id = @userId AND u.tenant_id = @tenantId AND u.deleted_at IS NULL`,
-      { userId, tenantId: req.user!.tenantId }
+      { userId, tenantId: requester.tenantId }
     );
 
     if (users.length === 0) {
       throw NotFoundError('User');
     }
 
+    const target = users[0];
+
+    // A user may always view their own record. Admins/super_admins see everyone.
+    // Everyone else may only view a strict subordinate (lower role level) within
+    // their own org unit — never a peer, a superior, or someone outside their scope.
+    if (userId !== requester.id && requester.role !== 'admin' && requester.role !== 'super_admin') {
+      const requesterLevel = ROLE_HIERARCHY[requester.role] || 0;
+      const targetLevel = ROLE_HIERARCHY[target.role] || 0;
+      const inScope =
+        targetLevel < requesterLevel &&
+        ((requester.role === 'director' && requester.directionId && target.direction_id === requester.directionId) ||
+          ((requester.role === 'manager' || requester.role === 'supervisor') &&
+            requester.serviceId &&
+            target.service_id === requester.serviceId));
+
+      if (!inScope) {
+        throw ForbiddenError('Insufficient permissions to view this user');
+      }
+    }
+
     res.json({
       success: true,
-      data: users[0],
+      data: target,
     });
   } catch (error) {
     next(error);
