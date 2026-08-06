@@ -92,7 +92,12 @@ export default function MainLayout() {
 
   const isAdmin = user?.role === 'admin' || user?.role === 'director' || user?.role === 'manager'
   const isAdminSection = location.pathname.startsWith('/admin')
-  const navItems = isAdminSection ? adminNavItems : mainNavItems
+  const hasTeam = ['admin', 'super_admin', 'director', 'manager', 'supervisor'].includes(user?.role || '')
+  const navItems = isAdminSection
+    ? adminNavItems
+    : hasTeam
+      ? [mainNavItems[0], { icon: Users, label: 'Mon équipe', path: '/my-team' }, ...mainNavItems.slice(1)]
+      : mainNavItems
   const tourSection = isAdminSection ? 'admin' : 'main'
   const tourSteps = isAdminSection ? adminTourSteps : userTourSteps
 

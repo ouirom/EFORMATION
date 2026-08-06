@@ -81,6 +81,7 @@ export function truncate(text: string, length: number): string {
 
 export function getRoleLabel(role: string): string {
   const labels: Record<string, string> = {
+    super_admin: 'Super administrateur',
     admin: 'Administrateur',
     director: 'Directeur',
     manager: 'Manager',
@@ -92,6 +93,7 @@ export function getRoleLabel(role: string): string {
 
 export function getRoleColor(role: string): string {
   const colors: Record<string, string> = {
+    super_admin: 'bg-black text-white',
     admin: 'bg-red-100 text-red-800',
     director: 'bg-purple-100 text-purple-800',
     manager: 'bg-blue-100 text-blue-800',

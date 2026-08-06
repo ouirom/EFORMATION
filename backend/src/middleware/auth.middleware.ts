@@ -114,10 +114,13 @@ export const authorize = (...allowedRoles: string[]) => {
     const userRole = req.user.role;
     const userRoleLevel = ROLE_HIERARCHY[userRole] || 0;
 
-    // Check if user's role is in allowed roles or has higher hierarchy
+    // A role listed in ROLE_HIERARCHY grants access to itself and anything ranked
+    // below it. A role NOT in ROLE_HIERARCHY (e.g. one not wired up yet) only
+    // grants access via an exact match — it must never fall back to a "required
+    // level" of 0, which would silently satisfy userRoleLevel >= 0 for every role.
     const isAllowed = allowedRoles.some((role) => {
-      const requiredLevel = ROLE_HIERARCHY[role] || 0;
-      return userRoleLevel >= requiredLevel || userRole === role;
+      if (!(role in ROLE_HIERARCHY)) return userRole === role;
+      return userRoleLevel >= ROLE_HIERARCHY[role];
     });
 
     if (!isAllowed) {

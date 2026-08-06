@@ -32,6 +32,7 @@ import QuizPage from '@/pages/QuizPage';
 import LessonPage from '@/pages/LessonPage';
 import SearchPage from '@/pages/SearchPage';
 import ContentUploadPage from '@/pages/ContentUploadPage';
+import MyTeamPage from '@/pages/MyTeamPage';
 
 // Admin Pages
 import AdminUsersPage from '@/pages/admin/AdminUsersPage';
@@ -119,6 +120,7 @@ function App() {
             <Route path="/profile" element={<ProfilePage />} />
             <Route path="/ai-tutor" element={<AITutorPage />} />
             <Route path="/content-upload" element={<ContentUploadPage />} />
+            <Route path="/my-team" element={<MyTeamPage />} />
           </Route>
 
           {/* Admin Routes */}
