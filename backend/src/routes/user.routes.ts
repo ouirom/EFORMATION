@@ -13,6 +13,7 @@ import { parseCsv } from '../utils/csv';
 
 const router = Router();
 const csvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 } });
+const ALLOWED_ROLES = ['super_admin', 'admin', 'director', 'manager', 'supervisor', 'agent'];
 
 const validate = (req: any) => {
   const errors = validationResult(req);
@@ -33,7 +34,7 @@ router.post(
     body('email').isEmail().normalizeEmail(),
     body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
     body('displayName').notEmpty().trim(),
-    body('role').isIn(['admin', 'director', 'manager', 'supervisor', 'agent']),
+    body('role').isIn(ALLOWED_ROLES),
     body('enterpriseId').optional().isInt(),
     body('directionId').optional().isInt(),
     body('serviceId').optional().isInt(),
@@ -42,9 +43,13 @@ router.post(
     try {
       validate(req);
 
-      // Directors can only create non-admin users
-      if (req.user!.role === 'director' && req.body.role === 'admin') {
-        throw BadRequestError('Directors cannot create admin users');
+      // Directors can only create non-admin, non-super-admin users; admins can't
+      // create super_admins (only an existing super_admin can create another).
+      if (req.user!.role === 'director' && ['admin', 'super_admin'].includes(req.body.role)) {
+        throw BadRequestError('Directors cannot create admin or super admin users');
+      }
+      if (req.user!.role === 'admin' && req.body.role === 'super_admin') {
+        throw BadRequestError('Only a super admin can create another super admin');
       }
 
       // Check if email already exists
@@ -124,7 +129,6 @@ interface ImportRowResult {
   message?: string;
 }
 
-const ALLOWED_ROLES = ['admin', 'director', 'manager', 'supervisor', 'agent'];
 const MAX_IMPORT_ROWS = 500;
 
 /**
@@ -201,8 +205,12 @@ router.post(
           results.push({ line, email, status: 'error', message: `Invalid role "${role}"` });
           continue;
         }
-        if (role === 'admin' && req.user!.role === 'director') {
-          results.push({ line, email, status: 'error', message: 'Directors cannot create admin users' });
+        if (['admin', 'super_admin'].includes(role) && req.user!.role === 'director') {
+          results.push({ line, email, status: 'error', message: 'Directors cannot create admin or super admin users' });
+          continue;
+        }
+        if (role === 'super_admin' && req.user!.role === 'admin') {
+          results.push({ line, email, status: 'error', message: 'Only a super admin can create another super admin' });
           continue;
         }
         if (knownEmails.has(email)) {
@@ -395,7 +403,7 @@ router.put(
   [
     body('displayName').optional().trim(),
     body('avatarUrl').optional({ nullable: true }).isString(),
-    body('role').optional().isIn(['admin', 'director', 'manager', 'supervisor', 'agent']),
+    body('role').optional().isIn(ALLOWED_ROLES),
     body('isActive').optional().isBoolean(),
     body('enterpriseId').optional().isInt(),
     body('directionId').optional().isInt(),
@@ -405,14 +413,19 @@ router.put(
     try {
       validate(req);
       const userId = parseInt(req.params.id, 10);
+      const isAdminLike = req.user!.role === 'admin' || req.user!.role === 'super_admin';
 
       // Check permissions
-      const canEdit = req.user!.role === 'admin' || 
-                     (req.user!.role === 'director' && req.body.role !== 'admin') ||
+      const canEdit = isAdminLike ||
+                     (req.user!.role === 'director' && !['admin', 'super_admin'].includes(req.body.role)) ||
                      req.user!.id === userId;
 
       if (!canEdit) {
         throw BadRequestError('Insufficient permissions to update this user');
+      }
+
+      if (req.body.role === 'super_admin' && req.user!.role !== 'super_admin') {
+        throw BadRequestError('Only a super admin can grant the super admin role');
       }
 
       const updateFields: string[] = [];
@@ -426,11 +439,11 @@ router.put(
         updateFields.push('avatar_url = @avatarUrl');
         params.avatarUrl = req.body.avatarUrl;
       }
-      if (req.body.role && req.user!.role === 'admin') {
+      if (req.body.role && isAdminLike) {
         updateFields.push('role = @role');
         params.role = req.body.role;
       }
-      if (req.body.isActive !== undefined && req.user!.role === 'admin') {
+      if (req.body.isActive !== undefined && isAdminLike) {
         updateFields.push('is_active = @isActive');
         params.isActive = req.body.isActive;
       }

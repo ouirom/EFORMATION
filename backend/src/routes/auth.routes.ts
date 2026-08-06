@@ -1,12 +1,28 @@
 import { Router } from 'express';
 import { body, validationResult } from 'express-validator';
+import rateLimit from 'express-rate-limit';
 import { AuthService } from '../services/auth.service';
+import { OAuthService } from '../services/oauth.service';
+import { LdapService } from '../services/ldap.service';
 import { authenticate, AuthRequest } from '../middleware/auth.middleware';
 import { TenantRequest } from '../middleware/tenant.middleware';
 import { BadRequestError } from '../middleware/error.middleware';
 import { config } from '../config';
 
 const router = Router();
+
+// Sensitive, abuse-prone endpoints (credential guessing, account enumeration, mail-bombing)
+// get a much tighter limit than the general API — keyed by IP + email so one attacker can't
+// exhaust the budget for every email they try, and one legitimate typo-prone user isn't
+// blocked out by someone else's traffic.
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { success: false, error: { message: 'Too many attempts, please try again later.' } },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `${req.ip}:${(req.body?.email || '').toLowerCase()}`,
+});
 
 // Validation helper
 const validate = (req: any) => {
@@ -22,6 +38,7 @@ const validate = (req: any) => {
  */
 router.post(
   '/register',
+  authLimiter,
   [
     body('email').isEmail().normalizeEmail(),
     body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
@@ -77,6 +94,7 @@ router.post(
  */
 router.post(
   '/login',
+  authLimiter,
   [
     body('email').isEmail().normalizeEmail(),
     body('password').notEmpty(),
@@ -89,6 +107,8 @@ router.post(
         email: req.body.email,
         password: req.body.password,
         tenantId: req.tenantId,
+        ip: req.ip,
+        userAgent: req.get('user-agent'),
       });
 
       // Set refresh token in HTTP-only cookie
@@ -182,6 +202,41 @@ router.get('/me', authenticate, async (req: AuthRequest, res, next) => {
 });
 
 /**
+ * @route POST /api/v1/auth/switch-tenant
+ * @desc super_admin only: issue a fresh token pair scoped to a different tenant
+ */
+router.post(
+  '/switch-tenant',
+  authenticate,
+  [body('tenantId').isInt()],
+  async (req: AuthRequest, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        throw BadRequestError('Validation error', 'VALIDATION_ERROR', errors.array());
+      }
+
+      const result = await AuthService.switchTenant(
+        req.user!.id,
+        req.user!.role,
+        parseInt(req.body.tenantId, 10)
+      );
+
+      res.json({
+        success: true,
+        data: {
+          tenant: result.tenant,
+          accessToken: result.tokens.accessToken,
+          refreshToken: result.tokens.refreshToken,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
  * @route POST /api/v1/auth/change-password
  * @desc Change password
  */
@@ -218,6 +273,7 @@ router.post(
  */
 router.post(
   '/forgot-password',
+  authLimiter,
   [body('email').isEmail().normalizeEmail()],
   async (req: TenantRequest, res, next) => {
     try {
@@ -279,7 +335,8 @@ router.get('/sso/azure', (req, res) => {
 
 /**
  * @route POST /api/v1/auth/sso/azure/callback
- * @desc Handle Azure AD SSO callback
+ * @desc Handle Azure AD SSO callback — exchanges the authorization code for a
+ * verified profile via Microsoft's own token + Graph endpoints before logging in.
  */
 router.post('/sso/azure/callback', async (req, res, next) => {
   try {
@@ -289,17 +346,14 @@ router.post('/sso/azure/callback', async (req, res, next) => {
       throw BadRequestError('Authorization code is required');
     }
 
-    // Exchange code for tokens with Azure AD
-    // This is a simplified version - in production, use MSAL library
-    const result = await AuthService.handleSSOLogin(
-      'azure_ad',
-      req.body.externalId,
-      {
-        email: req.body.email,
-        displayName: req.body.displayName,
-        tenantId: req.body.tenantId,
-      }
-    );
+    const profile = await OAuthService.exchangeAzureCode(code);
+
+    const result = await AuthService.handleSSOLogin('azure_ad', profile.externalId, {
+      email: profile.email,
+      displayName: profile.displayName,
+      ip: req.ip,
+      userAgent: req.get('user-agent'),
+    });
 
     res.cookie('refreshToken', result.tokens.refreshToken, {
       httpOnly: true,
@@ -340,7 +394,8 @@ router.get('/sso/google', (req, res) => {
 
 /**
  * @route POST /api/v1/auth/sso/google/callback
- * @desc Handle Google SSO callback
+ * @desc Handle Google SSO callback — exchanges the authorization code for a
+ * verified profile via Google's own token + userinfo endpoints before logging in.
  */
 router.post('/sso/google/callback', async (req, res, next) => {
   try {
@@ -350,15 +405,14 @@ router.post('/sso/google/callback', async (req, res, next) => {
       throw BadRequestError('Authorization code is required');
     }
 
-    const result = await AuthService.handleSSOLogin(
-      'google',
-      req.body.externalId,
-      {
-        email: req.body.email,
-        displayName: req.body.displayName,
-        tenantId: req.body.tenantId,
-      }
-    );
+    const profile = await OAuthService.exchangeGoogleCode(code);
+
+    const result = await AuthService.handleSSOLogin('google', profile.externalId, {
+      email: profile.email,
+      displayName: profile.displayName,
+      ip: req.ip,
+      userAgent: req.get('user-agent'),
+    });
 
     res.cookie('refreshToken', result.tokens.refreshToken, {
       httpOnly: true,
@@ -380,5 +434,63 @@ router.post('/sso/google/callback', async (req, res, next) => {
     next(error);
   }
 });
+
+/**
+ * @route GET /api/v1/auth/sso/providers
+ * @desc Report which login methods are actually usable, so the frontend can hide
+ * options that have no credentials configured instead of failing after a click.
+ */
+router.get('/sso/providers', (req, res) => {
+  res.json({
+    success: true,
+    data: {
+      azure: !!(config.azureAd.clientId && config.azureAd.clientSecret),
+      google: !!(config.google.clientId && config.google.clientSecret),
+      ldap: LdapService.isConfigured(),
+    },
+  });
+});
+
+/**
+ * @route POST /api/v1/auth/ldap/login
+ * @desc Authenticate against the configured LDAP/Active Directory server. Auto-
+ * provisions a local account on first login, matching the SSO provisioning flow.
+ */
+router.post(
+  '/ldap/login',
+  authLimiter,
+  [body('username').notEmpty().trim(), body('password').notEmpty()],
+  async (req, res, next) => {
+    try {
+      validate(req);
+
+      const profile = await LdapService.authenticate(req.body.username, req.body.password);
+      const result = await AuthService.handleLdapLogin({
+        ...profile,
+        ip: req.ip,
+        userAgent: req.get('user-agent'),
+      });
+
+      res.cookie('refreshToken', result.tokens.refreshToken, {
+        httpOnly: true,
+        secure: config.nodeEnv === 'production',
+        sameSite: 'strict',
+        maxAge: 30 * 24 * 60 * 60 * 1000,
+      });
+
+      res.json({
+        success: true,
+        data: {
+          user: result.user,
+          accessToken: result.tokens.accessToken,
+          expiresIn: result.tokens.expiresIn,
+          isNewUser: result.isNewUser,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 export default router;

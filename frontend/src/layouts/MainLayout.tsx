@@ -47,6 +47,7 @@ import {
   ScrollText,
   HelpCircle,
   LifeBuoy,
+  Globe,
 } from 'lucide-react'
 
 const mainNavItems = [
@@ -90,11 +91,13 @@ export default function MainLayout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [tourOpen, setTourOpen] = useState(false)
 
-  const isAdmin = user?.role === 'admin' || user?.role === 'director' || user?.role === 'manager'
+  const isAdmin = user?.role === 'super_admin' || user?.role === 'admin' || user?.role === 'director' || user?.role === 'manager'
   const isAdminSection = location.pathname.startsWith('/admin')
   const hasTeam = ['admin', 'super_admin', 'director', 'manager', 'supervisor'].includes(user?.role || '')
   const navItems = isAdminSection
-    ? adminNavItems
+    ? user?.role === 'super_admin'
+      ? [...adminNavItems, { icon: Globe, label: 'Plateforme', path: '/admin/platform' }]
+      : adminNavItems
     : hasTeam
       ? [mainNavItems[0], { icon: Users, label: 'Mon équipe', path: '/my-team' }, ...mainNavItems.slice(1)]
       : mainNavItems

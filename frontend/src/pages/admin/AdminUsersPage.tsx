@@ -44,9 +44,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { api } from '@/services/api'
+import { useAuth } from '@/contexts/AuthContext'
 
 export default function AdminUsersPage() {
   const { toast } = useToast()
+  const { user: currentUser } = useAuth()
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState('all')
@@ -363,6 +365,9 @@ export default function AdminUsersPage() {
                       <SelectValue placeholder="Sélectionner un rôle" />
                     </SelectTrigger>
                     <SelectContent>
+                      {currentUser?.role === 'super_admin' && (
+                        <SelectItem value="super_admin">Super administrateur</SelectItem>
+                      )}
                       <SelectItem value="admin">Administrateur</SelectItem>
                       <SelectItem value="director">Directeur</SelectItem>
                       <SelectItem value="manager">Manager</SelectItem>
@@ -456,6 +461,9 @@ export default function AdminUsersPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Tous les rôles</SelectItem>
+            {currentUser?.role === 'super_admin' && (
+              <SelectItem value="super_admin">Super administrateur</SelectItem>
+            )}
             <SelectItem value="admin">Administrateur</SelectItem>
             <SelectItem value="director">Directeur</SelectItem>
             <SelectItem value="manager">Manager</SelectItem>
@@ -595,6 +603,9 @@ export default function AdminUsersPage() {
                   <SelectValue placeholder="Sélectionner un rôle" />
                 </SelectTrigger>
                 <SelectContent>
+                  {currentUser?.role === 'super_admin' && (
+                    <SelectItem value="super_admin">Super administrateur</SelectItem>
+                  )}
                   <SelectItem value="admin">Administrateur</SelectItem>
                   <SelectItem value="director">Directeur</SelectItem>
                   <SelectItem value="manager">Manager</SelectItem>

@@ -6,7 +6,7 @@ interface User {
   id: number;
   email: string;
   displayName: string;
-  role: 'admin' | 'director' | 'manager' | 'supervisor' | 'agent';
+  role: 'super_admin' | 'admin' | 'director' | 'manager' | 'supervisor' | 'agent';
   tenantId: number;
   enterpriseId?: number;
   directionId?: number;
@@ -24,6 +24,7 @@ interface AuthContextType {
   completeSSOLogin: (provider: 'google' | 'azure', code: string) => Promise<void>;
   logout: () => void;
   updateUser: (data: Partial<User>) => void;
+  switchTenant: (tenantId: number) => Promise<void>;
 }
 
 interface RegisterData {
@@ -113,6 +114,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(prev => prev ? { ...prev, ...data } : null);
   }, []);
 
+  // super_admin only: act as a different tenant without a full logout/login —
+  // swaps the token pair for one scoped to that tenant, then re-fetches /auth/me.
+  const switchTenant = useCallback(async (tenantId: number) => {
+    const response = await api.post('/auth/switch-tenant', { tenantId });
+    const { accessToken, refreshToken } = response.data.data;
+    localStorage.setItem('accessToken', accessToken);
+    localStorage.setItem('refreshToken', refreshToken);
+    setAuthToken(accessToken);
+    const me = await api.get('/auth/me');
+    setUser(me.data.data);
+  }, []);
+
   return (
     <AuthContext.Provider
       value={{
@@ -125,6 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         completeSSOLogin,
         logout,
         updateUser,
+        switchTenant,
       }}
     >
       {children}

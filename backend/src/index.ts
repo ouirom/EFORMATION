@@ -44,6 +44,7 @@ import fileRoutes from './routes/file.routes';
 import webhookRoutes from './routes/webhook.routes';
 import searchRoutes from './routes/search.routes';
 import assignmentRoutes from './routes/assignment.routes';
+import platformRoutes from './routes/platform.routes';
 import settingsRoutes from './routes/settings.routes';
 import logsRoutes from './routes/logs.routes';
 
@@ -168,6 +169,7 @@ class App {
     apiRouter.use('/webhooks', webhookRoutes);
     apiRouter.use('/search', searchRoutes);
     apiRouter.use('/assignments', assignmentRoutes);
+    apiRouter.use('/platform', platformRoutes);
     apiRouter.use('/settings', settingsRoutes);
     apiRouter.use('/logs', logsRoutes);
 

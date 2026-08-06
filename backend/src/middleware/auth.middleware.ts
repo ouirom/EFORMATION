@@ -39,7 +39,11 @@ const authenticateHandler = async (
 
     const payload = jwt.verify(token, config.jwt.secret) as UserPayload;
 
-    // Verify user still exists and is active
+    // A super_admin's own row lives in exactly one "home" tenant, but their JWT's
+    // tenantId may point at whichever tenant they're currently acting in (set by
+    // POST /auth/switch-tenant) — so for that role, look the user up by id alone
+    // and trust the token's tenantId as the active scope, rather than requiring
+    // it to match the stored tenant_id like every other role does.
     const users = await DatabaseService.query<{
       id: number;
       tenant_id: number;
@@ -53,7 +57,7 @@ const authenticateHandler = async (
       is_active: boolean;
     }>(
       `SELECT id, tenant_id, email, display_name, avatar_url, role, enterprise_id, direction_id, service_id, is_active
-       FROM users WHERE id = @id AND tenant_id = @tenantId AND deleted_at IS NULL`,
+       FROM users WHERE id = @id AND deleted_at IS NULL AND (tenant_id = @tenantId OR role = 'super_admin')`,
       { id: payload.id, tenantId: payload.tenantId }
     );
 
@@ -62,16 +66,17 @@ const authenticateHandler = async (
     }
 
     const user = users[0];
+    const isSuperAdmin = user.role === 'super_admin';
     req.user = {
       id: user.id,
-      tenantId: user.tenant_id,
+      tenantId: isSuperAdmin ? payload.tenantId : user.tenant_id,
       email: user.email,
       displayName: user.display_name,
       avatarUrl: user.avatar_url,
       role: user.role,
-      enterpriseId: user.enterprise_id,
-      directionId: user.direction_id,
-      serviceId: user.service_id,
+      enterpriseId: isSuperAdmin ? undefined : user.enterprise_id,
+      directionId: isSuperAdmin ? undefined : user.direction_id,
+      serviceId: isSuperAdmin ? undefined : user.service_id,
     };
 
     // Override tenant from token if not set
@@ -97,6 +102,7 @@ export const authenticate = (req: any, res: any, next: any) => {
 
 // Role hierarchy
 const ROLE_HIERARCHY: Record<string, number> = {
+  super_admin: 6,
   admin: 5,
   director: 4,
   manager: 3,
@@ -139,8 +145,8 @@ export const authorizeScope = (scopeField: 'enterpriseId' | 'directionId' | 'ser
       return next(UnauthorizedError('Authentication required'));
     }
 
-    // Admins can access everything
-    if (req.user.role === 'admin') {
+    // Admins (and super admins) can access everything
+    if (req.user.role === 'admin' || req.user.role === 'super_admin') {
       return next();
     }
 

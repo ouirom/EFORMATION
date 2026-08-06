@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { config } from '../config';
 import { DatabaseService } from './database.service';
+import { AuditService } from './audit.service';
 import { User, SSOIdentity, SSOProvider } from '../types';
 import { logger } from '../utils/logger';
 import { 
@@ -33,6 +34,8 @@ interface LoginDTO {
   email: string;
   password: string;
   tenantId?: number;
+  ip?: string;
+  userAgent?: string;
 }
 
 export class AuthService {
@@ -110,7 +113,7 @@ export class AuthService {
     });
 
     // Log audit
-    await this.logAudit(data.tenantId, userId, 'USER_REGISTERED', 'users', userId);
+    await AuditService.log(data.tenantId, userId, 'USER_REGISTERED', 'users', userId);
 
     return {
       user: {
@@ -158,12 +161,22 @@ export class AuthService {
     const user = users[0];
 
     if (!user.is_active) {
+      await AuditService.log(user.tenant_id, user.id, 'LOGIN_FAILED', 'users', user.id, {
+        reason: 'account_disabled',
+        ip: data.ip,
+        userAgent: data.userAgent,
+      });
       throw UnauthorizedError('Account is disabled');
     }
 
     // Verify password
     const isValidPassword = await bcrypt.compare(data.password, user.password_hash);
     if (!isValidPassword) {
+      await AuditService.log(user.tenant_id, user.id, 'LOGIN_FAILED', 'users', user.id, {
+        reason: 'invalid_password',
+        ip: data.ip,
+        userAgent: data.userAgent,
+      });
       throw UnauthorizedError('Invalid email or password');
     }
 
@@ -179,7 +192,10 @@ export class AuthService {
     });
 
     // Log audit
-    await this.logAudit(user.tenant_id, user.id, 'USER_LOGIN', 'users', user.id);
+    await AuditService.log(user.tenant_id, user.id, 'USER_LOGIN', 'users', user.id, {
+      ip: data.ip,
+      userAgent: data.userAgent,
+    });
 
     return {
       user: {
@@ -241,6 +257,46 @@ export class AuthService {
   }
 
   /**
+   * super_admin only: mint a fresh token pair scoped to a different tenant, so
+   * every existing route (which all trust req.user.tenantId from the JWT) works
+   * unmodified once the super_admin is "acting as" that organization. See the
+   * authenticateHandler special case in auth.middleware.ts that allows a
+   * super_admin's token tenantId to differ from their stored home tenant_id.
+   */
+  static async switchTenant(currentUserId: number, currentUserRole: string, targetTenantId: number): Promise<{ tokens: TokenPair; tenant: { id: number; name: string } }> {
+    if (currentUserRole !== 'super_admin') {
+      throw UnauthorizedError('Only super_admin can switch tenant context');
+    }
+
+    const tenants = await DatabaseService.query<{ id: number; name: string }>(
+      'SELECT id, name FROM tenants WHERE id = @targetTenantId',
+      { targetTenantId }
+    );
+    if (tenants.length === 0) {
+      throw NotFoundError('Tenant');
+    }
+
+    const users = await DatabaseService.query<{ id: number; email: string }>(
+      `SELECT id, email FROM users WHERE id = @id AND role = 'super_admin' AND deleted_at IS NULL`,
+      { id: currentUserId }
+    );
+    if (users.length === 0) {
+      throw UnauthorizedError('Super admin account not found');
+    }
+
+    const tokens = this.generateTokenPair({
+      id: users[0].id,
+      tenantId: targetTenantId,
+      email: users[0].email,
+      role: 'super_admin',
+    });
+
+    await AuditService.log(targetTenantId, users[0].id, 'SUPER_ADMIN_SWITCHED_TENANT', 'tenants', targetTenantId);
+
+    return { tokens, tenant: tenants[0] };
+  }
+
+  /**
    * Handle SSO login/registration
    */
   static async handleSSOLogin(
@@ -250,6 +306,8 @@ export class AuthService {
       email: string;
       displayName: string;
       tenantId?: number;
+      ip?: string;
+      userAgent?: string;
     }
   ): Promise<{ user: Partial<User>; tokens: TokenPair; isNewUser: boolean }> {
     // Look for existing SSO identity
@@ -362,7 +420,102 @@ export class AuthService {
       serviceId: user.service_id,
     });
 
-    await this.logAudit(user.tenant_id, user.id, `SSO_LOGIN_${provider.toUpperCase()}`, 'users', user.id);
+    await AuditService.log(user.tenant_id, user.id, `SSO_LOGIN_${provider.toUpperCase()}`, 'users', user.id, {
+      ip: profile.ip,
+      userAgent: profile.userAgent,
+    });
+
+    return {
+      user: {
+        id: user.id,
+        tenantId: user.tenant_id,
+        email: user.email,
+        displayName: user.display_name,
+        role: user.role as any,
+      },
+      tokens,
+      isNewUser,
+    };
+  }
+
+  /**
+   * Handle LDAP login: auto-provisions a local account on first login (matched by
+   * email), matching the SSO auto-provisioning pattern. The LDAP bind itself is
+   * performed by LdapService before this is called — by this point the credential
+   * has already been verified against the directory.
+   */
+  static async handleLdapLogin(profile: {
+    email: string;
+    displayName: string;
+    ip?: string;
+    userAgent?: string;
+  }): Promise<{ user: Partial<User>; tokens: TokenPair; isNewUser: boolean }> {
+    let userId: number;
+    let isNewUser = false;
+
+    const existingUsers = await DatabaseService.query<{ id: number; tenant_id: number; is_active: boolean }>(
+      `SELECT id, tenant_id, is_active FROM users WHERE email = @email AND deleted_at IS NULL`,
+      { email: profile.email }
+    );
+
+    if (existingUsers.length > 0) {
+      if (!existingUsers[0].is_active) {
+        throw UnauthorizedError('Account is disabled');
+      }
+      userId = existingUsers[0].id;
+    } else {
+      const defaultTenant = await DatabaseService.query<{ id: number }>(
+        'SELECT TOP 1 id FROM tenants ORDER BY id'
+      );
+      const tenantId = defaultTenant[0]?.id || config.defaultTenantId;
+
+      const result = await DatabaseService.query<{ id: number }>(
+        `INSERT INTO users (tenant_id, email, password_hash, display_name, role, is_active)
+         OUTPUT INSERTED.id
+         VALUES (@tenantId, @email, 'LDAP_USER', @displayName, 'agent', 1)`,
+        { tenantId, email: profile.email, displayName: profile.displayName }
+      );
+
+      userId = result[0].id;
+      isNewUser = true;
+
+      await DatabaseService.execute(
+        `INSERT INTO notification_preferences (tenant_id, user_id) VALUES (@tenantId, @userId)`,
+        { tenantId, userId }
+      );
+    }
+
+    const users = await DatabaseService.query<{
+      id: number;
+      tenant_id: number;
+      email: string;
+      display_name: string;
+      role: string;
+      enterprise_id: number;
+      direction_id: number;
+      service_id: number;
+    }>(
+      `SELECT id, tenant_id, email, display_name, role, enterprise_id, direction_id, service_id
+       FROM users WHERE id = @userId`,
+      { userId }
+    );
+
+    const user = users[0];
+
+    const tokens = this.generateTokenPair({
+      id: user.id,
+      tenantId: user.tenant_id,
+      email: user.email,
+      role: user.role,
+      enterpriseId: user.enterprise_id,
+      directionId: user.direction_id,
+      serviceId: user.service_id,
+    });
+
+    await AuditService.log(user.tenant_id, user.id, 'LDAP_LOGIN', 'users', user.id, {
+      ip: profile.ip,
+      userAgent: profile.userAgent,
+    });
 
     return {
       user: {
@@ -413,7 +566,7 @@ export class AuthService {
       { passwordHash: newPasswordHash, userId }
     );
 
-    await this.logAudit(user.tenant_id, userId, 'PASSWORD_CHANGED', 'users', userId);
+    await AuditService.log(user.tenant_id, userId, 'PASSWORD_CHANGED', 'users', userId);
   }
 
   /**
@@ -482,7 +635,7 @@ export class AuthService {
    */
   static async logout(userId: number, tenantId: number): Promise<void> {
     // TODO: Add token to blacklist in Redis
-    await this.logAudit(tenantId, userId, 'USER_LOGOUT', 'users', userId);
+    await AuditService.log(tenantId, userId, 'USER_LOGOUT', 'users', userId);
   }
 
   /**
@@ -531,21 +684,4 @@ export class AuthService {
     }
   }
 
-  private static async logAudit(
-    tenantId: number,
-    userId: number,
-    action: string,
-    entity: string,
-    entityId: number
-  ): Promise<void> {
-    try {
-      await DatabaseService.execute(
-        `INSERT INTO audit_logs (tenant_id, user_id, action, entity, entity_id)
-         VALUES (@tenantId, @userId, @action, @entity, @entityId)`,
-        { tenantId, userId, action, entity, entityId }
-      );
-    } catch (error) {
-      logger.error('Failed to log audit:', error);
-    }
-  }
 }

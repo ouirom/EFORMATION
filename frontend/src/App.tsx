@@ -49,6 +49,7 @@ import AdminReportsPage from '@/pages/admin/AdminReportsPage';
 import AdminOrganizationPage from '@/pages/admin/AdminOrganizationPage';
 import AdminEmailSettingsPage from '@/pages/admin/AdminEmailSettingsPage';
 import AdminLogsPage from '@/pages/admin/AdminLogsPage';
+import AdminPlatformPage from '@/pages/admin/AdminPlatformPage';
 
 // Quiz Pages
 import { LessonQuizzesPage } from '@/pages/LessonQuizzesPage';
@@ -127,7 +128,7 @@ function App() {
           <Route
             path="/admin"
             element={
-              <ProtectedRoute roles={['admin', 'director', 'manager']}>
+              <ProtectedRoute roles={['super_admin', 'admin', 'director', 'manager']}>
                 <MainLayout />
               </ProtectedRoute>
             }
@@ -147,6 +148,7 @@ function App() {
             <Route path="email-settings" element={<AdminEmailSettingsPage />} />
             <Route path="logs" element={<AdminLogsPage />} />
             <Route path="analytics" element={<AdminAnalyticsPage />} />
+            <Route path="platform" element={<AdminPlatformPage />} />
           </Route>
 
           {/* 404 */}
