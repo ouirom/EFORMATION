@@ -26,6 +26,14 @@ import {
   Trophy,
 } from 'lucide-react'
 import { api } from '@/services/api'
+import { fileService } from '@/services/file.service'
+
+// <video>/<iframe> elements can't send an Authorization header, so the token
+// travels as a query param for this one streaming endpoint.
+function streamUrl(fileId: number) {
+  const token = localStorage.getItem('accessToken')
+  return `/api/v1/files/${fileId}/stream${token ? `?token=${encodeURIComponent(token)}` : ''}`
+}
 
 interface Content {
   id: number
@@ -252,6 +260,17 @@ export default function LessonPage() {
     }
   }
 
+  // A plain <a href="/api/v1/files/:id/download"> can't carry the access token
+  // (it lives in localStorage, not a cookie), so every such link 401'd. Route
+  // downloads through the authenticated blob helper instead.
+  const handleFileDownload = async (fileId: number, filename?: string) => {
+    try {
+      await fileService.downloadFile(fileId, filename)
+    } catch {
+      toast({ title: 'Erreur', description: 'Impossible de télécharger le fichier', variant: 'destructive' })
+    }
+  }
+
   if (lessonLoading) {
     return <PageLoading />
   }
@@ -305,20 +324,32 @@ export default function LessonPage() {
     c.type === 'youtube_link' ||
     c.type === 'video_mp4'
   )
-  const documentContent = lesson.contents?.find(c => 
-    c.type === 'pdf' || 
+  const documentContent = lesson.contents?.find(c =>
+    c.type === 'pdf' ||
     c.type === 'docx' ||
-    c.file_id || // Support for uploaded files with file_id
+    (c.file_id && c.type !== 'image' && !c.mime_type?.startsWith('image/')) || // Support for uploaded files with file_id
     (c.url && isDocumentUrl(c.url))
   )
-  const textContent = lesson.contents?.find(c => c.type === 'text' || c.body)
+  // A "link" lesson's content is also stored with type 'text' (no dedicated link
+  // type exists in the schema) but only carries a url, not a body — require a
+  // real body here so that row doesn't fall through to the empty text block below.
+  const textContent = lesson.contents?.find(c => c.body)
+  const imageContent = lesson.contents?.find(c =>
+    c.type === 'image' || c.mime_type?.startsWith('image/')
+  )
   const mainContent = lesson.contents?.[0]
 
-  // Determine what to display based on lesson type and content
-  const hasVideoContent = lesson.type === 'video' || videoContent
-  const hasDocumentContent = lesson.type === 'document' || documentContent
-  const hasTextContent = lesson.type === 'text' || textContent
-  const hasLinkContent = lesson.type === 'link' && mainContent?.url
+  // Determine what to display based on lesson type and content. lesson.type is only
+  // a fallback for lessons with no content rows at all — it must not be OR'd in
+  // unconditionally, or a lesson whose single content row is e.g. an image (but whose
+  // coarse lesson.type is still 'document') would show both the image AND an empty
+  // "no document" placeholder.
+  const hasAnyContent = (lesson.contents?.length || 0) > 0
+  const hasVideoContent = !!videoContent || (!hasAnyContent && lesson.type === 'video')
+  const hasDocumentContent = !!documentContent || (!hasAnyContent && lesson.type === 'document')
+  const hasTextContent = !!textContent || (!hasAnyContent && lesson.type === 'text')
+  const hasLinkContent = lesson.type === 'link' && !!mainContent?.url
+  const hasImageContent = !!imageContent
 
   // Format time spent
   const formatTimeSpent = (seconds: number) => {
@@ -452,13 +483,13 @@ export default function LessonPage() {
                           title={lesson.title}
                         />
                       )
-                    } else if (videoContent?.storage_key) {
+                    } else if (videoContent?.file_id) {
                       // Local video file
                       return (
                         <>
                           <video
                             ref={videoRef}
-                            src={`/api/v1/files/${videoContent.storage_key}`}
+                            src={streamUrl(videoContent.file_id)}
                             className="w-full h-full"
                             onPlay={() => setIsPlaying(true)}
                             onPause={() => setIsPlaying(false)}
@@ -522,14 +553,19 @@ export default function LessonPage() {
                         
                       </div>
                     </div>
-                    {(documentContent?.url || documentContent?.file_id) && (
-                      <a href={documentContent.file_id ? `/api/v1/files/${documentContent.file_id}/download` : documentContent.url} target="_blank" rel="noopener noreferrer">
+                    {documentContent?.file_id ? (
+                      <Button onClick={() => handleFileDownload(documentContent.file_id!, documentContent.filename)}>
+                        <Download className="h-4 w-4 mr-2" />
+                        Télécharger le document
+                      </Button>
+                    ) : documentContent?.url ? (
+                      <a href={documentContent.url} target="_blank" rel="noopener noreferrer">
                         <Button>
                           <Download className="h-4 w-4 mr-2" />
                           Télécharger le document
                         </Button>
                       </a>
-                    )}
+                    ) : null}
                   </div>
                   {documentContent?.url && (
                     <iframe
@@ -544,7 +580,7 @@ export default function LessonPage() {
                     <div className="space-y-4">
                       {documentContent.mime_type?.includes('pdf') ? (
                         <iframe
-                          src={`/api/v1/files/${documentContent.file_id}/stream`}
+                          src={streamUrl(documentContent.file_id!)}
                           className="w-full h-[600px] border rounded-lg"
                           title={lesson.title}
                         />
@@ -555,12 +591,10 @@ export default function LessonPage() {
                           <p className="text-sm text-muted-foreground mb-4">
                             Ce document ne peut pas être prévisualisé directement. Téléchargez-le pour le consulter.
                           </p>
-                          <a href={`/api/v1/files/${documentContent.file_id}/download`} target="_blank" rel="noopener noreferrer">
-                            <Button>
-                              <Download className="h-4 w-4 mr-2" />
-                              Télécharger le document
-                            </Button>
-                          </a>
+                          <Button onClick={() => handleFileDownload(documentContent.file_id!, documentContent.filename)}>
+                            <Download className="h-4 w-4 mr-2" />
+                            Télécharger le document
+                          </Button>
                         </div>
                       ) : documentContent.mime_type?.includes('spreadsheet') || documentContent.mime_type?.includes('excel') ? (
                         <div className="border rounded-lg p-6 text-center">
@@ -569,12 +603,10 @@ export default function LessonPage() {
                           <p className="text-sm text-muted-foreground mb-4">
                             Cette feuille de calcul ne peut pas être prévisualisée directement. Téléchargez-la pour la consulter.
                           </p>
-                          <a href={`/api/v1/files/${documentContent.file_id}/download`} target="_blank" rel="noopener noreferrer">
-                            <Button>
-                              <Download className="h-4 w-4 mr-2" />
-                              Télécharger le fichier
-                            </Button>
-                          </a>
+                          <Button onClick={() => handleFileDownload(documentContent.file_id!, documentContent.filename)}>
+                            <Download className="h-4 w-4 mr-2" />
+                            Télécharger le fichier
+                          </Button>
                         </div>
                       ) : documentContent.mime_type?.includes('presentation') ? (
                         <div className="border rounded-lg p-6 text-center">
@@ -583,12 +615,10 @@ export default function LessonPage() {
                           <p className="text-sm text-muted-foreground mb-4">
                             Cette présentation ne peut pas être prévisualisée directement. Téléchargez-la pour la consulter.
                           </p>
-                          <a href={`/api/v1/files/${documentContent.file_id}/download`} target="_blank" rel="noopener noreferrer">
-                            <Button>
-                              <Download className="h-4 w-4 mr-2" />
-                              Télécharger la présentation
-                            </Button>
-                          </a>
+                          <Button onClick={() => handleFileDownload(documentContent.file_id!, documentContent.filename)}>
+                            <Download className="h-4 w-4 mr-2" />
+                            Télécharger la présentation
+                          </Button>
                         </div>
                       ) : (
                         <div className="border rounded-lg p-6 text-center">
@@ -597,12 +627,10 @@ export default function LessonPage() {
                           <p className="text-sm text-muted-foreground mb-4">
                             Ce type de document ne peut pas être prévisualisé directement.
                           </p>
-                          <a href={`/api/v1/files/${documentContent.file_id}/download`} target="_blank" rel="noopener noreferrer">
-                            <Button>
-                              <Download className="h-4 w-4 mr-2" />
-                              Télécharger le document
-                            </Button>
-                          </a>
+                          <Button onClick={() => handleFileDownload(documentContent.file_id!, documentContent.filename)}>
+                            <Download className="h-4 w-4 mr-2" />
+                            Télécharger le document
+                          </Button>
                         </div>
                       )}
                     </div>
@@ -613,6 +641,26 @@ export default function LessonPage() {
                       <p>Aucun document disponible</p>
                     </div>
                   )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Image content */}
+            {hasImageContent && (
+              <Card>
+                <CardContent className="p-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <FileText className="h-8 w-8 text-muted-foreground" />
+                    <div>
+                      <h3 className="font-medium">{imageContent?.title || lesson.title}</h3>
+                      <p className="text-sm text-muted-foreground">Image</p>
+                    </div>
+                  </div>
+                  <img
+                    src={imageContent?.file_id ? streamUrl(imageContent.file_id) : imageContent?.url}
+                    alt={imageContent?.title || lesson.title}
+                    className="w-full rounded-lg border"
+                  />
                 </CardContent>
               </Card>
             )}
@@ -655,7 +703,7 @@ export default function LessonPage() {
             )}
 
             {/* Default: no content */}
-            {!hasVideoContent && !hasDocumentContent && !hasLinkContent && !hasTextContent && (
+            {!hasVideoContent && !hasDocumentContent && !hasLinkContent && !hasTextContent && !hasImageContent && (
               <Card>
                 <CardContent className="p-6 text-center text-muted-foreground">
                   <BookOpen className="h-12 w-12 mx-auto mb-4 opacity-50" />
@@ -766,19 +814,10 @@ export default function LessonPage() {
                               <span>{content.filename || `Fichier ${content.id}`}</span>
                             </div>
                             {content.file_id ? (
-                              <a href={`/api/v1/files/${content.file_id}/download`} target="_blank" rel="noopener noreferrer">
-                                <Button size="sm" variant="outline">
-                                  <Download className="h-4 w-4 mr-2" />
-                                  Télécharger
-                                </Button>
-                              </a>
-                            ) : content.storage_key ? (
-                              <a href={`/api/v1/files/${content.storage_key}`} download>
-                                <Button size="sm" variant="outline">
-                                  <Download className="h-4 w-4 mr-2" />
-                                  Télécharger
-                                </Button>
-                              </a>
+                              <Button size="sm" variant="outline" onClick={() => handleFileDownload(content.file_id!, content.filename)}>
+                                <Download className="h-4 w-4 mr-2" />
+                                Télécharger
+                              </Button>
                             ) : null}
                           </div>
                         ))}
