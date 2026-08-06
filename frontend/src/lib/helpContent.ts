@@ -202,6 +202,15 @@ export const helpTopics: HelpTopic[] = [
       'Les formats et la taille maximale acceptés sont indiqués lors de l\'import.',
     ],
   },
+  {
+    pattern: '/my-team',
+    title: 'Mon équipe',
+    tips: [
+      'Suivez la progression des collaborateurs qui vous sont directement rattachés (vous ne voyez que les niveaux hiérarchiques inférieurs au vôtre, jamais vos pairs ou vos supérieurs).',
+      'La carte "Formations obligatoires en retard" additionne les attributions obligatoires dont l\'échéance est dépassée pour votre équipe.',
+      'Activez "Rapport périodique" pour recevoir automatiquement, dans l\'application et/ou par email, un résumé de la progression de votre équipe (fréquence quotidienne ou hebdomadaire, jour au choix).',
+    ],
+  },
 
   // --- Admin ---
   {
@@ -228,7 +237,8 @@ export const helpTopics: HelpTopic[] = [
       'Créez, modifiez ou désactivez des comptes utilisateurs.',
       'Attribuez les rôles (apprenant, manager, formateur, admin...) et les rattachements organisationnels.',
       'Utilisez la recherche pour retrouver rapidement un utilisateur.',
-      'Le bouton "Importer" crée plusieurs comptes en une fois depuis un fichier CSV (colonnes : email, displayName, role, et les codes d\'entreprise/direction/service en option).',
+      'Le bouton "Importer" crée plusieurs comptes en une fois depuis un fichier CSV ou Excel (colonnes : email, displayName, role, et les codes d\'entreprise/direction/service en option). Pour un modèle Excel pré-rempli, utilisez la page "Import de données".',
+      'Un director/manager ne voit et ne gère que les utilisateurs de niveau hiérarchique inférieur au sien, rattachés à sa direction/service — jamais ses pairs ou ses supérieurs.',
     ],
   },
   {
@@ -315,7 +325,28 @@ export const helpTopics: HelpTopic[] = [
     title: 'Organisation',
     tips: [
       'Gérez la structure de votre organisation : entreprises, directions et services.',
-      'Ces rattachements servent à cibler les attributions de formations.',
+      'Ces rattachements servent à cibler les attributions de formations et déterminent aussi ce que chaque manager/director peut voir dans "Mon équipe".',
+      'Pour créer toute la hiérarchie en une fois depuis un fichier Excel, utilisez la page "Import de données".',
+    ],
+  },
+  {
+    pattern: '/admin/import',
+    title: 'Import de données',
+    tips: [
+      'Téléchargez le modèle Excel de chaque section ("Télécharger le modèle") avant de le remplir : hiérarchie d\'organisation, utilisateurs, cours, leçons ou quiz.',
+      'Renseignez le modèle puis importez-le avec "Importer" ; le résultat ligne par ligne (créé/ignoré/erreur) s\'affiche juste en dessous.',
+      'Les imports sont rejouables sans risque : un élément déjà existant (même titre, même code) est automatiquement ignoré plutôt que dupliqué.',
+      'L\'import des leçons nécessite que le cours existe déjà (importez-le d\'abord) ; l\'import des quiz nécessite que le cours ET la leçon existent déjà.',
+      'Les sections visibles dépendent de votre rôle : la hiérarchie d\'organisation est réservée aux admins, les utilisateurs aux admins/directors, les cours/leçons/quiz aux admins/directors/managers.',
+    ],
+  },
+  {
+    pattern: '/admin/platform',
+    title: 'Plateforme',
+    tips: [
+      'Réservé au super admin : gérez toutes les organisations (tenants) de la plateforme, tous établissements confondus.',
+      '"Nouvelle organisation" crée un nouveau tenant, isolé des autres (utilisateurs, cours et données propres).',
+      '"Basculer vers" change votre contexte actif pour agir au sein d\'une organisation donnée, comme si vous étiez admin de ce tenant.',
     ],
   },
   {
