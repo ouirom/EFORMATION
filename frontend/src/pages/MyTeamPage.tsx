@@ -1,11 +1,33 @@
-import { useQuery } from '@tanstack/react-query'
-import { Card, CardContent } from '@/components/ui/card'
+import { useEffect, useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { PageLoading } from '@/components/ui/loading'
-import { AlertTriangle, Users } from 'lucide-react'
+import { useToast } from '@/components/ui/use-toast'
+import { AlertTriangle, Users, Mail, Bell } from 'lucide-react'
 import { api } from '@/services/api'
 import { getInitials, getRoleColor, getRoleLabel, formatRelativeTime } from '@/lib/utils'
+
+interface ReportSettings {
+  isEnabled: boolean
+  frequency: 'daily' | 'weekly'
+  weekday: number | null
+  channelEmail: boolean
+  channelInApp: boolean
+  lastSentAt: string | null
+}
+
+const WEEKDAYS = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi']
 
 interface TeamMember {
   id: number
@@ -21,11 +43,41 @@ interface TeamMember {
 }
 
 export default function MyTeamPage() {
+  const { toast } = useToast()
+  const queryClient = useQueryClient()
+
   const { data: team = [], isLoading } = useQuery<TeamMember[]>({
     queryKey: ['my-team'],
     queryFn: async () => {
       const response = await api.get('/analytics/my-team')
       return response.data.data || []
+    },
+  })
+
+  const { data: settings, isLoading: settingsLoading } = useQuery<ReportSettings>({
+    queryKey: ['my-team-report-settings'],
+    queryFn: async () => {
+      const response = await api.get('/analytics/my-team/report-settings')
+      return response.data.data
+    },
+  })
+
+  const [form, setForm] = useState<ReportSettings>({
+    isEnabled: false, frequency: 'weekly', weekday: 1, channelEmail: true, channelInApp: true, lastSentAt: null,
+  })
+
+  useEffect(() => {
+    if (settings) setForm(settings)
+  }, [settings])
+
+  const saveMutation = useMutation({
+    mutationFn: (data: ReportSettings) => api.put('/analytics/my-team/report-settings', data),
+    onSuccess: () => {
+      toast({ title: 'Préférences enregistrées', description: 'Vos réglages de rapport ont été mis à jour.' })
+      queryClient.invalidateQueries({ queryKey: ['my-team-report-settings'] })
+    },
+    onError: () => {
+      toast({ title: 'Erreur', description: "Impossible d'enregistrer vos préférences", variant: 'destructive' })
     },
   })
 
@@ -43,6 +95,107 @@ export default function MyTeamPage() {
           Progression et activité des collaborateurs qui vous sont rattachés
         </p>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Rapport périodique</CardTitle>
+          <CardDescription>
+            Recevez un résumé automatique de la progression de votre équipe, dans l'interface et/ou par email
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {settingsLoading ? (
+            <p className="text-sm text-muted-foreground">Chargement...</p>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="reportEnabled"
+                  checked={form.isEnabled}
+                  onChange={(e) => setForm({ ...form, isEnabled: e.target.checked })}
+                  className="h-4 w-4 rounded border-gray-300"
+                />
+                <Label htmlFor="reportEnabled">Recevoir un rapport automatique</Label>
+              </div>
+
+              {form.isEnabled && (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-md">
+                    <div className="space-y-2">
+                      <Label>Fréquence</Label>
+                      <Select
+                        value={form.frequency}
+                        onValueChange={(value: string) => setForm({ ...form, frequency: value as 'daily' | 'weekly' })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="daily">Quotidien</SelectItem>
+                          <SelectItem value="weekly">Hebdomadaire</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {form.frequency === 'weekly' && (
+                      <div className="space-y-2">
+                        <Label>Jour</Label>
+                        <Select
+                          value={String(form.weekday ?? 1)}
+                          onValueChange={(value: string) => setForm({ ...form, weekday: parseInt(value, 10) })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {WEEKDAYS.map((day, i) => (
+                              <SelectItem key={i} value={String(i)}>{day}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Canaux</Label>
+                    <div className="flex flex-col gap-2">
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={form.channelInApp}
+                          onChange={(e) => setForm({ ...form, channelInApp: e.target.checked })}
+                          className="h-4 w-4 rounded border-gray-300"
+                        />
+                        <Bell className="h-4 w-4 text-muted-foreground" /> Notification dans l'application
+                      </label>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={form.channelEmail}
+                          onChange={(e) => setForm({ ...form, channelEmail: e.target.checked })}
+                          className="h-4 w-4 rounded border-gray-300"
+                        />
+                        <Mail className="h-4 w-4 text-muted-foreground" /> Email
+                      </label>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {settings?.lastSentAt && (
+                <p className="text-xs text-muted-foreground">
+                  Dernier rapport envoyé {formatRelativeTime(settings.lastSentAt)}
+                </p>
+              )}
+
+              <Button onClick={() => saveMutation.mutate(form)} disabled={saveMutation.isPending}>
+                {saveMutation.isPending ? 'Enregistrement...' : 'Enregistrer'}
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>

@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import { ReminderService } from '../services/reminder.service';
 import { CertificateService } from '../services/certificate.service';
+import { TeamReportService } from '../services/team-report.service';
 import { logger } from '../utils/logger';
 
 /**
@@ -25,5 +26,14 @@ export function startScheduledJobs(): void {
     }
   });
 
-  logger.info('Scheduled jobs registered (assignment reminders, certificate expiry)');
+  // Daily at 08:30 server time: team-progress digest for n+1s who opted in.
+  cron.schedule('30 8 * * *', async () => {
+    try {
+      await TeamReportService.runDailyDigests();
+    } catch (error) {
+      logger.error('Team report digest job failed', { error });
+    }
+  });
+
+  logger.info('Scheduled jobs registered (assignment reminders, certificate expiry, team reports)');
 }
