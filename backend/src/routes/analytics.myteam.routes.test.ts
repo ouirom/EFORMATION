@@ -89,6 +89,36 @@ describe('GET /analytics/my-team', () => {
     expect(response.status).toBe(200);
   });
 
+  it("scopes a supervisor to only their explicitly assigned agents (supervisor_id), not the whole service", async () => {
+    const token = tokenFor({ id: 17, tenantId: 10, email: 'supervisor@test.com', role: 'supervisor', serviceId: 5 });
+
+    mockedQuery.mockImplementation((query: string, params: any) => {
+      if (query.includes('FROM users WHERE id = @id')) {
+        return Promise.resolve([mockAuthLookup({ id: 17, email: 'supervisor@test.com', role: 'supervisor' })]);
+      }
+      if (query.includes('FROM users u') && query.includes('LEFT JOIN')) {
+        expect(query).toContain('u.supervisor_id = @requesterId');
+        expect(query).not.toContain('u.service_id = @serviceId');
+        expect(params.requesterId).toBe(17);
+        return Promise.resolve([
+          {
+            id: 3, display_name: 'Agent Assigné', email: 'agent@test.com', role: 'agent', avatar_url: null,
+            enrolled_count: 1, completed_count: 1, avg_progress: 100, last_activity: null, overdue_count: 0,
+          },
+        ]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const response = await request(makeApp())
+      .get('/analytics/my-team')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toHaveLength(1);
+    expect(response.body.data[0].displayName).toBe('Agent Assigné');
+  });
+
   it('returns an empty team for a director with no direction assigned', async () => {
     const token = tokenFor({ id: 1, tenantId: 10, email: 'director@test.com', role: 'director' });
 

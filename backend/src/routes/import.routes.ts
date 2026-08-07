@@ -212,15 +212,17 @@ router.get('/users/template', authenticate, authorize('admin', 'director'), asyn
         { header: 'enterpriseCode' },
         { header: 'directionCode' },
         { header: 'serviceCode' },
+        { header: 'supervisorEmail' },
       ],
       [
-        ['jean.dupont@entreprise.com', 'Jean Dupont', 'agent', 'DEMO', 'TECH', 'ENG'],
-        ['marie.martin@entreprise.com', 'Marie Martin', 'supervisor', 'DEMO', 'TECH', 'ENG'],
+        ['marie.martin@entreprise.com', 'Marie Martin', 'supervisor', 'DEMO', 'TECH', 'ENG', ''],
+        ['jean.dupont@entreprise.com', 'Jean Dupont', 'agent', 'DEMO', 'TECH', 'ENG', 'marie.martin@entreprise.com'],
       ],
       [
         'email et displayName sont obligatoires.',
         "role doit être l'une des valeurs : agent, supervisor, manager, director, admin, super_admin (les deux derniers requièrent des droits suffisants).",
         'Les colonnes *Code sont optionnelles et doivent correspondre à un code existant (voir le modèle Organisation) ; laissez vide si non applicable.',
+        "supervisorEmail (optionnel) attribue un superviseur direct à cet utilisateur — l'email doit correspondre à un utilisateur existant (ou déjà présent plus haut dans ce même fichier) ayant un rôle strictement supérieur.",
         'Un mot de passe temporaire est généré automatiquement pour chaque utilisateur importé.',
         "Les emails déjà enregistrés sont ignorés (marqués 'skipped'), l'import est donc rejouable sans risque de doublons.",
       ]

@@ -68,6 +68,7 @@ export default function AdminUsersPage() {
     enterpriseId: '',
     directionId: '',
     serviceId: '',
+    supervisorId: '',
   })
   const [editUser, setEditUser] = useState({
     displayName: '',
@@ -75,6 +76,7 @@ export default function AdminUsersPage() {
     enterpriseId: '',
     directionId: '',
     serviceId: '',
+    supervisorId: '',
     isActive: true,
   })
 
@@ -99,13 +101,18 @@ export default function AdminUsersPage() {
     queryFn: () => api.organizations.getServices(),
   })
 
+  const { data: supervisorOptions = [] } = useQuery({
+    queryKey: ['admin-users-supervisors'],
+    queryFn: () => api.users.list({ role: 'supervisor', limit: 100 }).then((r: any) => r.data || []),
+  })
+
   const createMutation = useMutation({
     mutationFn: (userData: any) => api.users.create(userData),
     onSuccess: () => {
       toast({ title: 'Utilisateur créé', description: 'Le compte a été créé avec succès' })
       queryClient.invalidateQueries({ queryKey: ['admin-users'] })
       setIsAddDialogOpen(false)
-      setNewUser({ firstName: '', lastName: '', email: '', password: '', role: '', enterpriseId: '', directionId: '', serviceId: '' })
+      setNewUser({ firstName: '', lastName: '', email: '', password: '', role: '', enterpriseId: '', directionId: '', serviceId: '', supervisorId: '' })
     },
     onError: (error: any) => {
       toast({ 
@@ -186,6 +193,7 @@ export default function AdminUsersPage() {
       enterpriseId: user.enterprise_id ? String(user.enterprise_id) : '',
       directionId: user.direction_id ? String(user.direction_id) : '',
       serviceId: user.service_id ? String(user.service_id) : '',
+      supervisorId: user.supervisor_id ? String(user.supervisor_id) : '',
       isActive: user.is_active !== false,
     })
     setIsEditDialogOpen(true)
@@ -201,6 +209,7 @@ export default function AdminUsersPage() {
         enterpriseId: editUser.enterpriseId ? parseInt(editUser.enterpriseId) : null,
         directionId: editUser.directionId ? parseInt(editUser.directionId) : null,
         serviceId: editUser.serviceId ? parseInt(editUser.serviceId) : null,
+        supervisorId: editUser.supervisorId ? parseInt(editUser.supervisorId) : null,
         isActive: editUser.isActive,
       },
     })
@@ -230,6 +239,7 @@ export default function AdminUsersPage() {
       enterpriseId: newUser.enterpriseId ? parseInt(newUser.enterpriseId) : undefined,
       directionId: newUser.directionId ? parseInt(newUser.directionId) : undefined,
       serviceId: newUser.serviceId ? parseInt(newUser.serviceId) : undefined,
+      supervisorId: newUser.supervisorId ? parseInt(newUser.supervisorId) : undefined,
     })
   }
 
@@ -430,6 +440,25 @@ export default function AdminUsersPage() {
                     </SelectContent>
                   </Select>
                 </div>
+                {newUser.role === 'agent' && (
+                  <div className="space-y-2">
+                    <Label htmlFor="supervisor">Superviseur direct</Label>
+                    <Select
+                      value={newUser.supervisorId || '__none__'}
+                      onValueChange={(value: string) => setNewUser({ ...newUser, supervisorId: value === '__none__' ? '' : value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Aucun" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">Aucun</SelectItem>
+                        {supervisorOptions.map((s: any) => (
+                          <SelectItem key={s.id} value={String(s.id)}>{s.display_name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setIsAddDialogOpen(false)} disabled={createMutation.isPending}>
@@ -495,6 +524,7 @@ export default function AdminUsersPage() {
                   <th className="text-left p-4 font-medium">Entreprise</th>
                   <th className="text-left p-4 font-medium">Direction</th>
                   <th className="text-left p-4 font-medium">Service</th>
+                  <th className="text-left p-4 font-medium">Superviseur</th>
                   <th className="text-left p-4 font-medium">Rôle</th>
                   <th className="text-left p-4 font-medium">Statut</th>
                   <th className="text-left p-4 font-medium">Dernière connexion</th>
@@ -528,6 +558,9 @@ export default function AdminUsersPage() {
                     </td>
                     <td className="p-4">
                       <span className="text-sm">{user.service_name || '-'}</span>
+                    </td>
+                    <td className="p-4">
+                      <span className="text-sm">{user.supervisor_name || '-'}</span>
                     </td>
                     <td className="p-4">
                       <Badge variant="outline">
@@ -671,6 +704,25 @@ export default function AdminUsersPage() {
                 </SelectContent>
               </Select>
             </div>
+            {editUser.role === 'agent' && (
+              <div className="space-y-2">
+                <Label htmlFor="editSupervisor">Superviseur direct</Label>
+                <Select
+                  value={editUser.supervisorId || '__none__'}
+                  onValueChange={(value: string) => setEditUser({ ...editUser, supervisorId: value === '__none__' ? '' : value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Aucun" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Aucun</SelectItem>
+                    {supervisorOptions.map((s: any) => (
+                      <SelectItem key={s.id} value={String(s.id)}>{s.display_name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="flex items-center space-x-2">
               <input
                 type="checkbox"
@@ -699,8 +751,8 @@ export default function AdminUsersPage() {
           <DialogHeader>
             <DialogTitle>Importer des utilisateurs (CSV)</DialogTitle>
             <DialogDescription>
-              Colonnes attendues : email, displayName, role, enterpriseCode, directionCode, serviceCode
-              (les colonnes *Code sont facultatives). Un mot de passe temporaire est généré et envoyé par email.
+              Colonnes attendues : email, displayName, role, enterpriseCode, directionCode, serviceCode, supervisorEmail
+              (toutes facultatives sauf email/displayName/role). Un mot de passe temporaire est généré et envoyé par email.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">

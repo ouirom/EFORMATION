@@ -23,6 +23,35 @@ const validate = (req: any) => {
 };
 
 /**
+ * Validates a proposed supervisor_id: must be an active user in the same tenant
+ * with a strictly higher role level than the user being assigned to them —
+ * otherwise an agent could end up "supervised" by a peer or another agent.
+ */
+async function resolveSupervisorId(
+  tenantId: number,
+  supervisorId: number | undefined | null,
+  targetRole: string
+): Promise<number | null> {
+  if (supervisorId === undefined || supervisorId === null) return null;
+
+  const supervisors = await DatabaseService.query<{ id: number; role: string }>(
+    'SELECT id, role FROM users WHERE id = @supervisorId AND tenant_id = @tenantId AND deleted_at IS NULL AND is_active = 1',
+    { supervisorId, tenantId }
+  );
+  if (supervisors.length === 0) {
+    throw BadRequestError('Supervisor not found');
+  }
+
+  const supervisorLevel = ROLE_HIERARCHY[supervisors[0].role] || 0;
+  const targetLevel = ROLE_HIERARCHY[targetRole] || 0;
+  if (supervisorLevel <= targetLevel) {
+    throw BadRequestError('The supervisor must have a higher role level than the assigned user');
+  }
+
+  return supervisorId;
+}
+
+/**
  * @route POST /api/v1/users
  * @desc Create a new user (admin only)
  */
@@ -38,6 +67,7 @@ router.post(
     body('enterpriseId').optional().isInt(),
     body('directionId').optional().isInt(),
     body('serviceId').optional().isInt(),
+    body('supervisorId').optional({ nullable: true }).isInt(),
   ],
   async (req: AuthRequest, res, next) => {
     try {
@@ -62,6 +92,8 @@ router.post(
         throw ConflictError('Email already registered');
       }
 
+      const supervisorId = await resolveSupervisorId(req.user!.tenantId, req.body.supervisorId, req.body.role);
+
       // Generate username from email
       const username = req.body.email.split('@')[0] + '_' + Date.now().toString(36);
 
@@ -72,12 +104,12 @@ router.post(
       const result = await DatabaseService.query<{ id: number }>(
         `INSERT INTO users (
           tenant_id, email, username, password_hash, display_name, role,
-          enterprise_id, direction_id, service_id, is_active
+          enterprise_id, direction_id, service_id, supervisor_id, is_active
         )
         OUTPUT INSERTED.id
         VALUES (
           @tenantId, @email, @username, @passwordHash, @displayName, @role,
-          @enterpriseId, @directionId, @serviceId, 1
+          @enterpriseId, @directionId, @serviceId, @supervisorId, 1
         )`,
         {
           tenantId: req.user!.tenantId,
@@ -89,6 +121,7 @@ router.post(
           enterpriseId: req.body.enterpriseId || null,
           directionId: req.body.directionId || null,
           serviceId: req.body.serviceId || null,
+          supervisorId,
         }
       );
 
@@ -102,12 +135,14 @@ router.post(
       // Get created user
       const users = await DatabaseService.query<any>(
         `SELECT u.id, u.email, u.username, u.display_name, u.avatar_url, u.role, u.is_active,
-                u.enterprise_id, u.direction_id, u.service_id, u.created_at,
-                e.name as enterprise_name, d.name as direction_name, s.name as service_name
+                u.enterprise_id, u.direction_id, u.service_id, u.supervisor_id, u.created_at,
+                e.name as enterprise_name, d.name as direction_name, s.name as service_name,
+                sup.display_name as supervisor_name
          FROM users u
          LEFT JOIN enterprises e ON u.enterprise_id = e.id
          LEFT JOIN directions d ON u.direction_id = d.id
          LEFT JOIN services s ON u.service_id = s.id
+         LEFT JOIN users sup ON u.supervisor_id = sup.id
          WHERE u.id = @userId`,
         { userId }
       );
@@ -134,9 +169,11 @@ const MAX_IMPORT_ROWS = 500;
 /**
  * @route POST /api/v1/users/import
  * @desc Bulk-create users from a CSV or Excel (.xlsx) file (columns: email, displayName,
- *       role, enterpriseCode, directionCode, serviceCode — the *Code columns are optional
- *       and matched against the org units' `code` field for this tenant). A downloadable
- *       .xlsx template is available at GET /import/users/template.
+ *       role, enterpriseCode, directionCode, serviceCode, supervisorEmail — all optional
+ *       except email/displayName. supervisorEmail is matched against an already-existing
+ *       user's email in this tenant (including one created earlier in the same file, if
+ *       their row came first) with a strictly higher role level. A downloadable .xlsx
+ *       template is available at GET /import/users/template.
  */
 router.post(
   '/import',
@@ -178,11 +215,12 @@ router.post(
       const directionByCode = new Map(directions.map((d) => [d.code, d.id]));
       const serviceByCode = new Map(services.map((s) => [s.code, s.id]));
 
-      const existingEmails = await DatabaseService.query<{ email: string }>(
-        'SELECT email FROM users WHERE tenant_id = @tenantId',
+      const existingUsersRows = await DatabaseService.query<{ id: number; email: string; role: string }>(
+        'SELECT id, email, role FROM users WHERE tenant_id = @tenantId',
         { tenantId }
       );
-      const knownEmails = new Set(existingEmails.map((u) => u.email.toLowerCase()));
+      const knownEmails = new Set(existingUsersRows.map((u) => u.email.toLowerCase()));
+      const userByEmail = new Map(existingUsersRows.map((u) => [u.email.toLowerCase(), u]));
 
       const results: ImportRowResult[] = [];
       let created = 0;
@@ -223,6 +261,20 @@ router.post(
         const directionId = row.directionCode ? directionByCode.get(row.directionCode.trim()) ?? null : null;
         const serviceId = row.serviceCode ? serviceByCode.get(row.serviceCode.trim()) ?? null : null;
 
+        let supervisorId: number | null = null;
+        if (row.supervisorEmail) {
+          const supervisor = userByEmail.get(row.supervisorEmail.trim().toLowerCase());
+          if (!supervisor) {
+            results.push({ line, email, status: 'error', message: `Supervisor "${row.supervisorEmail}" not found` });
+            continue;
+          }
+          if ((ROLE_HIERARCHY[supervisor.role] || 0) <= (ROLE_HIERARCHY[role] || 0)) {
+            results.push({ line, email, status: 'error', message: 'The supervisor must have a higher role level than this user' });
+            continue;
+          }
+          supervisorId = supervisor.id;
+        }
+
         try {
           const tempPassword = crypto.randomBytes(9).toString('base64url');
           const passwordHash = await bcrypt.hash(tempPassword, config.bcryptRounds);
@@ -231,17 +283,18 @@ router.post(
           const result = await DatabaseService.query<{ id: number }>(
             `INSERT INTO users (
               tenant_id, email, username, password_hash, display_name, role,
-              enterprise_id, direction_id, service_id, is_active
+              enterprise_id, direction_id, service_id, supervisor_id, is_active
             )
             OUTPUT INSERTED.id
             VALUES (
               @tenantId, @email, @username, @passwordHash, @displayName, @role,
-              @enterpriseId, @directionId, @serviceId, 1
+              @enterpriseId, @directionId, @serviceId, @supervisorId, 1
             )`,
-            { tenantId, email, username, passwordHash, displayName, role, enterpriseId, directionId, serviceId }
+            { tenantId, email, username, passwordHash, displayName, role, enterpriseId, directionId, serviceId, supervisorId }
           );
 
           knownEmails.add(email);
+          userByEmail.set(email, { id: result[0].id, email, role });
           created++;
           results.push({ line, email, status: 'created' });
 
@@ -296,6 +349,7 @@ router.get('/', authenticate, authorize('admin', 'director', 'manager'), async (
     const role = req.query.role as string;
     const directionId = req.query.directionId as string;
     const serviceId = req.query.serviceId as string;
+    const supervisorId = req.query.supervisorId as string;
 
     let whereClause = 'WHERE u.tenant_id = @tenantId AND u.deleted_at IS NULL';
     const params: Record<string, any> = { tenantId: req.user!.tenantId, limit, offset };
@@ -315,6 +369,10 @@ router.get('/', authenticate, authorize('admin', 'director', 'manager'), async (
     if (serviceId) {
       whereClause += ' AND u.service_id = @serviceId';
       params.serviceId = parseInt(serviceId, 10);
+    }
+    if (supervisorId) {
+      whereClause += ' AND u.supervisor_id = @supervisorId';
+      params.supervisorId = parseInt(supervisorId, 10);
     }
 
     // Apply scope restrictions for non-admins: directors/managers only ever see
@@ -340,12 +398,14 @@ router.get('/', authenticate, authorize('admin', 'director', 'manager'), async (
       ),
       DatabaseService.query<any>(
         `SELECT u.id, u.email, u.username, u.display_name, u.avatar_url, u.role, u.is_active,
-                u.enterprise_id, u.direction_id, u.service_id, u.created_at,
-                e.name as enterprise_name, d.name as direction_name, s.name as service_name
+                u.enterprise_id, u.direction_id, u.service_id, u.supervisor_id, u.created_at,
+                e.name as enterprise_name, d.name as direction_name, s.name as service_name,
+                sup.display_name as supervisor_name
          FROM users u
          LEFT JOIN enterprises e ON u.enterprise_id = e.id
          LEFT JOIN directions d ON u.direction_id = d.id
          LEFT JOIN services s ON u.service_id = s.id
+         LEFT JOIN users sup ON u.supervisor_id = sup.id
          ${whereClause}
          ORDER BY u.created_at DESC
          OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY`,
@@ -379,12 +439,14 @@ router.get('/:id', authenticate, async (req: AuthRequest, res, next) => {
 
     const users = await DatabaseService.query<any>(
       `SELECT u.id, u.email, u.username, u.display_name, u.avatar_url, u.role, u.is_active,
-              u.enterprise_id, u.direction_id, u.service_id, u.created_at, u.updated_at,
-              e.name as enterprise_name, d.name as direction_name, s.name as service_name
+              u.enterprise_id, u.direction_id, u.service_id, u.supervisor_id, u.created_at, u.updated_at,
+              e.name as enterprise_name, d.name as direction_name, s.name as service_name,
+              sup.display_name as supervisor_name
        FROM users u
        LEFT JOIN enterprises e ON u.enterprise_id = e.id
        LEFT JOIN directions d ON u.direction_id = d.id
        LEFT JOIN services s ON u.service_id = s.id
+       LEFT JOIN users sup ON u.supervisor_id = sup.id
        WHERE u.id = @userId AND u.tenant_id = @tenantId AND u.deleted_at IS NULL`,
       { userId, tenantId: requester.tenantId }
     );
@@ -397,16 +459,17 @@ router.get('/:id', authenticate, async (req: AuthRequest, res, next) => {
 
     // A user may always view their own record. Admins/super_admins see everyone.
     // Everyone else may only view a strict subordinate (lower role level) within
-    // their own org unit — never a peer, a superior, or someone outside their scope.
+    // their own scope — a director's whole direction, a manager's whole service,
+    // but a supervisor only the agents explicitly assigned to them (supervisor_id),
+    // not every agent who happens to share their service.
     if (userId !== requester.id && requester.role !== 'admin' && requester.role !== 'super_admin') {
       const requesterLevel = ROLE_HIERARCHY[requester.role] || 0;
       const targetLevel = ROLE_HIERARCHY[target.role] || 0;
       const inScope =
         targetLevel < requesterLevel &&
         ((requester.role === 'director' && requester.directionId && target.direction_id === requester.directionId) ||
-          ((requester.role === 'manager' || requester.role === 'supervisor') &&
-            requester.serviceId &&
-            target.service_id === requester.serviceId));
+          (requester.role === 'manager' && requester.serviceId && target.service_id === requester.serviceId) ||
+          (requester.role === 'supervisor' && target.supervisor_id === requester.id));
 
       if (!inScope) {
         throw ForbiddenError('Insufficient permissions to view this user');
@@ -437,6 +500,7 @@ router.put(
     body('enterpriseId').optional().isInt(),
     body('directionId').optional().isInt(),
     body('serviceId').optional().isInt(),
+    body('supervisorId').optional({ nullable: true }).isInt(),
   ],
   async (req: AuthRequest, res, next) => {
     try {
@@ -488,6 +552,22 @@ router.put(
         updateFields.push('service_id = @serviceId');
         params.serviceId = req.body.serviceId;
       }
+      // Assigning a direct supervisor is an organizational decision, not personal
+      // profile data — only admins/directors may set it (never the user themselves).
+      if (req.body.supervisorId !== undefined && (isAdminLike || req.user!.role === 'director')) {
+        let targetRoleForCheck = req.body.role && isAdminLike ? req.body.role : null;
+        if (!targetRoleForCheck) {
+          const existing = await DatabaseService.query<{ role: string }>(
+            'SELECT role FROM users WHERE id = @userId AND tenant_id = @tenantId',
+            { userId, tenantId: req.user!.tenantId }
+          );
+          if (existing.length === 0) throw NotFoundError('User');
+          targetRoleForCheck = existing[0].role;
+        }
+        const supervisorId = await resolveSupervisorId(req.user!.tenantId, req.body.supervisorId, targetRoleForCheck);
+        updateFields.push('supervisor_id = @supervisorId');
+        params.supervisorId = supervisorId;
+      }
 
       if (updateFields.length > 0) {
         await DatabaseService.execute(
@@ -499,7 +579,7 @@ router.put(
         // Only the fields actually changed, not the whole body — keeps the trail readable
         // and avoids ever writing a password/token into a log by accident.
         const changedFields = Object.keys(req.body).filter((k) =>
-          ['displayName', 'role', 'isActive', 'enterpriseId', 'directionId', 'serviceId', 'avatarUrl'].includes(k)
+          ['displayName', 'role', 'isActive', 'enterpriseId', 'directionId', 'serviceId', 'avatarUrl', 'supervisorId'].includes(k)
         );
         await AuditService.log(req.user!.tenantId, req.user!.id, 'USER_UPDATED', 'users', userId, {
           fields: changedFields,
@@ -507,9 +587,12 @@ router.put(
       }
 
       const users = await DatabaseService.query<any>(
-        `SELECT id, email, username, display_name, avatar_url, role, is_active,
-                enterprise_id, direction_id, service_id
-         FROM users WHERE id = @userId AND tenant_id = @tenantId`,
+        `SELECT u.id, u.email, u.username, u.display_name, u.avatar_url, u.role, u.is_active,
+                u.enterprise_id, u.direction_id, u.service_id, u.supervisor_id,
+                sup.display_name as supervisor_name
+         FROM users u
+         LEFT JOIN users sup ON u.supervisor_id = sup.id
+         WHERE u.id = @userId AND u.tenant_id = @tenantId`,
         { userId, tenantId: req.user!.tenantId }
       );
 

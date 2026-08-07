@@ -9,6 +9,7 @@ import { config } from '../config';
 jest.mock('../services/database.service');
 
 const mockedQuery = DatabaseService.query as jest.Mock;
+const mockedExecute = DatabaseService.execute as jest.Mock;
 
 function makeApp() {
   const app = express();
@@ -121,5 +122,157 @@ describe('GET /users/:id scoping', () => {
 
     const response = await request(makeApp()).get('/users/44').set('Authorization', `Bearer ${adminToken}`);
     expect(response.status).toBe(200);
+  });
+
+  it('allows a supervisor to view an agent explicitly assigned to them', async () => {
+    const supervisorToken = tokenFor({ id: 17, tenantId: 10, email: 'supervisor@test.com', role: 'supervisor', serviceId: 5 });
+    mockedQuery.mockImplementation((query: string) => {
+      if (query.includes('FROM users WHERE id = @id')) {
+        return Promise.resolve([mockAuthLookup({ id: 17, email: 'supervisor@test.com', role: 'supervisor', direction_id: null, service_id: 5 })]);
+      }
+      if (query.includes('WHERE u.id = @userId')) {
+        return Promise.resolve([{ id: 3, email: 'agent@test.com', role: 'agent', direction_id: null, service_id: 5, supervisor_id: 17, tenant_id: 10 }]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const response = await request(makeApp()).get('/users/3').set('Authorization', `Bearer ${supervisorToken}`);
+    expect(response.status).toBe(200);
+  });
+
+  it('blocks a supervisor from viewing an agent in the same service who is not assigned to them', async () => {
+    const supervisorToken = tokenFor({ id: 17, tenantId: 10, email: 'supervisor@test.com', role: 'supervisor', serviceId: 5 });
+    mockedQuery.mockImplementation((query: string) => {
+      if (query.includes('FROM users WHERE id = @id')) {
+        return Promise.resolve([mockAuthLookup({ id: 17, email: 'supervisor@test.com', role: 'supervisor', direction_id: null, service_id: 5 })]);
+      }
+      if (query.includes('WHERE u.id = @userId')) {
+        // Same service, but assigned to a different supervisor (id 99)
+        return Promise.resolve([{ id: 3, email: 'agent@test.com', role: 'agent', direction_id: null, service_id: 5, supervisor_id: 99, tenant_id: 10 }]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const response = await request(makeApp()).get('/users/3').set('Authorization', `Bearer ${supervisorToken}`);
+    expect(response.status).toBe(403);
+  });
+});
+
+describe('POST /users supervisorId assignment', () => {
+  const adminToken = tokenFor({ id: 2, tenantId: 10, email: 'admin@test.com', role: 'admin' });
+
+  it('creates a user with a valid supervisor (higher role level)', async () => {
+    mockedExecute.mockResolvedValue({ rowsAffected: 1 });
+    mockedQuery.mockImplementation((query: string) => {
+      if (query.includes('FROM users WHERE id = @id')) {
+        return Promise.resolve([mockAuthLookup({ id: 2, email: 'admin@test.com', role: 'admin', direction_id: null })]);
+      }
+      if (query.includes('SELECT id FROM users WHERE email')) return Promise.resolve([]);
+      if (query.includes('SELECT id, role FROM users WHERE id = @supervisorId')) {
+        return Promise.resolve([{ id: 17, role: 'supervisor' }]);
+      }
+      if (query.includes('INSERT INTO users')) return Promise.resolve([{ id: 100 }]);
+      if (query.includes('WHERE u.id = @userId')) return Promise.resolve([{ id: 100 }]);
+      return Promise.resolve([]);
+    });
+
+    const response = await request(makeApp())
+      .post('/users')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ email: 'new-agent@test.com', password: 'password123', displayName: 'New Agent', role: 'agent', supervisorId: 17 });
+
+    expect(response.status).toBe(201);
+  });
+
+  it('rejects a supervisorId that has the same or lower role level than the assigned user', async () => {
+    mockedQuery.mockImplementation((query: string) => {
+      if (query.includes('FROM users WHERE id = @id')) {
+        return Promise.resolve([mockAuthLookup({ id: 2, email: 'admin@test.com', role: 'admin', direction_id: null })]);
+      }
+      if (query.includes('SELECT id FROM users WHERE email')) return Promise.resolve([]);
+      if (query.includes('SELECT id, role FROM users WHERE id = @supervisorId')) {
+        return Promise.resolve([{ id: 3, role: 'agent' }]); // same level as the new agent
+      }
+      return Promise.resolve([]);
+    });
+
+    const response = await request(makeApp())
+      .post('/users')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ email: 'new-agent2@test.com', password: 'password123', displayName: 'New Agent 2', role: 'agent', supervisorId: 3 });
+
+    expect(response.status).toBe(400);
+  });
+
+  it('rejects a supervisorId that does not exist', async () => {
+    mockedQuery.mockImplementation((query: string) => {
+      if (query.includes('FROM users WHERE id = @id')) {
+        return Promise.resolve([mockAuthLookup({ id: 2, email: 'admin@test.com', role: 'admin', direction_id: null })]);
+      }
+      if (query.includes('SELECT id FROM users WHERE email')) return Promise.resolve([]);
+      if (query.includes('SELECT id, role FROM users WHERE id = @supervisorId')) return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+
+    const response = await request(makeApp())
+      .post('/users')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ email: 'new-agent3@test.com', password: 'password123', displayName: 'New Agent 3', role: 'agent', supervisorId: 999 });
+
+    expect(response.status).toBe(400);
+  });
+});
+
+describe('PUT /users/:id supervisorId assignment', () => {
+  it('lets an admin assign a direct supervisor to another user', async () => {
+    const adminToken = tokenFor({ id: 2, tenantId: 10, email: 'admin@test.com', role: 'admin' });
+    mockedExecute.mockResolvedValue({ rowsAffected: 1 });
+    mockedQuery.mockImplementation((query: string) => {
+      if (query.includes('FROM users WHERE id = @id')) {
+        return Promise.resolve([mockAuthLookup({ id: 2, email: 'admin@test.com', role: 'admin', direction_id: null })]);
+      }
+      if (query.includes('SELECT id, role FROM users WHERE id = @supervisorId')) {
+        return Promise.resolve([{ id: 17, role: 'supervisor' }]);
+      }
+      if (query.includes('SELECT role FROM users WHERE id = @userId')) {
+        return Promise.resolve([{ role: 'agent' }]);
+      }
+      if (query.includes('SELECT u.id')) return Promise.resolve([{ id: 3 }]);
+      return Promise.resolve([]);
+    });
+
+    const response = await request(makeApp())
+      .put('/users/3')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ supervisorId: 17 });
+
+    expect(response.status).toBe(200);
+    expect(mockedExecute).toHaveBeenCalledWith(
+      expect.stringContaining('supervisor_id = @supervisorId'),
+      expect.objectContaining({ supervisorId: 17 })
+    );
+  });
+
+  it('does not let a user assign their own supervisor via self-edit', async () => {
+    const agentToken = tokenFor({ id: 3, tenantId: 10, email: 'agent@test.com', role: 'agent' });
+    mockedExecute.mockResolvedValue({ rowsAffected: 1 });
+    mockedQuery.mockImplementation((query: string) => {
+      if (query.includes('FROM users WHERE id = @id')) {
+        return Promise.resolve([mockAuthLookup({ id: 3, email: 'agent@test.com', role: 'agent', direction_id: null })]);
+      }
+      if (query.includes('SELECT u.id')) return Promise.resolve([{ id: 3 }]);
+      return Promise.resolve([]);
+    });
+
+    const response = await request(makeApp())
+      .put('/users/3')
+      .set('Authorization', `Bearer ${agentToken}`)
+      .send({ displayName: 'Me', supervisorId: 17 });
+
+    expect(response.status).toBe(200);
+    if (mockedExecute.mock.calls.length > 0) {
+      const [, params] = mockedExecute.mock.calls[0];
+      expect(params.supervisorId).toBeUndefined();
+    }
   });
 });

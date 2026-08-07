@@ -104,10 +104,9 @@ router.get('/my-stats', authenticate, async (req: AuthRequest, res, next) => {
 /**
  * @route GET /api/v1/analytics/my-team
  * @desc Activity of the users hierarchically attached to the requester, scoped by
- * their role: director -> everyone in their direction, manager -> their service,
- * supervisor -> agents in their service (the schema has no finer-grained
- * supervisor-to-agent assignment, so service is the closest available scope).
- * admin/super_admin see the whole tenant.
+ * their role: director -> subordinates in their direction, manager -> subordinates
+ * in their service, supervisor -> only the agents explicitly assigned to them
+ * (users.supervisor_id). admin/super_admin see the whole tenant.
  */
 router.get('/my-team', authenticate, authorize('admin', 'director', 'manager', 'supervisor', 'super_admin'), async (req: AuthRequest, res, next) => {
   try {

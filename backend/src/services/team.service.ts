@@ -27,12 +27,14 @@ export class TeamService {
    * The users hierarchically attached to `requester`, scoped by their role:
    * director -> subordinates (manager/supervisor/agent) in their direction,
    * manager -> subordinates (supervisor/agent) in their service, supervisor ->
-   * agents in their service (the schema has no finer-grained supervisor-to-agent
-   * assignment, so service is the closest available scope). Peers and superiors
-   * within the same org unit are never included — a director's team excludes
-   * other directors, a manager's excludes other managers, etc. admin/super_admin
-   * see the whole tenant. Shared by GET /analytics/my-team and the team-report
-   * cron job so both read the exact same scoping + activity data.
+   * only the agents explicitly assigned to them via `users.supervisor_id`
+   * (a direct-report relationship, independent of service membership — two
+   * supervisors in the same service can each own a different set of agents).
+   * Peers and superiors within the same org unit are never included — a
+   * director's team excludes other directors, a manager's excludes other
+   * managers, etc. admin/super_admin see the whole tenant. Shared by
+   * GET /analytics/my-team and the team-report cron job so both read the
+   * exact same scoping + activity data.
    */
   static async getTeamActivity(requester: Requester): Promise<TeamMember[]> {
     const { tenantId, id: requesterId, role, directionId, serviceId } = requester;
@@ -53,9 +55,8 @@ export class TeamService {
       scopeClause = `u.service_id = @serviceId AND (${roleLevelSql}) < @requesterLevel`;
       params.serviceId = serviceId;
       params.requesterLevel = ROLE_HIERARCHY[role];
-    } else if (role === 'supervisor' && serviceId) {
-      scopeClause = "u.service_id = @serviceId AND u.role = 'agent'";
-      params.serviceId = serviceId;
+    } else if (role === 'supervisor') {
+      scopeClause = 'u.supervisor_id = @requesterId';
     }
 
     const team = await DatabaseService.query<any>(

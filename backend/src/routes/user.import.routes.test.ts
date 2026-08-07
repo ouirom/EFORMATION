@@ -57,8 +57,8 @@ describe('POST /users/import', () => {
       if (query.startsWith('SELECT id, code FROM enterprises')) return Promise.resolve([]);
       if (query.startsWith('SELECT id, code FROM directions')) return Promise.resolve([]);
       if (query.startsWith('SELECT id, code FROM services')) return Promise.resolve([]);
-      if (query.includes('SELECT email FROM users WHERE tenant_id')) {
-        return Promise.resolve([{ email: 'existing@test.com' }]);
+      if (query.includes('SELECT id, email, role FROM users WHERE tenant_id')) {
+        return Promise.resolve([{ id: 1, email: 'existing@test.com', role: 'agent' }]);
       }
       if (query.includes('INSERT INTO users')) {
         return Promise.resolve([{ id: 999 }]);
@@ -104,7 +104,7 @@ describe('POST /users/import', () => {
       if (query.startsWith('SELECT id, code FROM enterprises')) return Promise.resolve([]);
       if (query.startsWith('SELECT id, code FROM directions')) return Promise.resolve([]);
       if (query.startsWith('SELECT id, code FROM services')) return Promise.resolve([]);
-      if (query.includes('SELECT email FROM users WHERE tenant_id')) return Promise.resolve([]);
+      if (query.includes('SELECT id, email, role FROM users WHERE tenant_id')) return Promise.resolve([]);
       return Promise.resolve([]);
     });
 

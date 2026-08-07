@@ -207,6 +207,7 @@ export const helpTopics: HelpTopic[] = [
     title: 'Mon équipe',
     tips: [
       'Suivez la progression des collaborateurs qui vous sont directement rattachés (vous ne voyez que les niveaux hiérarchiques inférieurs au vôtre, jamais vos pairs ou vos supérieurs).',
+      'En tant que superviseur, votre équipe se limite aux agents qui vous ont été explicitement attribués (page "Utilisateurs", champ "Superviseur direct") — pas à tout le service.',
       'La carte "Formations obligatoires en retard" additionne les attributions obligatoires dont l\'échéance est dépassée pour votre équipe.',
       'Activez "Rapport périodique" pour recevoir automatiquement, dans l\'application et/ou par email, un résumé de la progression de votre équipe (fréquence quotidienne ou hebdomadaire, jour au choix).',
     ],
@@ -239,6 +240,7 @@ export const helpTopics: HelpTopic[] = [
       'Utilisez la recherche pour retrouver rapidement un utilisateur.',
       'Le bouton "Importer" crée plusieurs comptes en une fois depuis un fichier CSV ou Excel (colonnes : email, displayName, role, et les codes d\'entreprise/direction/service en option). Pour un modèle Excel pré-rempli, utilisez la page "Import de données".',
       'Un director/manager ne voit et ne gère que les utilisateurs de niveau hiérarchique inférieur au sien, rattachés à sa direction/service — jamais ses pairs ou ses supérieurs.',
+      'Pour un agent, le champ "Superviseur direct" lui attribue un superviseur précis : ce superviseur ne verra que les agents qui lui sont explicitement assignés dans "Mon équipe", pas tout le service.',
     ],
   },
   {

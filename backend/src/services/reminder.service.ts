@@ -13,6 +13,7 @@ interface PendingAssignmentRow {
   display_name: string;
   service_id: number | null;
   direction_id: number | null;
+  supervisor_id: number | null;
 }
 
 type ReminderType = 'upcoming' | 'urgent' | 'overdue' | 'escalation';
@@ -38,7 +39,7 @@ export class ReminderService {
   static async runDailyAssignmentReminders(): Promise<{ remindersSent: number; escalationsSent: number }> {
     const pending = await DatabaseService.query<PendingAssignmentRow>(
       `SELECT ca.id as assignment_id, ca.tenant_id, ca.course_id, c.title as course_title, ca.due_date,
-              u.id as user_id, u.display_name, u.service_id, u.direction_id
+              u.id as user_id, u.display_name, u.service_id, u.direction_id, u.supervisor_id
        FROM course_assignments ca
        JOIN courses c ON c.id = ca.course_id
        JOIN users u ON (
@@ -137,21 +138,36 @@ export class ReminderService {
   private static async escalateToManager(row: PendingAssignmentRow): Promise<boolean> {
     if (await this.alreadySent(row.assignment_id, row.user_id, 'escalation')) return false;
 
-    const managers = await DatabaseService.query<{ id: number; display_name: string }>(
-      `SELECT TOP 1 id, display_name FROM users
-       WHERE tenant_id = @tenantId AND is_active = 1 AND deleted_at IS NULL
-         AND (
-           (service_id = @serviceId AND role IN ('supervisor', 'manager'))
-           OR (direction_id = @directionId AND role = 'director')
-         )
-       ORDER BY CASE WHEN service_id = @serviceId THEN 0 ELSE 1 END,
-                CASE role WHEN 'supervisor' THEN 0 WHEN 'manager' THEN 1 ELSE 2 END`,
-      { tenantId: row.tenant_id, serviceId: row.service_id, directionId: row.direction_id }
-    );
+    // Prefer the learner's explicitly assigned direct supervisor; fall back to
+    // "any supervisor/manager in the same service, else a director in the same
+    // direction" for learners who don't have one set.
+    let manager: { id: number; display_name: string } | null = null;
 
-    if (managers.length === 0) return false;
+    if (row.supervisor_id) {
+      const directSupervisor = await DatabaseService.query<{ id: number; display_name: string }>(
+        'SELECT id, display_name FROM users WHERE id = @supervisorId AND is_active = 1 AND deleted_at IS NULL',
+        { supervisorId: row.supervisor_id }
+      );
+      manager = directSupervisor[0] || null;
+    }
 
-    const manager = managers[0];
+    if (!manager) {
+      const managers = await DatabaseService.query<{ id: number; display_name: string }>(
+        `SELECT TOP 1 id, display_name FROM users
+         WHERE tenant_id = @tenantId AND is_active = 1 AND deleted_at IS NULL
+           AND (
+             (service_id = @serviceId AND role IN ('supervisor', 'manager'))
+             OR (direction_id = @directionId AND role = 'director')
+           )
+         ORDER BY CASE WHEN service_id = @serviceId THEN 0 ELSE 1 END,
+                  CASE role WHEN 'supervisor' THEN 0 WHEN 'manager' THEN 1 ELSE 2 END`,
+        { tenantId: row.tenant_id, serviceId: row.service_id, directionId: row.direction_id }
+      );
+      manager = managers[0] || null;
+    }
+
+    if (!manager) return false;
+
     const dueDateLabel = new Date(row.due_date).toLocaleDateString('fr-FR');
 
     await NotificationService.send({

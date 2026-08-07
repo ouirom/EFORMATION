@@ -86,6 +86,46 @@ describe('ReminderService.runDailyAssignmentReminders', () => {
     expect(escalationCall).toBeDefined();
   });
 
+  it("escalates to the learner's direct supervisor when one is assigned, instead of the generic service/direction lookup", async () => {
+    const row = makeAssignmentRow({ due_date: daysFromNow(-1), supervisor_id: 88 });
+    mockedQuery.mockImplementation((query: string, params: any) => {
+      if (query.includes('FROM course_assignments')) return Promise.resolve([row]);
+      if (query.includes('FROM assignment_reminders')) return Promise.resolve([]);
+      if (query.includes('WHERE id = @supervisorId')) {
+        expect(params.supervisorId).toBe(88);
+        return Promise.resolve([{ id: 88, display_name: 'Direct Supervisor' }]);
+      }
+      if (query.includes('SELECT TOP 1 id, display_name FROM users')) {
+        throw new Error('should not fall back to the service/direction lookup when supervisor_id is set');
+      }
+      return Promise.resolve([]);
+    });
+
+    const result = await ReminderService.runDailyAssignmentReminders();
+
+    expect(result.escalationsSent).toBe(1);
+    const escalationCall = mockedSend.mock.calls.find((call) => call[0].userId === 88);
+    expect(escalationCall).toBeDefined();
+  });
+
+  it('falls back to the service/direction lookup when the learner has no assigned supervisor', async () => {
+    const row = makeAssignmentRow({ due_date: daysFromNow(-1), supervisor_id: null });
+    mockedQuery.mockImplementation((query: string) => {
+      if (query.includes('FROM course_assignments')) return Promise.resolve([row]);
+      if (query.includes('FROM assignment_reminders')) return Promise.resolve([]);
+      if (query.includes('SELECT TOP 1 id, display_name FROM users')) {
+        return Promise.resolve([{ id: 77, display_name: 'Manager Bob' }]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const result = await ReminderService.runDailyAssignmentReminders();
+
+    expect(result.escalationsSent).toBe(1);
+    const escalationCall = mockedSend.mock.calls.find((call) => call[0].userId === 77);
+    expect(escalationCall).toBeDefined();
+  });
+
   it('skips escalation when no manager can be found', async () => {
     const row = makeAssignmentRow({ due_date: daysFromNow(-1) });
     mockedQuery.mockImplementation((query: string) => {
