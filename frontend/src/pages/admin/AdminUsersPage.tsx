@@ -46,6 +46,10 @@ import {
 import { api } from '@/services/api'
 import { useAuth } from '@/contexts/AuthContext'
 
+// Same permission level as 'agent' — externe/stagiaire can be assigned a direct
+// supervisor just like an agent can.
+const AGENT_LIKE_ROLES = ['agent', 'externe', 'stagiaire']
+
 export default function AdminUsersPage() {
   const { toast } = useToast()
   const { user: currentUser } = useAuth()
@@ -292,6 +296,8 @@ export default function AdminUsersPage() {
     manager: 'Manager',
     supervisor: 'Superviseur',
     agent: 'Agent',
+    externe: 'Externe',
+    stagiaire: 'Stagiaire',
   }
 
   return (
@@ -383,6 +389,8 @@ export default function AdminUsersPage() {
                       <SelectItem value="manager">Manager</SelectItem>
                       <SelectItem value="supervisor">Superviseur</SelectItem>
                       <SelectItem value="agent">Agent</SelectItem>
+                      <SelectItem value="externe">Externe</SelectItem>
+                      <SelectItem value="stagiaire">Stagiaire</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -440,7 +448,7 @@ export default function AdminUsersPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                {newUser.role === 'agent' && (
+                {AGENT_LIKE_ROLES.includes(newUser.role) && (
                   <div className="space-y-2">
                     <Label htmlFor="supervisor">Superviseur direct</Label>
                     <Select
@@ -704,7 +712,7 @@ export default function AdminUsersPage() {
                 </SelectContent>
               </Select>
             </div>
-            {editUser.role === 'agent' && (
+            {AGENT_LIKE_ROLES.includes(editUser.role) && (
               <div className="space-y-2">
                 <Label htmlFor="editSupervisor">Superviseur direct</Label>
                 <Select

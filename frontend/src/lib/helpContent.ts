@@ -241,6 +241,7 @@ export const helpTopics: HelpTopic[] = [
       'Le bouton "Importer" crée plusieurs comptes en une fois depuis un fichier CSV ou Excel (colonnes : email, displayName, role, et les codes d\'entreprise/direction/service en option). Pour un modèle Excel pré-rempli, utilisez la page "Import de données".',
       'Un director/manager ne voit et ne gère que les utilisateurs de niveau hiérarchique inférieur au sien, rattachés à sa direction/service — jamais ses pairs ou ses supérieurs.',
       'Pour un agent, le champ "Superviseur direct" lui attribue un superviseur précis : ce superviseur ne verra que les agents qui lui sont explicitement assignés dans "Mon équipe", pas tout le service.',
+      'Externe et stagiaire sont des types d\'utilisateur avec exactement les mêmes droits qu\'agent — ils permettent seulement de distinguer les prestataires externes et les stagiaires des employés dans les listes et rapports.',
     ],
   },
   {

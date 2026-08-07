@@ -17,7 +17,7 @@ export interface User {
   deletedAt?: Date;
 }
 
-export type UserRole = 'admin' | 'director' | 'manager' | 'supervisor' | 'agent';
+export type UserRole = 'super_admin' | 'admin' | 'director' | 'manager' | 'supervisor' | 'agent' | 'externe' | 'stagiaire';
 
 // Organization Types
 export interface Tenant {

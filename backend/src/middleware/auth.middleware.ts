@@ -110,6 +110,10 @@ export const ROLE_HIERARCHY: Record<string, number> = {
   manager: 3,
   supervisor: 2,
   agent: 1,
+  // Same permission level as agent — external contractors / interns, tracked
+  // as distinct types for reporting/organizational purposes only.
+  externe: 1,
+  stagiaire: 1,
 };
 
 export const authorize = (...allowedRoles: string[]) => {

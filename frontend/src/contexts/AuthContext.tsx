@@ -6,7 +6,7 @@ interface User {
   id: number;
   email: string;
   displayName: string;
-  role: 'super_admin' | 'admin' | 'director' | 'manager' | 'supervisor' | 'agent';
+  role: 'super_admin' | 'admin' | 'director' | 'manager' | 'supervisor' | 'agent' | 'externe' | 'stagiaire';
   tenantId: number;
   enterpriseId?: number;
   directionId?: number;

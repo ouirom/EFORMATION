@@ -158,6 +158,57 @@ describe('GET /users/:id scoping', () => {
   });
 });
 
+describe('POST /users externe/stagiaire roles', () => {
+  const adminToken = tokenFor({ id: 2, tenantId: 10, email: 'admin@test.com', role: 'admin' });
+
+  it.each(['externe', 'stagiaire'])('creates a user with role "%s"', async (role) => {
+    mockedExecute.mockResolvedValue({ rowsAffected: 1 });
+    mockedQuery.mockImplementation((query: string) => {
+      if (query.includes('FROM users WHERE id = @id')) {
+        return Promise.resolve([mockAuthLookup({ id: 2, email: 'admin@test.com', role: 'admin', direction_id: null })]);
+      }
+      if (query.includes('SELECT id FROM users WHERE email')) return Promise.resolve([]);
+      if (query.includes('INSERT INTO users')) return Promise.resolve([{ id: 101 }]);
+      if (query.includes('WHERE u.id = @userId')) return Promise.resolve([{ id: 101, role }]);
+      return Promise.resolve([]);
+    });
+
+    const response = await request(makeApp())
+      .post('/users')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ email: `new-${role}@test.com`, password: 'password123', displayName: `New ${role}`, role });
+
+    expect(response.status).toBe(201);
+    expect(mockedQuery).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO users'),
+      expect.objectContaining({ role })
+    );
+  });
+
+  it('lets a supervisor be assigned to an externe user, same as an agent', async () => {
+    mockedExecute.mockResolvedValue({ rowsAffected: 1 });
+    mockedQuery.mockImplementation((query: string) => {
+      if (query.includes('FROM users WHERE id = @id')) {
+        return Promise.resolve([mockAuthLookup({ id: 2, email: 'admin@test.com', role: 'admin', direction_id: null })]);
+      }
+      if (query.includes('SELECT id FROM users WHERE email')) return Promise.resolve([]);
+      if (query.includes('SELECT id, role FROM users WHERE id = @supervisorId')) {
+        return Promise.resolve([{ id: 17, role: 'supervisor' }]);
+      }
+      if (query.includes('INSERT INTO users')) return Promise.resolve([{ id: 102 }]);
+      if (query.includes('WHERE u.id = @userId')) return Promise.resolve([{ id: 102 }]);
+      return Promise.resolve([]);
+    });
+
+    const response = await request(makeApp())
+      .post('/users')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ email: 'new-externe@test.com', password: 'password123', displayName: 'New Externe', role: 'externe', supervisorId: 17 });
+
+    expect(response.status).toBe(201);
+  });
+});
+
 describe('POST /users supervisorId assignment', () => {
   const adminToken = tokenFor({ id: 2, tenantId: 10, email: 'admin@test.com', role: 'admin' });
 

@@ -43,7 +43,8 @@ export class TeamService {
     const params: Record<string, any> = { tenantId, requesterId };
     const roleLevelSql = `CASE u.role
       WHEN 'super_admin' THEN 6 WHEN 'admin' THEN 5 WHEN 'director' THEN 4
-      WHEN 'manager' THEN 3 WHEN 'supervisor' THEN 2 WHEN 'agent' THEN 1 ELSE 0 END`;
+      WHEN 'manager' THEN 3 WHEN 'supervisor' THEN 2
+      WHEN 'agent' THEN 1 WHEN 'externe' THEN 1 WHEN 'stagiaire' THEN 1 ELSE 0 END`;
 
     if (role === 'admin' || role === 'super_admin') {
       scopeClause = 'u.id <> @requesterId';

@@ -87,6 +87,8 @@ export function getRoleLabel(role: string): string {
     manager: 'Manager',
     supervisor: 'Superviseur',
     agent: 'Agent',
+    externe: 'Externe',
+    stagiaire: 'Stagiaire',
   };
   return labels[role] || role;
 }
@@ -99,6 +101,8 @@ export function getRoleColor(role: string): string {
     manager: 'bg-blue-100 text-blue-800',
     supervisor: 'bg-green-100 text-green-800',
     agent: 'bg-gray-100 text-gray-800',
+    externe: 'bg-amber-100 text-amber-800',
+    stagiaire: 'bg-cyan-100 text-cyan-800',
   };
   return colors[role] || 'bg-gray-100 text-gray-800';
 }

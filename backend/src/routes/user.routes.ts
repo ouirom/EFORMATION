@@ -13,7 +13,7 @@ import { parseSpreadsheet } from '../utils/xlsx';
 
 const router = Router();
 const csvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
-const ALLOWED_ROLES = ['super_admin', 'admin', 'director', 'manager', 'supervisor', 'agent'];
+const ALLOWED_ROLES = ['super_admin', 'admin', 'director', 'manager', 'supervisor', 'agent', 'externe', 'stagiaire'];
 
 const validate = (req: any) => {
   const errors = validationResult(req);
@@ -380,7 +380,8 @@ router.get('/', authenticate, authorize('admin', 'director', 'manager'), async (
     // never peers or superiors, even ones attached to the same direction/service.
     const roleLevelSql = `CASE u.role
       WHEN 'super_admin' THEN 6 WHEN 'admin' THEN 5 WHEN 'director' THEN 4
-      WHEN 'manager' THEN 3 WHEN 'supervisor' THEN 2 WHEN 'agent' THEN 1 ELSE 0 END`;
+      WHEN 'manager' THEN 3 WHEN 'supervisor' THEN 2
+      WHEN 'agent' THEN 1 WHEN 'externe' THEN 1 WHEN 'stagiaire' THEN 1 ELSE 0 END`;
     if (req.user!.role === 'director' && req.user!.directionId) {
       whereClause += ` AND u.direction_id = @userDirectionId AND (${roleLevelSql}) < @requesterLevel`;
       params.userDirectionId = req.user!.directionId;

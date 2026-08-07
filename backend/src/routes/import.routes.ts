@@ -220,7 +220,7 @@ router.get('/users/template', authenticate, authorize('admin', 'director'), asyn
       ],
       [
         'email et displayName sont obligatoires.',
-        "role doit être l'une des valeurs : agent, supervisor, manager, director, admin, super_admin (les deux derniers requièrent des droits suffisants).",
+        "role doit être l'une des valeurs : agent, externe, stagiaire, supervisor, manager, director, admin, super_admin (les deux derniers requièrent des droits suffisants ; externe et stagiaire ont les mêmes droits qu'agent).",
         'Les colonnes *Code sont optionnelles et doivent correspondre à un code existant (voir le modèle Organisation) ; laissez vide si non applicable.',
         "supervisorEmail (optionnel) attribue un superviseur direct à cet utilisateur — l'email doit correspondre à un utilisateur existant (ou déjà présent plus haut dans ce même fichier) ayant un rôle strictement supérieur.",
         'Un mot de passe temporaire est généré automatiquement pour chaque utilisateur importé.',
