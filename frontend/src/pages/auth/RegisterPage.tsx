@@ -1,18 +1,18 @@
 import React, { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Loader2, Eye, EyeOff, Check, X } from 'lucide-react'
+import { Loader2, Eye, EyeOff, Check, X, MailCheck } from 'lucide-react'
 import { useToast } from '@/components/ui/use-toast'
 
 export default function RegisterPage() {
-  const navigate = useNavigate()
   const { register, isLoading } = useAuth()
   const { toast } = useToast()
   const [showPassword, setShowPassword] = useState(false)
+  const [pendingMessage, setPendingMessage] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -63,23 +63,36 @@ export default function RegisterPage() {
     }
 
     try {
-      await register({
+      const result = await register({
         displayName: `${formData.firstName} ${formData.lastName}`,
         email: formData.email,
         password: formData.password,
       })
-      toast({
-        title: 'Compte créé',
-        description: 'Bienvenue sur E-Formation!',
-      })
-      navigate('/dashboard')
+      setPendingMessage(result.message || "Votre compte a été créé et est en attente d'activation par votre responsable.")
     } catch (error: any) {
       toast({
         title: 'Erreur',
-        description: error.message || "Une erreur s'est produite lors de l'inscription",
+        description: error.response?.data?.error?.message || error.message || "Une erreur s'est produite lors de l'inscription",
         variant: 'destructive',
       })
     }
+  }
+
+  if (pendingMessage) {
+    return (
+      <Card className="shadow-lg">
+        <CardHeader className="space-y-1 items-center text-center">
+          <MailCheck className="h-10 w-10 text-primary mb-2" />
+          <CardTitle className="text-2xl text-center">Compte créé</CardTitle>
+          <CardDescription className="text-center">{pendingMessage}</CardDescription>
+        </CardHeader>
+        <CardFooter className="flex flex-col gap-4">
+          <Link to="/login" className="w-full">
+            <Button className="w-full">Retour à la connexion</Button>
+          </Link>
+        </CardFooter>
+      </Card>
+    )
   }
 
   return (

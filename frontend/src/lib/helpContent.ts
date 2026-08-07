@@ -21,7 +21,8 @@ export const helpTopics: HelpTopic[] = [
     title: 'Créer un compte',
     tips: [
       'Renseignez vos informations pour créer votre compte apprenant.',
-      'Un email de confirmation peut vous être envoyé selon la configuration de votre organisation.',
+      "Votre compte est créé avec le statut « en attente » : vous ne pourrez pas vous connecter tant qu'un responsable (n+1) ne l'aura pas activé.",
+      'Un responsable (superviseur/manager/directeur ou, à défaut, un administrateur) est automatiquement averti de votre demande.',
     ],
   },
   {
@@ -242,6 +243,8 @@ export const helpTopics: HelpTopic[] = [
       'Un director/manager ne voit et ne gère que les utilisateurs de niveau hiérarchique inférieur au sien, rattachés à sa direction/service — jamais ses pairs ou ses supérieurs.',
       'Pour un agent, le champ "Superviseur direct" lui attribue un superviseur précis : ce superviseur ne verra que les agents qui lui sont explicitement assignés dans "Mon équipe", pas tout le service.',
       'Externe et stagiaire sont des types d\'utilisateur avec exactement les mêmes droits qu\'agent — ils permettent seulement de distinguer les prestataires externes et les stagiaires des employés dans les listes et rapports.',
+      'Statut : "En attente" (inscription en libre-service pas encore activée), "Actif", "Suspendu" (par un admin, ou automatiquement pour inactivité) et "Désactivé". Le menu d\'actions de chaque ligne permet d\'activer, suspendre, réactiver ou désactiver un compte.',
+      'La carte "Suspension automatique pour inactivité" (admin uniquement) définit, par type de compte, au bout de combien de jours sans connexion un compte actif est automatiquement suspendu.',
     ],
   },
   {

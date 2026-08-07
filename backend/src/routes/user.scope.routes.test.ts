@@ -3,13 +3,16 @@ import request from 'supertest';
 import jwt from 'jsonwebtoken';
 import userRoutes from './user.routes';
 import { DatabaseService } from '../services/database.service';
+import { NotificationService } from '../services/notification.service';
 import { errorHandler } from '../middleware/error.middleware';
 import { config } from '../config';
 
 jest.mock('../services/database.service');
+jest.mock('../services/notification.service');
 
 const mockedQuery = DatabaseService.query as jest.Mock;
 const mockedExecute = DatabaseService.execute as jest.Mock;
+const mockedSend = NotificationService.send as jest.Mock;
 
 function makeApp() {
   const app = express();
@@ -325,5 +328,114 @@ describe('PUT /users/:id supervisorId assignment', () => {
       const [, params] = mockedExecute.mock.calls[0];
       expect(params.supervisorId).toBeUndefined();
     }
+  });
+});
+
+describe('PUT /users/:id/status', () => {
+  beforeEach(() => {
+    mockedExecute.mockResolvedValue({ rowsAffected: 1 });
+    mockedSend.mockResolvedValue({ id: 1, status: 'sent', channel: 'email' });
+  });
+
+  it('lets an admin activate a pending user', async () => {
+    const adminToken = tokenFor({ id: 2, tenantId: 10, email: 'admin@test.com', role: 'admin' });
+    mockedQuery.mockImplementation((query: string) => {
+      if (query.includes('FROM users WHERE id = @id')) {
+        return Promise.resolve([mockAuthLookup({ id: 2, email: 'admin@test.com', role: 'admin', direction_id: null })]);
+      }
+      if (query.includes('SELECT id, role, direction_id, service_id, supervisor_id, status')) {
+        return Promise.resolve([{ id: 3, role: 'agent', direction_id: null, service_id: null, supervisor_id: null, status: 'pending', display_name: 'New Agent', email: 'agent@test.com' }]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const response = await request(makeApp())
+      .put('/users/3/status')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ status: 'active' });
+
+    expect(response.status).toBe(200);
+    expect(mockedExecute).toHaveBeenCalledWith(
+      expect.stringContaining('status = @status'),
+      expect.objectContaining({ status: 'active', isActive: true, userId: 3 })
+    );
+    expect(mockedSend).toHaveBeenCalledWith(expect.objectContaining({ userId: 3, subject: expect.stringContaining('activé') }));
+  });
+
+  it("lets a supervisor activate their own assigned agent's pending account", async () => {
+    const supervisorToken = tokenFor({ id: 17, tenantId: 10, email: 'supervisor@test.com', role: 'supervisor', serviceId: 5 });
+    mockedQuery.mockImplementation((query: string) => {
+      if (query.includes('FROM users WHERE id = @id')) {
+        return Promise.resolve([mockAuthLookup({ id: 17, email: 'supervisor@test.com', role: 'supervisor', direction_id: null, service_id: 5 })]);
+      }
+      if (query.includes('SELECT id, role, direction_id, service_id, supervisor_id, status')) {
+        return Promise.resolve([{ id: 3, role: 'agent', direction_id: null, service_id: 5, supervisor_id: 17, status: 'pending', display_name: 'Agent', email: 'agent@test.com' }]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const response = await request(makeApp())
+      .put('/users/3/status')
+      .set('Authorization', `Bearer ${supervisorToken}`)
+      .send({ status: 'active' });
+
+    expect(response.status).toBe(200);
+  });
+
+  it('blocks a supervisor from activating an agent not assigned to them', async () => {
+    const supervisorToken = tokenFor({ id: 17, tenantId: 10, email: 'supervisor@test.com', role: 'supervisor', serviceId: 5 });
+    mockedQuery.mockImplementation((query: string) => {
+      if (query.includes('FROM users WHERE id = @id')) {
+        return Promise.resolve([mockAuthLookup({ id: 17, email: 'supervisor@test.com', role: 'supervisor', direction_id: null, service_id: 5 })]);
+      }
+      if (query.includes('SELECT id, role, direction_id, service_id, supervisor_id, status')) {
+        return Promise.resolve([{ id: 3, role: 'agent', direction_id: null, service_id: 5, supervisor_id: 99, status: 'pending', display_name: 'Agent', email: 'agent@test.com' }]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const response = await request(makeApp())
+      .put('/users/3/status')
+      .set('Authorization', `Bearer ${supervisorToken}`)
+      .send({ status: 'active' });
+
+    expect(response.status).toBe(403);
+  });
+
+  it('rejects an invalid status value', async () => {
+    const adminToken = tokenFor({ id: 2, tenantId: 10, email: 'admin@test.com', role: 'admin' });
+    mockedQuery.mockImplementation((query: string) => {
+      if (query.includes('FROM users WHERE id = @id')) {
+        return Promise.resolve([mockAuthLookup({ id: 2, email: 'admin@test.com', role: 'admin', direction_id: null })]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const response = await request(makeApp())
+      .put('/users/3/status')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ status: 'bogus' });
+
+    expect(response.status).toBe(400);
+  });
+
+  it('blocks a manager from changing the status of a user outside their service', async () => {
+    const managerToken = tokenFor({ id: 2, tenantId: 10, email: 'manager@test.com', role: 'manager', serviceId: 5 });
+    mockedQuery.mockImplementation((query: string) => {
+      if (query.includes('FROM users WHERE id = @id')) {
+        return Promise.resolve([mockAuthLookup({ id: 2, email: 'manager@test.com', role: 'manager', direction_id: null, service_id: 5 })]);
+      }
+      if (query.includes('SELECT id, role, direction_id, service_id, supervisor_id, status')) {
+        return Promise.resolve([{ id: 3, role: 'agent', direction_id: null, service_id: 99, supervisor_id: null, status: 'pending', display_name: 'Agent', email: 'agent@test.com' }]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const response = await request(makeApp())
+      .put('/users/3/status')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ status: 'active' });
+
+    expect(response.status).toBe(403);
   });
 });

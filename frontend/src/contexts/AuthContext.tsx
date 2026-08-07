@@ -19,7 +19,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (data: RegisterData) => Promise<void>;
+  register: (data: RegisterData) => Promise<{ pending: boolean; message?: string }>;
   loginWithLdap: (username: string, password: string) => Promise<void>;
   completeSSOLogin: (provider: 'google' | 'azure', code: string) => Promise<void>;
   logout: () => void;
@@ -83,11 +83,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     applySession(userData, accessToken, refreshToken);
   }, [applySession]);
 
+  // Self-registered accounts start 'pending' — no session is issued until an
+  // n+1 activates the account, so there's nothing to applySession() with here.
   const register = useCallback(async (data: RegisterData) => {
     const response = await api.post('/auth/register', data);
-    const { user: userData, accessToken, refreshToken } = response.data.data;
-    applySession(userData, accessToken, refreshToken);
-  }, [applySession]);
+    const { pending, message } = response.data.data;
+    return { pending: !!pending, message };
+  }, []);
 
   const loginWithLdap = useCallback(async (username: string, password: string) => {
     const response = await api.post('/auth/ldap/login', { username, password });

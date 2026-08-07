@@ -65,21 +65,14 @@ router.post(
         serviceId: req.body.serviceId,
       });
 
-      // Set refresh token in HTTP-only cookie
-      res.cookie('refreshToken', result.tokens.refreshToken, {
-        httpOnly: true,
-        secure: config.nodeEnv === 'production',
-        sameSite: 'strict',
-        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-      });
-
+      // Pending accounts get no tokens — they can't log in until an n+1
+      // activates them (PUT /users/:id/status).
       res.status(201).json({
         success: true,
         data: {
           user: result.user,
-          accessToken: result.tokens.accessToken,
-          refreshToken: result.tokens.refreshToken,
-          expiresIn: result.tokens.expiresIn,
+          pending: true,
+          message: "Votre compte a été créé et est en attente d'activation par votre responsable.",
         },
       });
     } catch (error) {

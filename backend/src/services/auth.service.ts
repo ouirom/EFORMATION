@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { config } from '../config';
 import { DatabaseService } from './database.service';
 import { AuditService } from './audit.service';
+import { NotificationService } from './notification.service';
 import { User, SSOIdentity, SSOProvider } from '../types';
 import { logger } from '../utils/logger';
 import { 
@@ -40,9 +41,13 @@ interface LoginDTO {
 
 export class AuthService {
   /**
-   * Register a new user
+   * Self-service registration. The account starts in 'pending' status and
+   * cannot log in — no tokens are issued here — until an n+1 (the closest
+   * supervisor/manager for the chosen service, a director for the chosen
+   * direction, or failing that any admin) activates it via
+   * PUT /users/:id/status.
    */
-  static async register(data: RegisterDTO): Promise<{ user: Partial<User>; tokens: TokenPair }> {
+  static async register(data: RegisterDTO): Promise<{ user: Partial<User> }> {
     // Check if email already exists
     const existingUsers = await DatabaseService.query<{ id: number }>(
       'SELECT id FROM users WHERE email = @email AND tenant_id = @tenantId',
@@ -55,7 +60,7 @@ export class AuthService {
 
     // Check username if provided
     const generatedUsername = data.username || data.email.split('@')[0] + '_' + Date.now().toString(36);
-    
+
     const existingUsername = await DatabaseService.query<{ id: number }>(
       'SELECT id FROM users WHERE username = @username AND tenant_id = @tenantId',
       { username: generatedUsername, tenantId: data.tenantId }
@@ -68,16 +73,16 @@ export class AuthService {
     // Hash password
     const passwordHash = await bcrypt.hash(data.password, config.bcryptRounds);
 
-    // Insert user
+    // Insert user — pending, not active, until an n+1 activates the account.
     const result = await DatabaseService.query<{ id: number }>(
       `INSERT INTO users (
         tenant_id, email, username, password_hash, display_name, role,
-        enterprise_id, direction_id, service_id, is_active
+        enterprise_id, direction_id, service_id, is_active, status
       )
       OUTPUT INSERTED.id
       VALUES (
         @tenantId, @email, @username, @passwordHash, @displayName, @role,
-        @enterpriseId, @directionId, @serviceId, 1
+        @enterpriseId, @directionId, @serviceId, 0, 'pending'
       )`,
       {
         tenantId: data.tenantId,
@@ -101,19 +106,13 @@ export class AuthService {
       { tenantId: data.tenantId, userId }
     );
 
-    // Generate tokens
-    const tokens = this.generateTokenPair({
-      id: userId,
-      tenantId: data.tenantId,
-      email: data.email,
-      role: data.role || 'agent',
-      enterpriseId: data.enterpriseId,
-      directionId: data.directionId,
-      serviceId: data.serviceId,
-    });
-
     // Log audit
-    await AuditService.log(data.tenantId, userId, 'USER_REGISTERED', 'users', userId);
+    await AuditService.log(data.tenantId, userId, 'USER_REGISTERED', 'users', userId, { status: 'pending' });
+
+    // Best-effort: a failed notification must never fail the registration itself.
+    this.notifyApproversOfPendingRegistration(data).catch((error) => {
+      logger.error('Failed to notify approvers of a pending registration', { error, userId });
+    });
 
     return {
       user: {
@@ -121,10 +120,52 @@ export class AuthService {
         tenantId: data.tenantId,
         email: data.email,
         displayName: data.displayName,
-        role: data.role as any || 'agent',
+        role: (data.role as any) || 'agent',
       },
-      tokens,
     };
+  }
+
+  /**
+   * Alerts the new signup's n+1 so a pending account doesn't sit unnoticed:
+   * prefers a supervisor/manager in the chosen service, falls back to a
+   * director in the chosen direction, and finally to any admin in the tenant.
+   */
+  private static async notifyApproversOfPendingRegistration(data: RegisterDTO): Promise<void> {
+    let approvers: { id: number }[] = [];
+
+    if (data.serviceId) {
+      approvers = await DatabaseService.query<{ id: number }>(
+        `SELECT id FROM users WHERE tenant_id = @tenantId AND is_active = 1 AND deleted_at IS NULL
+         AND service_id = @serviceId AND role IN ('supervisor', 'manager')`,
+        { tenantId: data.tenantId, serviceId: data.serviceId }
+      );
+    }
+    if (approvers.length === 0 && data.directionId) {
+      approvers = await DatabaseService.query<{ id: number }>(
+        `SELECT id FROM users WHERE tenant_id = @tenantId AND is_active = 1 AND deleted_at IS NULL
+         AND direction_id = @directionId AND role = 'director'`,
+        { tenantId: data.tenantId, directionId: data.directionId }
+      );
+    }
+    if (approvers.length === 0) {
+      approvers = await DatabaseService.query<{ id: number }>(
+        `SELECT id FROM users WHERE tenant_id = @tenantId AND is_active = 1 AND deleted_at IS NULL AND role = 'admin'`,
+        { tenantId: data.tenantId }
+      );
+    }
+
+    for (const approver of approvers) {
+      for (const channel of ['in_app', 'email'] as const) {
+        await NotificationService.send({
+          tenantId: data.tenantId,
+          userId: approver.id,
+          channel,
+          subject: 'Nouvelle inscription en attente d\'activation',
+          body: `${data.displayName} (${data.email}) vient de créer un compte et attend une activation.`,
+          actionUrl: `${config.frontendUrl}/admin/users?status=pending`,
+        }).catch(() => {});
+      }
+    }
   }
 
   /**
@@ -144,9 +185,10 @@ export class AuthService {
       direction_id: number;
       service_id: number;
       is_active: boolean;
+      status: string;
     }>(
       `SELECT id, tenant_id, email, password_hash, display_name, avatar_url, role,
-              enterprise_id, direction_id, service_id, is_active
+              enterprise_id, direction_id, service_id, is_active, status
        FROM users
        WHERE email = @email
        ${data.tenantId ? 'AND tenant_id = @tenantId' : ''}
@@ -160,13 +202,18 @@ export class AuthService {
 
     const user = users[0];
 
-    if (!user.is_active) {
+    if (user.status !== 'active') {
+      const messages: Record<string, string> = {
+        pending: "Votre compte est en attente d'activation par votre responsable.",
+        suspended: 'Votre compte a été suspendu. Contactez votre administrateur.',
+        deactivated: 'Votre compte a été désactivé.',
+      };
       await AuditService.log(user.tenant_id, user.id, 'LOGIN_FAILED', 'users', user.id, {
-        reason: 'account_disabled',
+        reason: `account_${user.status}`,
         ip: data.ip,
         userAgent: data.userAgent,
       });
-      throw UnauthorizedError('Account is disabled');
+      throw UnauthorizedError(messages[user.status] || 'Account is disabled');
     }
 
     // Verify password
@@ -190,6 +237,11 @@ export class AuthService {
       directionId: user.direction_id,
       serviceId: user.service_id,
     });
+
+    await DatabaseService.execute(
+      'UPDATE users SET last_login_at = SYSUTCDATETIME() WHERE id = @id',
+      { id: user.id }
+    );
 
     // Log audit
     await AuditService.log(user.tenant_id, user.id, 'USER_LOGIN', 'users', user.id, {

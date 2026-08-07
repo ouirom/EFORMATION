@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import { ReminderService } from '../services/reminder.service';
 import { CertificateService } from '../services/certificate.service';
 import { TeamReportService } from '../services/team-report.service';
+import { InactivitySuspensionService } from '../services/inactivity.service';
 import { logger } from '../utils/logger';
 
 /**
@@ -35,5 +36,15 @@ export function startScheduledJobs(): void {
     }
   });
 
-  logger.info('Scheduled jobs registered (assignment reminders, certificate expiry, team reports)');
+  // Daily at 08:45 server time: auto-suspend accounts inactive past their role's
+  // configured threshold (admin-set per role via /settings/inactivity-policies).
+  cron.schedule('45 8 * * *', async () => {
+    try {
+      await InactivitySuspensionService.runDailySuspensions();
+    } catch (error) {
+      logger.error('Inactivity suspension job failed', { error });
+    }
+  });
+
+  logger.info('Scheduled jobs registered (assignment reminders, certificate expiry, team reports, inactivity suspension)');
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -35,6 +35,9 @@ import {
   Shield,
   Download,
   Upload,
+  UserCheck,
+  UserMinus,
+  UserX,
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -49,6 +52,88 @@ import { useAuth } from '@/contexts/AuthContext'
 // Same permission level as 'agent' — externe/stagiaire can be assigned a direct
 // supervisor just like an agent can.
 const AGENT_LIKE_ROLES = ['agent', 'externe', 'stagiaire']
+
+// admin/super_admin are deliberately excluded — see backend INACTIVITY_POLICY_ROLES.
+const INACTIVITY_POLICY_ROLES: { value: string; label: string }[] = [
+  { value: 'director', label: 'Directeur' },
+  { value: 'manager', label: 'Manager' },
+  { value: 'supervisor', label: 'Superviseur' },
+  { value: 'agent', label: 'Agent' },
+  { value: 'externe', label: 'Externe' },
+  { value: 'stagiaire', label: 'Stagiaire' },
+]
+
+function InactivityPolicyCard() {
+  const { toast } = useToast()
+  const queryClient = useQueryClient()
+  const [days, setDays] = useState<Record<string, string>>({})
+
+  const { data: policies = [] } = useQuery({
+    queryKey: ['inactivity-policies'],
+    queryFn: () => api.settings.getInactivityPolicies(),
+  })
+
+  const policyByRole = Object.fromEntries(policies.map((p: any) => [p.role, p.maxInactiveDays]))
+
+  const saveMutation = useMutation({
+    mutationFn: ({ role, maxInactiveDays }: { role: string; maxInactiveDays: number | null }) =>
+      api.settings.setInactivityPolicy(role, maxInactiveDays),
+    onSuccess: () => {
+      toast({ title: 'Politique mise à jour' })
+      queryClient.invalidateQueries({ queryKey: ['inactivity-policies'] })
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Erreur',
+        description: error.response?.data?.error?.message || 'Impossible de mettre à jour la politique',
+        variant: 'destructive',
+      })
+    },
+  })
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Suspension automatique pour inactivité</CardTitle>
+        <CardDescription>
+          Un compte est suspendu automatiquement s'il n'y a eu aucune connexion depuis ce nombre de jours. Laissez vide pour désactiver la suspension automatique de ce type de compte.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {INACTIVITY_POLICY_ROLES.map(({ value, label }) => {
+            const currentValue = days[value] !== undefined ? days[value] : (policyByRole[value] ?? '')
+            return (
+              <div key={value} className="flex items-center gap-2">
+                <Label className="w-24 shrink-0 text-sm">{label}</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  placeholder="Désactivé"
+                  className="w-24"
+                  value={currentValue}
+                  onChange={(e) => setDays({ ...days, [value]: e.target.value })}
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={saveMutation.isPending}
+                  onClick={() => {
+                    const raw = days[value]
+                    const maxInactiveDays = raw === undefined || raw === '' ? null : parseInt(raw, 10)
+                    saveMutation.mutate({ role: value, maxInactiveDays })
+                  }}
+                >
+                  Enregistrer
+                </Button>
+              </div>
+            )
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
 
 export default function AdminUsersPage() {
   const { toast } = useToast()
@@ -86,8 +171,18 @@ export default function AdminUsersPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['admin-users', { search, role: roleFilter, status: statusFilter }],
-    queryFn: () => api.users.list({ search, role: roleFilter !== 'all' ? roleFilter : undefined }),
+    queryFn: () => api.users.list({
+      search,
+      role: roleFilter !== 'all' ? roleFilter : undefined,
+      status: statusFilter !== 'all' ? statusFilter : undefined,
+    }),
   })
+
+  const { data: pendingData } = useQuery({
+    queryKey: ['admin-users-pending-count'],
+    queryFn: () => api.users.list({ status: 'pending', limit: 1 }),
+  })
+  const pendingCount = pendingData?.meta?.total ?? 0
 
   // Fetch enterprises, directions, and services
   const { data: enterprises = [] } = useQuery({
@@ -151,6 +246,23 @@ export default function AdminUsersPage() {
         title: 'Erreur', 
         description: error.response?.data?.error?.message || 'Impossible de modifier l\'utilisateur', 
         variant: 'destructive' 
+      })
+    },
+  })
+
+  const changeStatusMutation = useMutation({
+    mutationFn: ({ userId, status }: { userId: number; status: string }) =>
+      api.put(`/users/${userId}/status`, { status }),
+    onSuccess: () => {
+      toast({ title: 'Statut mis à jour' })
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+      queryClient.invalidateQueries({ queryKey: ['admin-users-pending-count'] })
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Erreur',
+        description: error.response?.data?.error?.message || 'Impossible de changer le statut',
+        variant: 'destructive',
       })
     },
   })
@@ -300,6 +412,19 @@ export default function AdminUsersPage() {
     stagiaire: 'Stagiaire',
   }
 
+  const statusLabels: Record<string, string> = {
+    pending: 'En attente',
+    active: 'Actif',
+    suspended: 'Suspendu',
+    deactivated: 'Désactivé',
+  }
+  const statusColors: Record<string, string> = {
+    pending: 'bg-amber-100 text-amber-800',
+    active: 'bg-green-100 text-green-800',
+    suspended: 'bg-orange-100 text-orange-800',
+    deactivated: 'bg-red-100 text-red-800',
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -308,6 +433,18 @@ export default function AdminUsersPage() {
           <h1 className="text-3xl font-bold">Gestion des utilisateurs</h1>
           <p className="text-muted-foreground">
             {users.length} utilisateurs au total
+            {pendingCount > 0 && (
+              <>
+                {' '}·{' '}
+                <button
+                  type="button"
+                  className="text-amber-700 underline underline-offset-2 hover:no-underline"
+                  onClick={() => setStatusFilter('pending')}
+                >
+                  {pendingCount} en attente d'activation
+                </button>
+              </>
+            )}
           </p>
         </div>
         <div className="flex gap-2">
@@ -481,6 +618,8 @@ export default function AdminUsersPage() {
         </div>
       </div>
 
+      {(currentUser?.role === 'admin' || currentUser?.role === 'super_admin') && <InactivityPolicyCard />}
+
       {/* Filters */}
       <div className="flex flex-col md:flex-row gap-4">
         <div className="relative flex-1">
@@ -514,9 +653,10 @@ export default function AdminUsersPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Tous les statuts</SelectItem>
-            <SelectItem value="active">Actif</SelectItem>
-            <SelectItem value="inactive">Inactif</SelectItem>
             <SelectItem value="pending">En attente</SelectItem>
+            <SelectItem value="active">Actif</SelectItem>
+            <SelectItem value="suspended">Suspendu</SelectItem>
+            <SelectItem value="deactivated">Désactivé</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -577,12 +717,12 @@ export default function AdminUsersPage() {
                       </Badge>
                     </td>
                     <td className="p-4">
-                      <Badge className={user.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}>
-                        {user.is_active ? 'Actif' : 'Inactif'}
+                      <Badge className={statusColors[user.status] || 'bg-gray-100 text-gray-800'}>
+                        {statusLabels[user.status] || user.status || (user.is_active ? 'Actif' : 'Inactif')}
                       </Badge>
                     </td>
                     <td className="p-4 text-sm text-muted-foreground">
-                      {user.lastLogin ? formatRelativeTime(user.lastLogin) : user.created_at ? formatRelativeTime(user.created_at) : '-'}
+                      {user.last_login_at ? formatRelativeTime(user.last_login_at) : user.created_at ? formatRelativeTime(user.created_at) : '-'}
                     </td>
                     <td className="p-4 text-right">
                       <DropdownMenu>
@@ -600,6 +740,25 @@ export default function AdminUsersPage() {
                             <Mail className="h-4 w-4 mr-2" />
                             Envoyer un email
                           </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          {user.status !== 'active' && (
+                            <DropdownMenuItem onClick={() => changeStatusMutation.mutate({ userId: user.id, status: 'active' })}>
+                              <UserCheck className="h-4 w-4 mr-2" />
+                              {user.status === 'pending' ? 'Activer' : 'Réactiver'}
+                            </DropdownMenuItem>
+                          )}
+                          {user.status === 'active' && (
+                            <DropdownMenuItem onClick={() => changeStatusMutation.mutate({ userId: user.id, status: 'suspended' })}>
+                              <UserMinus className="h-4 w-4 mr-2" />
+                              Suspendre
+                            </DropdownMenuItem>
+                          )}
+                          {user.status !== 'deactivated' && (
+                            <DropdownMenuItem onClick={() => changeStatusMutation.mutate({ userId: user.id, status: 'deactivated' })}>
+                              <UserX className="h-4 w-4 mr-2" />
+                              Désactiver
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
                             className="text-destructive"

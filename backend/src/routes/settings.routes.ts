@@ -4,6 +4,7 @@ import { authenticate, authorize, AuthRequest } from '../middleware/auth.middlew
 import { DatabaseService } from '../services/database.service';
 import { BadRequestError } from '../middleware/error.middleware';
 import { NotificationService } from '../services/notification.service';
+import { InactivityPolicyService, INACTIVITY_POLICY_ROLES } from '../services/inactivity.service';
 
 const router = Router();
 
@@ -149,6 +150,45 @@ router.post(
       validate(req);
       await NotificationService.sendTestEmail(req.user!.tenantId, req.body.to);
       res.json({ success: true, message: 'Test email sent' });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * @route GET /api/v1/settings/inactivity-policies
+ * @desc List the tenant's per-role inactivity-suspension thresholds. A role
+ *       with no policy row is never auto-suspended.
+ */
+router.get('/inactivity-policies', authenticate, authorize('admin'), async (req: AuthRequest, res, next) => {
+  try {
+    const policies = await InactivityPolicyService.getPolicies(req.user!.tenantId);
+    res.json({ success: true, data: policies });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @route PUT /api/v1/settings/inactivity-policies
+ * @desc Set (or, with maxInactiveDays: null, remove) the inactivity-suspension
+ *       threshold for one role. admin/super_admin can never be targeted.
+ */
+router.put(
+  '/inactivity-policies',
+  authenticate,
+  authorize('admin'),
+  [
+    body('role').isIn(INACTIVITY_POLICY_ROLES),
+    body('maxInactiveDays').optional({ nullable: true }).isInt({ min: 1 }),
+  ],
+  async (req: AuthRequest, res, next) => {
+    try {
+      validate(req);
+      const maxInactiveDays = req.body.maxInactiveDays === undefined ? null : req.body.maxInactiveDays;
+      await InactivityPolicyService.setPolicy(req.user!.tenantId, req.body.role, maxInactiveDays, req.user!.id);
+      res.json({ success: true, message: 'Inactivity policy updated' });
     } catch (error) {
       next(error);
     }

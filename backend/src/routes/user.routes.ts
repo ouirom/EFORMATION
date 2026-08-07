@@ -51,6 +51,39 @@ async function resolveSupervisorId(
   return supervisorId;
 }
 
+interface HierarchyRequester {
+  id: number;
+  role: string;
+  directionId?: number;
+  serviceId?: number;
+}
+
+interface HierarchyTarget {
+  role: string;
+  direction_id: number | null;
+  service_id: number | null;
+  supervisor_id: number | null;
+}
+
+/**
+ * Whether `requester` may view/manage `target` per the org hierarchy: target's
+ * role level must be strictly below requester's, AND target must fall within
+ * requester's own scope — a director's whole direction, a manager's whole
+ * service, or a supervisor's explicitly assigned direct reports (supervisor_id).
+ * Does not special-case admin/super_admin — callers check that separately since
+ * not every caller wants the "admins see everyone" bypass.
+ */
+function isInHierarchicalScope(requester: HierarchyRequester, target: HierarchyTarget): boolean {
+  const requesterLevel = ROLE_HIERARCHY[requester.role] || 0;
+  const targetLevel = ROLE_HIERARCHY[target.role] || 0;
+  if (targetLevel >= requesterLevel) return false;
+
+  if (requester.role === 'director' && requester.directionId && target.direction_id === requester.directionId) return true;
+  if (requester.role === 'manager' && requester.serviceId && target.service_id === requester.serviceId) return true;
+  if (requester.role === 'supervisor' && target.supervisor_id === requester.id) return true;
+  return false;
+}
+
 /**
  * @route POST /api/v1/users
  * @desc Create a new user (admin only)
@@ -350,6 +383,7 @@ router.get('/', authenticate, authorize('admin', 'director', 'manager'), async (
     const directionId = req.query.directionId as string;
     const serviceId = req.query.serviceId as string;
     const supervisorId = req.query.supervisorId as string;
+    const status = req.query.status as string;
 
     let whereClause = 'WHERE u.tenant_id = @tenantId AND u.deleted_at IS NULL';
     const params: Record<string, any> = { tenantId: req.user!.tenantId, limit, offset };
@@ -373,6 +407,10 @@ router.get('/', authenticate, authorize('admin', 'director', 'manager'), async (
     if (supervisorId) {
       whereClause += ' AND u.supervisor_id = @supervisorId';
       params.supervisorId = parseInt(supervisorId, 10);
+    }
+    if (status) {
+      whereClause += ' AND u.status = @status';
+      params.status = status;
     }
 
     // Apply scope restrictions for non-admins: directors/managers only ever see
@@ -398,8 +436,8 @@ router.get('/', authenticate, authorize('admin', 'director', 'manager'), async (
         params
       ),
       DatabaseService.query<any>(
-        `SELECT u.id, u.email, u.username, u.display_name, u.avatar_url, u.role, u.is_active,
-                u.enterprise_id, u.direction_id, u.service_id, u.supervisor_id, u.created_at,
+        `SELECT u.id, u.email, u.username, u.display_name, u.avatar_url, u.role, u.is_active, u.status,
+                u.enterprise_id, u.direction_id, u.service_id, u.supervisor_id, u.last_login_at, u.created_at,
                 e.name as enterprise_name, d.name as direction_name, s.name as service_name,
                 sup.display_name as supervisor_name
          FROM users u
@@ -439,8 +477,8 @@ router.get('/:id', authenticate, async (req: AuthRequest, res, next) => {
     const requester = req.user!;
 
     const users = await DatabaseService.query<any>(
-      `SELECT u.id, u.email, u.username, u.display_name, u.avatar_url, u.role, u.is_active,
-              u.enterprise_id, u.direction_id, u.service_id, u.supervisor_id, u.created_at, u.updated_at,
+      `SELECT u.id, u.email, u.username, u.display_name, u.avatar_url, u.role, u.is_active, u.status,
+              u.enterprise_id, u.direction_id, u.service_id, u.supervisor_id, u.last_login_at, u.created_at, u.updated_at,
               e.name as enterprise_name, d.name as direction_name, s.name as service_name,
               sup.display_name as supervisor_name
        FROM users u
@@ -459,20 +497,10 @@ router.get('/:id', authenticate, async (req: AuthRequest, res, next) => {
     const target = users[0];
 
     // A user may always view their own record. Admins/super_admins see everyone.
-    // Everyone else may only view a strict subordinate (lower role level) within
-    // their own scope — a director's whole direction, a manager's whole service,
-    // but a supervisor only the agents explicitly assigned to them (supervisor_id),
-    // not every agent who happens to share their service.
+    // Everyone else may only view a strict subordinate within their own scope —
+    // see isInHierarchicalScope for the exact rules per role.
     if (userId !== requester.id && requester.role !== 'admin' && requester.role !== 'super_admin') {
-      const requesterLevel = ROLE_HIERARCHY[requester.role] || 0;
-      const targetLevel = ROLE_HIERARCHY[target.role] || 0;
-      const inScope =
-        targetLevel < requesterLevel &&
-        ((requester.role === 'director' && requester.directionId && target.direction_id === requester.directionId) ||
-          (requester.role === 'manager' && requester.serviceId && target.service_id === requester.serviceId) ||
-          (requester.role === 'supervisor' && target.supervisor_id === requester.id));
-
-      if (!inScope) {
+      if (!isInHierarchicalScope(requester, target)) {
         throw ForbiddenError('Insufficient permissions to view this user');
       }
     }
@@ -540,6 +568,10 @@ router.put(
       if (req.body.isActive !== undefined && isAdminLike) {
         updateFields.push('is_active = @isActive');
         params.isActive = req.body.isActive;
+        // Keep status in sync so the two fields never contradict each other —
+        // use the dedicated PUT /:id/status route for pending/suspended.
+        updateFields.push('status = @statusFromIsActive');
+        params.statusFromIsActive = req.body.isActive ? 'active' : 'deactivated';
       }
       if (req.body.enterpriseId !== undefined) {
         updateFields.push('enterprise_id = @enterpriseId');
@@ -588,7 +620,7 @@ router.put(
       }
 
       const users = await DatabaseService.query<any>(
-        `SELECT u.id, u.email, u.username, u.display_name, u.avatar_url, u.role, u.is_active,
+        `SELECT u.id, u.email, u.username, u.display_name, u.avatar_url, u.role, u.is_active, u.status,
                 u.enterprise_id, u.direction_id, u.service_id, u.supervisor_id,
                 sup.display_name as supervisor_name
          FROM users u
@@ -601,6 +633,91 @@ router.put(
         success: true,
         data: users[0],
       });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+const ACCOUNT_STATUSES = ['pending', 'active', 'suspended', 'deactivated'];
+
+/**
+ * @route PUT /api/v1/users/:id/status
+ * @desc Change a user's account status (activate a pending signup, suspend,
+ *       deactivate, or reinstate). Available to admins/super_admins for anyone,
+ *       and to a director/manager/supervisor for their own subordinates — this
+ *       is the "n+1 activates the pending account" action.
+ */
+router.put(
+  '/:id/status',
+  authenticate,
+  [body('status').isIn(ACCOUNT_STATUSES)],
+  async (req: AuthRequest, res, next) => {
+    try {
+      validate(req);
+      const userId = parseInt(req.params.id, 10);
+      const requester = req.user!;
+      const nextStatus = req.body.status as string;
+
+      const targets = await DatabaseService.query<any>(
+        `SELECT id, role, direction_id, service_id, supervisor_id, status, display_name, email
+         FROM users WHERE id = @userId AND tenant_id = @tenantId AND deleted_at IS NULL`,
+        { userId, tenantId: requester.tenantId }
+      );
+      if (targets.length === 0) throw NotFoundError('User');
+      const target = targets[0];
+
+      const isAdminLike = requester.role === 'admin' || requester.role === 'super_admin';
+      const canManage = isAdminLike || isInHierarchicalScope(requester, target);
+      if (!canManage) {
+        throw ForbiddenError("Insufficient permissions to manage this user's status");
+      }
+
+      const previousStatus = target.status;
+      await DatabaseService.execute(
+        `UPDATE users SET status = @status, is_active = @isActive, updated_at = SYSUTCDATETIME()
+         WHERE id = @userId AND tenant_id = @tenantId`,
+        { status: nextStatus, isActive: nextStatus === 'active', userId, tenantId: requester.tenantId }
+      );
+
+      await AuditService.log(requester.tenantId, requester.id, 'USER_STATUS_CHANGED', 'users', userId, {
+        from: previousStatus,
+        to: nextStatus,
+      });
+
+      if (nextStatus !== previousStatus) {
+        const messages: Record<string, { subject: string; body: string }> = {
+          active: {
+            subject: 'Votre compte E-Formation est activé',
+            body: `Bonjour ${target.display_name},\n\nVotre compte a été activé. Vous pouvez maintenant vous connecter.`,
+          },
+          suspended: {
+            subject: 'Votre compte E-Formation a été suspendu',
+            body: `Bonjour ${target.display_name},\n\nVotre compte a été suspendu. Contactez votre responsable pour plus d'informations.`,
+          },
+          deactivated: {
+            subject: 'Votre compte E-Formation a été désactivé',
+            body: `Bonjour ${target.display_name},\n\nVotre compte a été désactivé.`,
+          },
+          pending: {
+            subject: 'Votre compte E-Formation est en attente',
+            body: `Bonjour ${target.display_name},\n\nVotre compte est de nouveau en attente d'activation.`,
+          },
+        };
+        const message = messages[nextStatus];
+        NotificationService.send({
+          tenantId: requester.tenantId,
+          userId,
+          channel: 'email',
+          subject: message.subject,
+          body: message.body,
+          actionUrl: `${config.frontendUrl}/login`,
+        }).catch(() => {
+          // A failed notification must never roll back the status change itself.
+        });
+      }
+
+      res.json({ success: true, data: { id: userId, status: nextStatus } });
     } catch (error) {
       next(error);
     }
