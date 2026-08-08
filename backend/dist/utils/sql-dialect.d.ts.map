@@ -1,0 +1,1 @@
+{"version":3,"file":"sql-dialect.d.ts","sourceRoot":"","sources":["../../src/utils/sql-dialect.ts"],"names":[],"mappings":"AAiHA,wBAAgB,oBAAoB,CAClC,SAAS,EAAE,MAAM,EACjB,MAAM,CAAC,EAAE,MAAM,CAAC,MAAM,EAAE,GAAG,CAAC,GAC3B;IAAE,IAAI,EAAE,MAAM,CAAC;IAAC,MAAM,EAAE,GAAG,EAAE,CAAA;CAAE,CAUjC"}

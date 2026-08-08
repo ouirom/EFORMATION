@@ -11,16 +11,8 @@ const firebase_admin_1 = __importDefault(require("firebase-admin"));
 const config_1 = require("../config");
 const database_service_1 = require("./database.service");
 const logger_1 = require("../utils/logger");
-// Email transporter
-const emailTransporter = config_1.config.smtp.host ? nodemailer_1.default.createTransport({
-    host: config_1.config.smtp.host,
-    port: config_1.config.smtp.port,
-    secure: config_1.config.smtp.port === 465,
-    auth: config_1.config.smtp.user ? {
-        user: config_1.config.smtp.user,
-        pass: config_1.config.smtp.password,
-    } : undefined,
-}) : null;
+// Per-tenant SMTP transporters, built from DB settings (or env fallback) and cached until invalidated.
+const emailTransporterCache = new Map();
 // Twilio client for SMS and WhatsApp
 const twilioClient = config_1.config.twilio.accountSid && config_1.config.twilio.authToken
     ? (0, twilio_1.default)(config_1.config.twilio.accountSid, config_1.config.twilio.authToken)
@@ -86,7 +78,7 @@ class NotificationService {
             let externalId;
             switch (channel) {
                 case 'email':
-                    externalId = await this.sendEmail(user.email, subject || 'Notification', body, actionUrl);
+                    externalId = await this.sendEmail(tenantId, user.email, subject || 'Notification', body, actionUrl);
                     break;
                 case 'sms':
                     externalId = await this.sendSMS(user.phone, body);
@@ -112,21 +104,74 @@ class NotificationService {
         }
     }
     /**
+     * Resolve the SMTP transporter for a tenant: its own configured settings if
+     * present and enabled, otherwise the env-configured defaults. Cached per
+     * tenant until invalidateEmailSettingsCache() is called.
+     */
+    static async getEmailConfig(tenantId) {
+        if (emailTransporterCache.has(tenantId)) {
+            return emailTransporterCache.get(tenantId);
+        }
+        const rows = await database_service_1.DatabaseService.query('SELECT * FROM email_settings WHERE tenant_id = @tenantId', { tenantId });
+        const settings = rows[0];
+        let resolved = null;
+        if (settings?.enabled && settings.smtp_host) {
+            resolved = {
+                transporter: nodemailer_1.default.createTransport({
+                    host: settings.smtp_host,
+                    port: settings.smtp_port,
+                    secure: !!settings.smtp_secure,
+                    auth: settings.smtp_user ? { user: settings.smtp_user, pass: settings.smtp_password } : undefined,
+                }),
+                from: settings.from_name
+                    ? `"${settings.from_name}" <${settings.from_email || settings.smtp_user}>`
+                    : settings.from_email || settings.smtp_user,
+            };
+        }
+        else if (config_1.config.smtp.host) {
+            resolved = {
+                transporter: nodemailer_1.default.createTransport({
+                    host: config_1.config.smtp.host,
+                    port: config_1.config.smtp.port,
+                    secure: config_1.config.smtp.port === 465,
+                    auth: config_1.config.smtp.user ? { user: config_1.config.smtp.user, pass: config_1.config.smtp.password } : undefined,
+                }),
+                from: `"${config_1.config.smtp.fromName}" <${config_1.config.smtp.from}>`,
+            };
+        }
+        emailTransporterCache.set(tenantId, resolved);
+        return resolved;
+    }
+    /**
+     * Drop the cached transporter for a tenant so the next send re-reads its settings from the DB.
+     */
+    static invalidateEmailSettingsCache(tenantId) {
+        emailTransporterCache.delete(tenantId);
+    }
+    /**
      * Send email notification
      */
-    static async sendEmail(to, subject, body, actionUrl) {
+    static async sendEmail(tenantId, to, subject, body, actionUrl) {
         const htmlBody = this.generateEmailHTML(subject, body, actionUrl);
-        if (!emailTransporter) {
+        const emailConfig = await this.getEmailConfig(tenantId);
+        if (!emailConfig) {
             throw new Error('Email transporter not configured');
         }
-        const info = await emailTransporter.sendMail({
-            from: config_1.config.smtp.from,
+        const info = await emailConfig.transporter.sendMail({
+            from: emailConfig.from,
             to,
             subject,
             text: body,
             html: htmlBody,
         });
         return info.messageId;
+    }
+    /**
+     * Send a test email to verify the tenant's SMTP settings work.
+     */
+    static async sendTestEmail(tenantId, to) {
+        this.invalidateEmailSettingsCache(tenantId);
+        await this.sendEmail(tenantId, to, 'Email de test - E-Formation', "Ceci est un email de test envoyé depuis la configuration des notifications de E-Formation. Si vous recevez ce message, votre configuration SMTP fonctionne correctement.");
     }
     /**
      * Send SMS notification via Twilio

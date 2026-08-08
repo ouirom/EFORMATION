@@ -3,7 +3,9 @@ export declare const config: {
     port: number;
     host: string;
     database: {
+        client: "mssql" | "postgres";
         server: string;
+        port: number;
         database: string;
         user: string;
         password: string;
@@ -12,6 +14,7 @@ export declare const config: {
             trustServerCertificate: boolean;
             enableArithAbort: boolean;
         };
+        ssl: boolean;
         pool: {
             max: number;
             min: number;

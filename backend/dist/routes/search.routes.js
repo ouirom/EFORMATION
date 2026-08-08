@@ -246,16 +246,18 @@ router.get('/suggestions', auth_middleware_1.authenticate, async (req, res, next
         }
         const tenantId = req.user.tenantId;
         // Get suggestions from courses and lessons
-        const suggestions = await database_service_1.DatabaseService.query(`SELECT TOP 10 title as text, 'course' as type FROM courses 
-       WHERE tenant_id = @tenantId AND status = 'published' AND title LIKE @prefix
-       UNION
-       SELECT TOP 10 l.title as text, 'lesson' as type FROM lessons l
-       JOIN modules m ON l.module_id = m.id
-       JOIN courses c ON m.course_id = c.id
-       WHERE c.tenant_id = @tenantId AND c.status = 'published' AND l.title LIKE @prefix
-       UNION
-       SELECT TOP 5 name as text, 'badge' as type FROM badges
-       WHERE tenant_id = @tenantId AND name LIKE @prefix`, { tenantId, prefix: `${prefix}%` });
+        const suggestions = await database_service_1.DatabaseService.query(`SELECT TOP 25 text, type FROM (
+         SELECT title as text, 'course' as type FROM courses
+         WHERE tenant_id = @tenantId AND status = 'published' AND title LIKE @prefix
+         UNION
+         SELECT l.title as text, 'lesson' as type FROM lessons l
+         JOIN modules m ON l.module_id = m.id
+         JOIN courses c ON m.course_id = c.id
+         WHERE c.tenant_id = @tenantId AND c.status = 'published' AND l.title LIKE @prefix
+         UNION
+         SELECT name as text, 'badge' as type FROM badges
+         WHERE tenant_id = @tenantId AND name LIKE @prefix
+       ) combined`, { tenantId, prefix: `${prefix}%` });
         res.json({ success: true, data: suggestions });
     }
     catch (error) {

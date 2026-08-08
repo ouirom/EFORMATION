@@ -32,6 +32,43 @@ CREATE TABLE IF NOT EXISTS tenants (
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS tenant_settings (
+  id                        BIGSERIAL PRIMARY KEY,
+  tenant_id                 BIGINT NOT NULL UNIQUE REFERENCES tenants(id) ON DELETE CASCADE,
+  description               TEXT,
+  logo_url                  TEXT,
+  primary_color             TEXT NOT NULL DEFAULT '#3B82F6',
+  secondary_color           TEXT NOT NULL DEFAULT '#10B981',
+  contact_email             TEXT,
+  contact_phone             TEXT,
+  address                   TEXT,
+  website                   TEXT,
+  allow_self_registration   BOOLEAN NOT NULL DEFAULT TRUE,
+  default_language          TEXT NOT NULL DEFAULT 'fr',
+  timezone                  TEXT NOT NULL DEFAULT 'Europe/Paris',
+  enable_notifications      BOOLEAN NOT NULL DEFAULT TRUE,
+  enable_chat               BOOLEAN NOT NULL DEFAULT TRUE,
+  enable_live_sessions      BOOLEAN NOT NULL DEFAULT TRUE,
+  max_users_per_group       INT NOT NULL DEFAULT 50,
+  certificate_validity      INT NOT NULL DEFAULT 365,
+  created_at                TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at                TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS email_settings (
+  id            BIGSERIAL PRIMARY KEY,
+  tenant_id     BIGINT NOT NULL UNIQUE REFERENCES tenants(id) ON DELETE CASCADE,
+  enabled       BOOLEAN NOT NULL DEFAULT FALSE,
+  smtp_host     TEXT,
+  smtp_port     INT NOT NULL DEFAULT 587,
+  smtp_secure   BOOLEAN NOT NULL DEFAULT FALSE,
+  smtp_user     TEXT,
+  smtp_password TEXT,
+  from_email    TEXT,
+  from_name     TEXT,
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- =====================
 -- Organisation
 -- =====================
@@ -78,6 +115,7 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash  TEXT NOT NULL,
   display_name   TEXT NOT NULL,
   role           user_role NOT NULL DEFAULT 'agent',
+  avatar_url     TEXT,
   is_active      BOOLEAN NOT NULL DEFAULT TRUE,
   created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -92,6 +130,17 @@ CREATE TABLE IF NOT EXISTS sso_identities (
   external_id  TEXT NOT NULL,
   UNIQUE (tenant_id, provider, external_id)
 );
+
+CREATE TABLE IF NOT EXISTS ai_chat_history (
+  id           BIGSERIAL PRIMARY KEY,
+  tenant_id    BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  user_id      BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role         TEXT NOT NULL CHECK (role IN ('user','assistant')),
+  message      TEXT NOT NULL,
+  context      TEXT,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ai_chat_history_user ON ai_chat_history(user_id, created_at DESC);
 
 -- =====================
 -- Fichiers / Assets
@@ -327,9 +376,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   body         TEXT,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   deleted_at   TIMESTAMPTZ
-) PARTITION BY RANGE (created_at);
-
-CREATE TABLE IF NOT EXISTS chat_messages_default PARTITION OF chat_messages DEFAULT;
+);
 
 CREATE TABLE IF NOT EXISTS chat_attachments (
   id           BIGSERIAL PRIMARY KEY,
@@ -370,9 +417,7 @@ CREATE TABLE IF NOT EXISTS notifications (
   template_id  BIGINT REFERENCES notification_templates(id),
   payload      JSONB,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
-) PARTITION BY RANGE (created_at);
-
-CREATE TABLE IF NOT EXISTS notifications_default PARTITION OF notifications DEFAULT;
+);
 
 CREATE TABLE IF NOT EXISTS notification_deliveries (
   id           BIGSERIAL PRIMARY KEY,
@@ -519,9 +564,7 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   entity_id    BIGINT,
   metadata     JSONB,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
-) PARTITION BY RANGE (created_at);
-
-CREATE TABLE IF NOT EXISTS audit_logs_default PARTITION OF audit_logs DEFAULT;
+);
 
 CREATE TABLE IF NOT EXISTS privacy_consents (
   id           BIGSERIAL PRIMARY KEY,

@@ -44,6 +44,7 @@ const file_routes_1 = __importDefault(require("./routes/file.routes"));
 const webhook_routes_1 = __importDefault(require("./routes/webhook.routes"));
 const search_routes_1 = __importDefault(require("./routes/search.routes"));
 const assignment_routes_1 = __importDefault(require("./routes/assignment.routes"));
+const settings_routes_1 = __importDefault(require("./routes/settings.routes"));
 // Import middleware
 const error_middleware_1 = require("./middleware/error.middleware");
 const notFound_middleware_1 = require("./middleware/notFound.middleware");
@@ -149,6 +150,7 @@ class App {
         apiRouter.use('/webhooks', webhook_routes_1.default);
         apiRouter.use('/search', search_routes_1.default);
         apiRouter.use('/assignments', assignment_routes_1.default);
+        apiRouter.use('/settings', settings_routes_1.default);
         this.app.use('/api/v1', apiRouter);
         // Static files for uploads
         this.app.use('/uploads', express_1.default.static(config_1.config.uploadDir));

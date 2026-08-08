@@ -3,6 +3,8 @@ export interface UserPayload {
     id: number;
     tenantId: number;
     email: string;
+    displayName?: string;
+    avatarUrl?: string | null;
     role: string;
     enterpriseId?: number;
     directionId?: number;

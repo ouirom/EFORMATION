@@ -7,9 +7,11 @@ export const config = {
   port: parseInt(process.env.PORT || '3001', 10),
   host: process.env.HOST || 'localhost',
   
-  // Database - SQL Server
+  // Database - client is selectable so the same codebase can target either engine
   database: {
+    client: (process.env.DB_CLIENT || 'mssql') as 'mssql' | 'postgres',
     server: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT || '5432', 10),
     database: process.env.DB_NAME || 'db_eformation',
     user: process.env.DB_USER || '',
     password: process.env.DB_PASSWORD || '',
@@ -18,6 +20,7 @@ export const config = {
       trustServerCertificate: process.env.DB_TRUST_SERVER_CERTIFICATE !== 'false',
       enableArithAbort: true,
     },
+    ssl: process.env.DB_SSL === 'true',
     pool: {
       max: 10,
       min: 0,

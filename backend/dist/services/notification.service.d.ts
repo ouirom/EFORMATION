@@ -19,9 +19,23 @@ export declare class NotificationService {
      */
     static send(payload: NotificationPayload): Promise<NotificationResult>;
     /**
+     * Resolve the SMTP transporter for a tenant: its own configured settings if
+     * present and enabled, otherwise the env-configured defaults. Cached per
+     * tenant until invalidateEmailSettingsCache() is called.
+     */
+    private static getEmailConfig;
+    /**
+     * Drop the cached transporter for a tenant so the next send re-reads its settings from the DB.
+     */
+    static invalidateEmailSettingsCache(tenantId: number): void;
+    /**
      * Send email notification
      */
     private static sendEmail;
+    /**
+     * Send a test email to verify the tenant's SMTP settings work.
+     */
+    static sendTestEmail(tenantId: number, to: string): Promise<void>;
     /**
      * Send SMS notification via Twilio
      */

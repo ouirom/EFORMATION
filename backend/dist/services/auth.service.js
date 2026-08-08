@@ -36,7 +36,7 @@ class AuthService {
       OUTPUT INSERTED.id
       VALUES (
         @tenantId, @email, @username, @passwordHash, @displayName, @role,
-        @enterpriseId, @directionId, @serviceId, 1
+        @enterpriseId, @directionId, @serviceId, @isActive
       )`, {
             tenantId: data.tenantId,
             email: data.email,
@@ -47,6 +47,7 @@ class AuthService {
             enterpriseId: data.enterpriseId || null,
             directionId: data.directionId || null,
             serviceId: data.serviceId || null,
+            isActive: true,
         });
         const userId = result[0].id;
         // Create default notification preferences
@@ -80,10 +81,10 @@ class AuthService {
      */
     static async login(data) {
         // Find user
-        const users = await database_service_1.DatabaseService.query(`SELECT id, tenant_id, email, password_hash, display_name, role,
+        const users = await database_service_1.DatabaseService.query(`SELECT id, tenant_id, email, password_hash, display_name, avatar_url, role,
               enterprise_id, direction_id, service_id, is_active
-       FROM users 
-       WHERE email = @email 
+       FROM users
+       WHERE email = @email
        ${data.tenantId ? 'AND tenant_id = @tenantId' : ''}
        AND deleted_at IS NULL`, { email: data.email, tenantId: data.tenantId });
         if (users.length === 0) {
@@ -116,6 +117,7 @@ class AuthService {
                 tenantId: user.tenant_id,
                 email: user.email,
                 displayName: user.display_name,
+                avatarUrl: user.avatar_url,
                 role: user.role,
                 enterpriseId: user.enterprise_id,
                 directionId: user.direction_id,
@@ -189,10 +191,11 @@ class AuthService {
                 }
                 const result = await database_service_1.DatabaseService.query(`INSERT INTO users (tenant_id, email, password_hash, display_name, role, is_active)
            OUTPUT INSERTED.id
-           VALUES (@tenantId, @email, 'SSO_USER', @displayName, 'agent', 1)`, {
+           VALUES (@tenantId, @email, 'SSO_USER', @displayName, 'agent', @isActive)`, {
                     tenantId,
                     email: profile.email,
                     displayName: profile.displayName,
+                    isActive: true,
                 });
                 userId = result[0].id;
                 isNewUser = true;

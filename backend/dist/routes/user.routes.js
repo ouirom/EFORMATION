@@ -67,7 +67,7 @@ router.post('/', auth_middleware_1.authenticate, (0, auth_middleware_1.authorize
         });
         const userId = result[0].id;
         // Get created user
-        const users = await database_service_1.DatabaseService.query(`SELECT u.id, u.email, u.username, u.display_name, u.role, u.is_active,
+        const users = await database_service_1.DatabaseService.query(`SELECT u.id, u.email, u.username, u.display_name, u.avatar_url, u.role, u.is_active,
                 u.enterprise_id, u.direction_id, u.service_id, u.created_at,
                 e.name as enterprise_name, d.name as direction_name, s.name as service_name
          FROM users u
@@ -126,7 +126,7 @@ router.get('/', auth_middleware_1.authenticate, (0, auth_middleware_1.authorize)
         }
         const [countResult, users] = await Promise.all([
             database_service_1.DatabaseService.query(`SELECT COUNT(*) as total FROM users u ${whereClause}`, params),
-            database_service_1.DatabaseService.query(`SELECT u.id, u.email, u.username, u.display_name, u.role, u.is_active,
+            database_service_1.DatabaseService.query(`SELECT u.id, u.email, u.username, u.display_name, u.avatar_url, u.role, u.is_active,
                 u.enterprise_id, u.direction_id, u.service_id, u.created_at,
                 e.name as enterprise_name, d.name as direction_name, s.name as service_name
          FROM users u
@@ -159,7 +159,7 @@ router.get('/', auth_middleware_1.authenticate, (0, auth_middleware_1.authorize)
 router.get('/:id', auth_middleware_1.authenticate, async (req, res, next) => {
     try {
         const userId = parseInt(req.params.id, 10);
-        const users = await database_service_1.DatabaseService.query(`SELECT u.id, u.email, u.username, u.display_name, u.role, u.is_active,
+        const users = await database_service_1.DatabaseService.query(`SELECT u.id, u.email, u.username, u.display_name, u.avatar_url, u.role, u.is_active,
               u.enterprise_id, u.direction_id, u.service_id, u.created_at, u.updated_at,
               e.name as enterprise_name, d.name as direction_name, s.name as service_name
        FROM users u
@@ -185,6 +185,7 @@ router.get('/:id', auth_middleware_1.authenticate, async (req, res, next) => {
  */
 router.put('/:id', auth_middleware_1.authenticate, [
     (0, express_validator_1.body)('displayName').optional().trim(),
+    (0, express_validator_1.body)('avatarUrl').optional({ nullable: true }).isString(),
     (0, express_validator_1.body)('role').optional().isIn(['admin', 'director', 'manager', 'supervisor', 'agent']),
     (0, express_validator_1.body)('isActive').optional().isBoolean(),
     (0, express_validator_1.body)('enterpriseId').optional().isInt(),
@@ -206,6 +207,10 @@ router.put('/:id', auth_middleware_1.authenticate, [
         if (req.body.displayName) {
             updateFields.push('display_name = @displayName');
             params.displayName = req.body.displayName;
+        }
+        if (req.body.avatarUrl !== undefined) {
+            updateFields.push('avatar_url = @avatarUrl');
+            params.avatarUrl = req.body.avatarUrl;
         }
         if (req.body.role && req.user.role === 'admin') {
             updateFields.push('role = @role');
@@ -231,7 +236,7 @@ router.put('/:id', auth_middleware_1.authenticate, [
             await database_service_1.DatabaseService.execute(`UPDATE users SET ${updateFields.join(', ')}, updated_at = SYSUTCDATETIME()
            WHERE id = @userId AND tenant_id = @tenantId`, params);
         }
-        const users = await database_service_1.DatabaseService.query(`SELECT id, email, username, display_name, role, is_active, 
+        const users = await database_service_1.DatabaseService.query(`SELECT id, email, username, display_name, avatar_url, role, is_active,
                 enterprise_id, direction_id, service_id
          FROM users WHERE id = @userId AND tenant_id = @tenantId`, { userId, tenantId: req.user.tenantId });
         res.json({

@@ -19,7 +19,7 @@ const authenticateHandler = async (req, res, next) => {
         }
         const payload = jsonwebtoken_1.default.verify(token, config_1.config.jwt.secret);
         // Verify user still exists and is active
-        const users = await database_service_1.DatabaseService.query(`SELECT id, tenant_id, email, role, enterprise_id, direction_id, service_id, is_active 
+        const users = await database_service_1.DatabaseService.query(`SELECT id, tenant_id, email, display_name, avatar_url, role, enterprise_id, direction_id, service_id, is_active
        FROM users WHERE id = @id AND tenant_id = @tenantId AND deleted_at IS NULL`, { id: payload.id, tenantId: payload.tenantId });
         if (users.length === 0 || !users[0].is_active) {
             throw (0, error_middleware_1.UnauthorizedError)('User not found or inactive');
@@ -29,6 +29,8 @@ const authenticateHandler = async (req, res, next) => {
             id: user.id,
             tenantId: user.tenant_id,
             email: user.email,
+            displayName: user.display_name,
+            avatarUrl: user.avatar_url,
             role: user.role,
             enterpriseId: user.enterprise_id,
             directionId: user.direction_id,

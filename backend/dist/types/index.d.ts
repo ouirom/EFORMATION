@@ -8,6 +8,7 @@ export interface User {
     username?: string;
     passwordHash?: string;
     displayName: string;
+    avatarUrl?: string | null;
     role: UserRole;
     isActive: boolean;
     createdAt: Date;

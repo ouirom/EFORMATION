@@ -74,7 +74,7 @@ export class AuthService {
       OUTPUT INSERTED.id
       VALUES (
         @tenantId, @email, @username, @passwordHash, @displayName, @role,
-        @enterpriseId, @directionId, @serviceId, 1
+        @enterpriseId, @directionId, @serviceId, @isActive
       )`,
       {
         tenantId: data.tenantId,
@@ -86,6 +86,7 @@ export class AuthService {
         enterpriseId: data.enterpriseId || null,
         directionId: data.directionId || null,
         serviceId: data.serviceId || null,
+        isActive: true,
       }
     );
 
@@ -306,11 +307,12 @@ export class AuthService {
         const result = await DatabaseService.query<{ id: number }>(
           `INSERT INTO users (tenant_id, email, password_hash, display_name, role, is_active)
            OUTPUT INSERTED.id
-           VALUES (@tenantId, @email, 'SSO_USER', @displayName, 'agent', 1)`,
+           VALUES (@tenantId, @email, 'SSO_USER', @displayName, 'agent', @isActive)`,
           {
             tenantId,
             email: profile.email,
             displayName: profile.displayName,
+            isActive: true,
           }
         );
 
