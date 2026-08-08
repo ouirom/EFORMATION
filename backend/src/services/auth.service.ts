@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { config } from '../config';
 import { DatabaseService } from './database.service';
+import { db, IS_PG } from '../database/db-helpers';
 import { AuditService } from './audit.service';
 import { NotificationService } from './notification.service';
 import { User, SSOIdentity, SSOProvider } from '../types';
@@ -75,15 +76,27 @@ export class AuthService {
 
     // Insert user — pending, not active, until an n+1 activates the account.
     const result = await DatabaseService.query<{ id: number }>(
-      `INSERT INTO users (
-        tenant_id, email, username, password_hash, display_name, role,
-        enterprise_id, direction_id, service_id, is_active, status
-      )
-      OUTPUT INSERTED.id
-      VALUES (
-        @tenantId, @email, @username, @passwordHash, @displayName, @role,
-        @enterpriseId, @directionId, @serviceId, 0, 'pending'
-      )`,
+      // Booleans are bound as params (not `0`/`1`/`TRUE` literals) so the driver's own
+      // type binding handles mssql BIT vs pg boolean without a dialect branch here.
+      IS_PG
+        ? `INSERT INTO users (
+            tenant_id, email, username, password_hash, display_name, role,
+            enterprise_id, direction_id, service_id, is_active, status
+          )
+          VALUES (
+            @tenantId, @email, @username, @passwordHash, @displayName, @role,
+            @enterpriseId, @directionId, @serviceId, @isActive, 'pending'
+          )
+          RETURNING id`
+        : `INSERT INTO users (
+            tenant_id, email, username, password_hash, display_name, role,
+            enterprise_id, direction_id, service_id, is_active, status
+          )
+          OUTPUT INSERTED.id
+          VALUES (
+            @tenantId, @email, @username, @passwordHash, @displayName, @role,
+            @enterpriseId, @directionId, @serviceId, @isActive, 'pending'
+          )`,
       {
         tenantId: data.tenantId,
         email: data.email,
@@ -94,6 +107,7 @@ export class AuthService {
         enterpriseId: data.enterpriseId || null,
         directionId: data.directionId || null,
         serviceId: data.serviceId || null,
+        isActive: false,
       }
     );
 
@@ -239,7 +253,7 @@ export class AuthService {
     });
 
     await DatabaseService.execute(
-      'UPDATE users SET last_login_at = SYSUTCDATETIME() WHERE id = @id',
+      `UPDATE users SET last_login_at = ${db.now()} WHERE id = @id`,
       { id: user.id }
     );
 
@@ -406,7 +420,9 @@ export class AuthService {
         if (!profile.tenantId) {
           // Get default tenant
           const defaultTenant = await DatabaseService.query<{ id: number }>(
-            'SELECT TOP 1 id FROM tenants ORDER BY id'
+            IS_PG
+              ? 'SELECT id FROM tenants ORDER BY id LIMIT 1'
+              : 'SELECT TOP 1 id FROM tenants ORDER BY id'
           );
           tenantId = defaultTenant[0]?.id || 1;
         } else {
@@ -414,13 +430,18 @@ export class AuthService {
         }
 
         const result = await DatabaseService.query<{ id: number }>(
-          `INSERT INTO users (tenant_id, email, password_hash, display_name, role, is_active)
-           OUTPUT INSERTED.id
-           VALUES (@tenantId, @email, 'SSO_USER', @displayName, 'agent', 1)`,
+          IS_PG
+            ? `INSERT INTO users (tenant_id, email, password_hash, display_name, role, is_active)
+               VALUES (@tenantId, @email, 'SSO_USER', @displayName, 'agent', @isActive)
+               RETURNING id`
+            : `INSERT INTO users (tenant_id, email, password_hash, display_name, role, is_active)
+               OUTPUT INSERTED.id
+               VALUES (@tenantId, @email, 'SSO_USER', @displayName, 'agent', @isActive)`,
           {
             tenantId,
             email: profile.email,
             displayName: profile.displayName,
+            isActive: true,
           }
         );
 
@@ -517,15 +538,21 @@ export class AuthService {
       userId = existingUsers[0].id;
     } else {
       const defaultTenant = await DatabaseService.query<{ id: number }>(
-        'SELECT TOP 1 id FROM tenants ORDER BY id'
+        IS_PG
+          ? 'SELECT id FROM tenants ORDER BY id LIMIT 1'
+          : 'SELECT TOP 1 id FROM tenants ORDER BY id'
       );
       const tenantId = defaultTenant[0]?.id || config.defaultTenantId;
 
       const result = await DatabaseService.query<{ id: number }>(
-        `INSERT INTO users (tenant_id, email, password_hash, display_name, role, is_active)
-         OUTPUT INSERTED.id
-         VALUES (@tenantId, @email, 'LDAP_USER', @displayName, 'agent', 1)`,
-        { tenantId, email: profile.email, displayName: profile.displayName }
+        IS_PG
+          ? `INSERT INTO users (tenant_id, email, password_hash, display_name, role, is_active)
+             VALUES (@tenantId, @email, 'LDAP_USER', @displayName, 'agent', @isActive)
+             RETURNING id`
+          : `INSERT INTO users (tenant_id, email, password_hash, display_name, role, is_active)
+             OUTPUT INSERTED.id
+             VALUES (@tenantId, @email, 'LDAP_USER', @displayName, 'agent', @isActive)`,
+        { tenantId, email: profile.email, displayName: profile.displayName, isActive: true }
       );
 
       userId = result[0].id;

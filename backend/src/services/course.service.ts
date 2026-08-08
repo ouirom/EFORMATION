@@ -1,4 +1,5 @@
 import { DatabaseService } from './database.service';
+import { db, IS_PG } from '../database/db-helpers';
 import { Course, Module, Lesson, Content, AudienceScope, PaginationParams, FilterParams } from '../types';
 import { NotFoundError, ForbiddenError } from '../middleware/error.middleware';
 import { logger } from '../utils/logger';
@@ -32,9 +33,13 @@ export class CourseService {
    */
   static async create(data: CreateCourseDTO): Promise<Course> {
     const result = await DatabaseService.query<{ id: number }>(
-      `INSERT INTO courses (tenant_id, title, description, category, level, duration, audience_scope, prerequisites, created_by)
-       OUTPUT INSERTED.id
-       VALUES (@tenantId, @title, @description, @category, @level, @duration, @audienceScope, @prerequisites, @createdBy)`,
+      IS_PG
+        ? `INSERT INTO courses (tenant_id, title, description, category, level, duration, audience_scope, prerequisites, created_by)
+           VALUES (@tenantId, @title, @description, @category, @level, @duration, @audienceScope, @prerequisites, @createdBy)
+           RETURNING id`
+        : `INSERT INTO courses (tenant_id, title, description, category, level, duration, audience_scope, prerequisites, created_by)
+           OUTPUT INSERTED.id
+           VALUES (@tenantId, @title, @description, @category, @level, @duration, @audienceScope, @prerequisites, @createdBy)`,
       {
         tenantId: data.tenantId,
         title: data.title,
@@ -79,8 +84,8 @@ export class CourseService {
       category: course.category,
       level: course.level,
       duration: course.duration,
-      audienceScope: course.audience_scope ? JSON.parse(course.audience_scope) : null,
-      prerequisites: course.prerequisites ? JSON.parse(course.prerequisites) : null,
+      audienceScope: db.parseJsonColumn(course.audience_scope),
+      prerequisites: db.parseJsonColumn(course.prerequisites),
       isPublished: course.is_published,
       createdBy: course.created_by,
       createdAt: course.created_at,
@@ -118,20 +123,21 @@ export class CourseService {
     }
 
     if (filters.status === 'published') {
-      whereClause += ' AND c.is_published = 1';
+      whereClause += ` AND c.is_published = ${db.bool(true)}`;
     } else if (filters.status === 'draft') {
-      whereClause += ' AND c.is_published = 0';
+      whereClause += ` AND c.is_published = ${db.bool(false)}`;
     }
 
     // Apply audience scope filtering for non-admin users
     if (userRole && userRole !== 'admin') {
+      const audienceLevel = db.jsonExtract('c.audience_scope', 'level');
       whereClause += ` AND (
-        c.is_published = 1 AND (
+        c.is_published = ${db.bool(true)} AND (
           c.audience_scope IS NULL
-          OR JSON_VALUE(c.audience_scope, '$.level') = 'enterprise'
-          ${userDirectionId ? `OR (JSON_VALUE(c.audience_scope, '$.level') = 'direction' AND @userDirectionId IN (SELECT value FROM OPENJSON(c.audience_scope, '$.ids')))` : ''}
-          ${userServiceId ? `OR (JSON_VALUE(c.audience_scope, '$.level') = 'service' AND @userServiceId IN (SELECT value FROM OPENJSON(c.audience_scope, '$.ids')))` : ''}
-          OR (JSON_VALUE(c.audience_scope, '$.level') = 'role' AND @userRole IN (SELECT value FROM OPENJSON(c.audience_scope, '$.roles')))
+          OR ${audienceLevel} = 'enterprise'
+          ${userDirectionId ? `OR (${audienceLevel} = 'direction' AND ${db.jsonArrayContains('c.audience_scope', 'ids', '@userDirectionId')})` : ''}
+          ${userServiceId ? `OR (${audienceLevel} = 'service' AND ${db.jsonArrayContains('c.audience_scope', 'ids', '@userServiceId')})` : ''}
+          OR (${audienceLevel} = 'role' AND ${db.jsonArrayContains('c.audience_scope', 'roles', '@userRole')})
         )
       )`;
       params.userDirectionId = userDirectionId;
@@ -153,7 +159,8 @@ export class CourseService {
     const courses = await DatabaseService.query<any>(
       `SELECT c.*, u.display_name as creator_name,
               (SELECT COUNT(*) FROM modules WHERE course_id = c.id) as module_count,
-              (SELECT AVG(CAST(rating AS FLOAT)) FROM course_evaluations WHERE course_id = c.id) as avg_rating
+              (SELECT AVG(CAST(rating AS FLOAT)) FROM course_evaluations WHERE course_id = c.id) as avg_rating,
+              (SELECT COUNT(*) FROM course_assignments WHERE course_id = c.id) as enrolled_count
        FROM courses c
        LEFT JOIN users u ON c.created_by = u.id
        ${whereClause}
@@ -171,8 +178,8 @@ export class CourseService {
         category: course.category,
         level: course.level,
         duration: course.duration,
-        audienceScope: course.audience_scope ? JSON.parse(course.audience_scope) : null,
-        prerequisites: course.prerequisites ? JSON.parse(course.prerequisites) : null,
+        audienceScope: db.parseJsonColumn(course.audience_scope),
+        prerequisites: db.parseJsonColumn(course.prerequisites),
         isPublished: course.is_published,
         createdBy: course.created_by,
         createdAt: course.created_at,
@@ -180,6 +187,7 @@ export class CourseService {
         creatorName: course.creator_name,
         moduleCount: course.module_count,
         avgRating: course.avg_rating,
+        enrolledCount: course.enrolled_count,
       })),
       total: countResult[0].total,
     };
@@ -276,7 +284,7 @@ export class CourseService {
 
     if (updateFields.length > 0) {
       await DatabaseService.execute(
-        `UPDATE courses SET ${updateFields.join(', ')}, updated_at = SYSUTCDATETIME()
+        `UPDATE courses SET ${updateFields.join(', ')}, updated_at = ${db.now()}
          WHERE id = @courseId AND tenant_id = @tenantId`,
         params
       );
@@ -391,7 +399,7 @@ export class CourseService {
    */
   static async publish(tenantId: number, courseId: number): Promise<Course> {
     await DatabaseService.execute(
-      `UPDATE courses SET is_published = 1, updated_at = SYSUTCDATETIME()
+      `UPDATE courses SET is_published = ${db.bool(true)}, updated_at = ${db.now()}
        WHERE id = @courseId AND tenant_id = @tenantId`,
       { courseId, tenantId }
     );
@@ -403,7 +411,7 @@ export class CourseService {
    */
   static async unpublish(tenantId: number, courseId: number): Promise<Course> {
     await DatabaseService.execute(
-      `UPDATE courses SET is_published = 0, updated_at = SYSUTCDATETIME()
+      `UPDATE courses SET is_published = ${db.bool(false)}, updated_at = ${db.now()}
        WHERE id = @courseId AND tenant_id = @tenantId`,
       { courseId, tenantId }
     );
@@ -552,9 +560,13 @@ export class ModuleService {
     position: number;
   }): Promise<Module> {
     const result = await DatabaseService.query<{ id: number }>(
-      `INSERT INTO modules (tenant_id, course_id, title, position)
-       OUTPUT INSERTED.id
-       VALUES (@tenantId, @courseId, @title, @position)`,
+      IS_PG
+        ? `INSERT INTO modules (tenant_id, course_id, title, position)
+           VALUES (@tenantId, @courseId, @title, @position)
+           RETURNING id`
+        : `INSERT INTO modules (tenant_id, course_id, title, position)
+           OUTPUT INSERTED.id
+           VALUES (@tenantId, @courseId, @title, @position)`,
       data
     );
 
@@ -636,9 +648,13 @@ export class LessonService {
     durationMin?: number;
   }): Promise<Lesson> {
     const result = await DatabaseService.query<{ id: number }>(
-      `INSERT INTO lessons (tenant_id, module_id, title, type, position, duration_min)
-       OUTPUT INSERTED.id
-       VALUES (@tenantId, @moduleId, @title, @type, @position, @durationMin)`,
+      IS_PG
+        ? `INSERT INTO lessons (tenant_id, module_id, title, type, position, duration_min)
+           VALUES (@tenantId, @moduleId, @title, @type, @position, @durationMin)
+           RETURNING id`
+        : `INSERT INTO lessons (tenant_id, module_id, title, type, position, duration_min)
+           OUTPUT INSERTED.id
+           VALUES (@tenantId, @moduleId, @title, @type, @position, @durationMin)`,
       {
         tenantId: data.tenantId,
         moduleId: data.moduleId,
@@ -742,9 +758,13 @@ export class ContentService {
     position: number;
   }): Promise<Content> {
     const result = await DatabaseService.query<{ id: number }>(
-      `INSERT INTO contents (tenant_id, lesson_id, type, title, body, file_id, url, position)
-       OUTPUT INSERTED.id
-       VALUES (@tenantId, @lessonId, @type, @title, @body, @fileId, @url, @position)`,
+      IS_PG
+        ? `INSERT INTO contents (tenant_id, lesson_id, type, title, body, file_id, url, position)
+           VALUES (@tenantId, @lessonId, @type, @title, @body, @fileId, @url, @position)
+           RETURNING id`
+        : `INSERT INTO contents (tenant_id, lesson_id, type, title, body, file_id, url, position)
+           OUTPUT INSERTED.id
+           VALUES (@tenantId, @lessonId, @type, @title, @body, @fileId, @url, @position)`,
       {
         tenantId: data.tenantId,
         lessonId: data.lessonId,

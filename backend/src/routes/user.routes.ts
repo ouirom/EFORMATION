@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import multer from 'multer';
 import { authenticate, authorize, AuthRequest, ROLE_HIERARCHY } from '../middleware/auth.middleware';
 import { DatabaseService } from '../services/database.service';
+import { db, IS_PG } from '../database/db-helpers';
 import { AuditService } from '../services/audit.service';
 import { NotificationService } from '../services/notification.service';
 import { BadRequestError, NotFoundError, ConflictError, ForbiddenError } from '../middleware/error.middleware';
@@ -35,7 +36,7 @@ async function resolveSupervisorId(
   if (supervisorId === undefined || supervisorId === null) return null;
 
   const supervisors = await DatabaseService.query<{ id: number; role: string }>(
-    'SELECT id, role FROM users WHERE id = @supervisorId AND tenant_id = @tenantId AND deleted_at IS NULL AND is_active = 1',
+    `SELECT id, role FROM users WHERE id = @supervisorId AND tenant_id = @tenantId AND deleted_at IS NULL AND is_active = ${db.bool(true)}`,
     { supervisorId, tenantId }
   );
   if (supervisors.length === 0) {
@@ -135,15 +136,25 @@ router.post(
 
       // Insert user
       const result = await DatabaseService.query<{ id: number }>(
-        `INSERT INTO users (
-          tenant_id, email, username, password_hash, display_name, role,
-          enterprise_id, direction_id, service_id, supervisor_id, is_active
-        )
-        OUTPUT INSERTED.id
-        VALUES (
-          @tenantId, @email, @username, @passwordHash, @displayName, @role,
-          @enterpriseId, @directionId, @serviceId, @supervisorId, 1
-        )`,
+        IS_PG
+          ? `INSERT INTO users (
+              tenant_id, email, username, password_hash, display_name, role,
+              enterprise_id, direction_id, service_id, supervisor_id, is_active
+            )
+            VALUES (
+              @tenantId, @email, @username, @passwordHash, @displayName, @role,
+              @enterpriseId, @directionId, @serviceId, @supervisorId, @isActive
+            )
+            RETURNING id`
+          : `INSERT INTO users (
+              tenant_id, email, username, password_hash, display_name, role,
+              enterprise_id, direction_id, service_id, supervisor_id, is_active
+            )
+            OUTPUT INSERTED.id
+            VALUES (
+              @tenantId, @email, @username, @passwordHash, @displayName, @role,
+              @enterpriseId, @directionId, @serviceId, @supervisorId, @isActive
+            )`,
         {
           tenantId: req.user!.tenantId,
           email: req.body.email,
@@ -155,6 +166,7 @@ router.post(
           directionId: req.body.directionId || null,
           serviceId: req.body.serviceId || null,
           supervisorId,
+          isActive: true,
         }
       );
 
@@ -314,16 +326,26 @@ router.post(
           const username = email.split('@')[0] + '_' + Date.now().toString(36) + i;
 
           const result = await DatabaseService.query<{ id: number }>(
-            `INSERT INTO users (
-              tenant_id, email, username, password_hash, display_name, role,
-              enterprise_id, direction_id, service_id, supervisor_id, is_active
-            )
-            OUTPUT INSERTED.id
-            VALUES (
-              @tenantId, @email, @username, @passwordHash, @displayName, @role,
-              @enterpriseId, @directionId, @serviceId, @supervisorId, 1
-            )`,
-            { tenantId, email, username, passwordHash, displayName, role, enterpriseId, directionId, serviceId, supervisorId }
+            IS_PG
+              ? `INSERT INTO users (
+                  tenant_id, email, username, password_hash, display_name, role,
+                  enterprise_id, direction_id, service_id, supervisor_id, is_active
+                )
+                VALUES (
+                  @tenantId, @email, @username, @passwordHash, @displayName, @role,
+                  @enterpriseId, @directionId, @serviceId, @supervisorId, @isActive
+                )
+                RETURNING id`
+              : `INSERT INTO users (
+                  tenant_id, email, username, password_hash, display_name, role,
+                  enterprise_id, direction_id, service_id, supervisor_id, is_active
+                )
+                OUTPUT INSERTED.id
+                VALUES (
+                  @tenantId, @email, @username, @passwordHash, @displayName, @role,
+                  @enterpriseId, @directionId, @serviceId, @supervisorId, @isActive
+                )`,
+            { tenantId, email, username, passwordHash, displayName, role, enterpriseId, directionId, serviceId, supervisorId, isActive: true }
           );
 
           knownEmails.add(email);
@@ -604,7 +626,7 @@ router.put(
 
       if (updateFields.length > 0) {
         await DatabaseService.execute(
-          `UPDATE users SET ${updateFields.join(', ')}, updated_at = SYSUTCDATETIME()
+          `UPDATE users SET ${updateFields.join(', ')}, updated_at = ${db.now()}
            WHERE id = @userId AND tenant_id = @tenantId`,
           params
         );
@@ -675,7 +697,7 @@ router.put(
 
       const previousStatus = target.status;
       await DatabaseService.execute(
-        `UPDATE users SET status = @status, is_active = @isActive, updated_at = SYSUTCDATETIME()
+        `UPDATE users SET status = @status, is_active = @isActive, updated_at = ${db.now()}
          WHERE id = @userId AND tenant_id = @tenantId`,
         { status: nextStatus, isActive: nextStatus === 'active', userId, tenantId: requester.tenantId }
       );
@@ -737,7 +759,7 @@ router.delete('/:id', authenticate, authorize('admin'), async (req: AuthRequest,
     }
 
     await DatabaseService.execute(
-      `UPDATE users SET deleted_at = SYSUTCDATETIME(), is_active = 0
+      `UPDATE users SET deleted_at = ${db.now()}, is_active = ${db.bool(false)}
        WHERE id = @userId AND tenant_id = @tenantId`,
       { userId, tenantId: req.user!.tenantId }
     );
@@ -834,7 +856,7 @@ router.get('/:id/progress', authenticate, async (req: AuthRequest, res, next) =>
        LEFT JOIN quizzes q ON q.lesson_id = l.id
        LEFT JOIN attempts a ON a.quiz_id = q.id AND a.user_id = @userId
        LEFT JOIN certificates cert ON cert.course_id = c.id AND cert.user_id = @userId
-       WHERE c.tenant_id = @tenantId AND c.is_published = 1
+       WHERE c.tenant_id = @tenantId AND c.is_published = ${db.bool(true)}
        GROUP BY c.id, c.title, cert.id
        ORDER BY c.title`,
       { userId, tenantId: req.user!.tenantId }

@@ -23,10 +23,17 @@ export const config = {
   port: parseInt(process.env.PORT || '3001', 10),
   host: process.env.HOST || 'localhost',
   
-  // Database - SQL Server
+  // Database — client selects which backend DatabaseService uses under the hood.
+  // 'mssql' (default, unchanged): the existing native mssql/msnodesqlv8 Windows-auth
+  // driver — kept as-is because SQL Server instances configured for Windows-Auth-only
+  // (common; this is the case for this project's own dev instance — see
+  // SERVERPROPERTY('IsIntegratedSecurityOnly')) can't use SQL-login auth at all, which
+  // is what Knex's tedious-based mssql client requires. 'pg': routed through Knex.
   database: {
+    client: process.env.DB_CLIENT || 'mssql',
     server: process.env.DB_HOST || 'localhost',
     database: process.env.DB_NAME || 'db_eformation',
+    port: parseInt(process.env.DB_PORT || '', 10) || undefined,
     user: process.env.DB_USER || '',
     password: process.env.DB_PASSWORD || '',
     options: {
@@ -34,6 +41,7 @@ export const config = {
       trustServerCertificate: process.env.DB_TRUST_SERVER_CERTIFICATE !== 'false',
       enableArithAbort: true,
     },
+    ssl: process.env.DB_SSL === 'true',
     pool: {
       max: 10,
       min: 0,

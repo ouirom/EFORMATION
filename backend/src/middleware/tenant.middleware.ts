@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { DatabaseService } from '../services/database.service';
+import { IS_PG } from '../database/db-helpers';
 import { BadRequestError } from './error.middleware';
 
 export interface TenantRequest extends Request {
@@ -59,7 +60,9 @@ const tenantHandler = async (
     // Default to tenant ID 1 for development
     if (!tenantId && process.env.NODE_ENV === 'development') {
       const defaultTenant = await DatabaseService.query<{ id: number; slug: string }>(
-        'SELECT TOP 1 id, slug FROM tenants ORDER BY id'
+        IS_PG
+          ? 'SELECT id, slug FROM tenants ORDER BY id LIMIT 1'
+          : 'SELECT TOP 1 id, slug FROM tenants ORDER BY id'
       );
       if (defaultTenant.length > 0) {
         tenantId = defaultTenant[0].id;
