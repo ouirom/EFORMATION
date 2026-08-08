@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { body, validationResult } from 'express-validator';
 import { authenticate, AuthRequest } from '../middleware/auth.middleware';
 import { DatabaseService } from '../services/database.service';
+import { db, IS_PG } from '../database/db-helpers';
 import { BadRequestError, NotFoundError } from '../middleware/error.middleware';
 
 const router = Router();
@@ -44,12 +45,16 @@ router.post(
 
       // Create attempt
       const attemptResult = await DatabaseService.query<{ id: number }>(
-        `INSERT INTO quiz_attempts (tenant_id, quiz_id, user_id, started_at, time_spent)
-         OUTPUT INSERTED.id
-         VALUES (@tenantId, @quizId, @userId, SYSUTCDATETIME(), @timeSpent)`,
-        { 
-          tenantId: req.user!.tenantId, 
-          quizId, 
+        IS_PG
+          ? `INSERT INTO quiz_attempts (tenant_id, quiz_id, user_id, started_at, time_spent)
+             VALUES (@tenantId, @quizId, @userId, ${db.now()}, @timeSpent)
+             RETURNING id`
+          : `INSERT INTO quiz_attempts (tenant_id, quiz_id, user_id, started_at, time_spent)
+             OUTPUT INSERTED.id
+             VALUES (@tenantId, @quizId, @userId, ${db.now()}, @timeSpent)`,
+        {
+          tenantId: req.user!.tenantId,
+          quizId,
           userId: req.user!.id,
           timeSpent: timeSpent || 0,
         }
@@ -59,8 +64,8 @@ router.post(
 
       // Get all questions with their correct choices
       const questions = await DatabaseService.query<any>(
-        `SELECT q.id, q.type, 
-                (SELECT id FROM choices WHERE question_id = q.id AND is_correct = 1) as correct_choice_id
+        `SELECT q.id, q.type,
+                (SELECT id FROM choices WHERE question_id = q.id AND is_correct = ${db.bool(true)}) as correct_choice_id
          FROM questions q
          WHERE q.quiz_id = @quizId`,
         { quizId }
@@ -102,8 +107,8 @@ router.post(
 
       // Update attempt with score
       await DatabaseService.execute(
-        `UPDATE quiz_attempts 
-         SET score = @score, passed = @passed, completed_at = SYSUTCDATETIME()
+        `UPDATE quiz_attempts
+         SET score = @score, passed = @passed, completed_at = ${db.now()}
          WHERE id = @attemptId`,
         { attemptId, score, passed }
       );
@@ -111,7 +116,7 @@ router.post(
       // Get feedback for each question
       const feedback = await DatabaseService.query<any>(
         `SELECT qa.question_id, qa.is_correct as correct, qa.choice_id as selected_choice,
-                (SELECT label FROM choices WHERE question_id = qa.question_id AND is_correct = 1) as correct_answer
+                (SELECT label FROM choices WHERE question_id = qa.question_id AND is_correct = ${db.bool(true)}) as correct_answer
          FROM quiz_answers qa
          WHERE qa.attempt_id = @attemptId`,
         { attemptId }
@@ -180,9 +185,13 @@ router.post(
 
       // Create new attempt
       const result = await DatabaseService.query<{ id: number }>(
-        `INSERT INTO attempts (tenant_id, quiz_id, user_id, status)
-         OUTPUT INSERTED.id
-         VALUES (@tenantId, @quizId, @userId, 'in_progress')`,
+        IS_PG
+          ? `INSERT INTO attempts (tenant_id, quiz_id, user_id, status)
+             VALUES (@tenantId, @quizId, @userId, 'in_progress')
+             RETURNING id`
+          : `INSERT INTO attempts (tenant_id, quiz_id, user_id, status)
+             OUTPUT INSERTED.id
+             VALUES (@tenantId, @quizId, @userId, 'in_progress')`,
         { tenantId: req.user!.tenantId, quizId, userId: req.user!.id }
       );
 
@@ -315,12 +324,12 @@ router.post('/:id/submit', authenticate, async (req: AuthRequest, res, next) => 
         if (answer.choice_is_correct) {
           correctAnswers++;
           await DatabaseService.execute(
-            'UPDATE answers SET is_correct = 1, points = 1 WHERE id = @id',
+            `UPDATE answers SET is_correct = ${db.bool(true)}, points = 1 WHERE id = @id`,
             { id: answer.id }
           );
         } else {
           await DatabaseService.execute(
-            'UPDATE answers SET is_correct = 0, points = 0 WHERE id = @id',
+            `UPDATE answers SET is_correct = ${db.bool(false)}, points = 0 WHERE id = @id`,
             { id: answer.id }
           );
         }
@@ -333,17 +342,23 @@ router.post('/:id/submit', authenticate, async (req: AuthRequest, res, next) => 
 
     // Update attempt
     await DatabaseService.execute(
-      `UPDATE attempts SET submitted_at = SYSUTCDATETIME(), score = @score, status = 'graded'
+      `UPDATE attempts SET submitted_at = ${db.now()}, score = @score, status = 'graded'
        WHERE id = @attemptId`,
       { attemptId, score }
     );
 
     // Award badge if passed
     if (passed) {
+      // JSON_VALUE/->> both return text, so the min_score comparison needs an
+      // explicit numeric cast on the pg side (mssql implicitly converts nvarchar to int).
+      const minScoreExpr = IS_PG
+        ? `(${db.jsonExtract('b.criteria', 'min_score')})::numeric`
+        : db.jsonExtract('b.criteria', 'min_score');
+
       const badges = await DatabaseService.query<any>(
         `SELECT b.id FROM badges b
-         WHERE b.tenant_id = @tenantId 
-         AND JSON_VALUE(b.criteria, '$.min_score') <= @score`,
+         WHERE b.tenant_id = @tenantId
+         AND ${minScoreExpr} <= @score`,
         { tenantId: req.user!.tenantId, score }
       );
 
@@ -366,8 +381,8 @@ router.post('/:id/submit', authenticate, async (req: AuthRequest, res, next) => 
 
     // Get updated attempt with results
     const result = await DatabaseService.query<any>(
-      `SELECT a.*, 
-              (SELECT COUNT(*) FROM answers WHERE attempt_id = a.id AND is_correct = 1) as correct_count,
+      `SELECT a.*,
+              (SELECT COUNT(*) FROM answers WHERE attempt_id = a.id AND is_correct = ${db.bool(true)}) as correct_count,
               (SELECT COUNT(*) FROM questions WHERE quiz_id = a.quiz_id) as total_questions
        FROM attempts a WHERE a.id = @attemptId`,
       { attemptId }

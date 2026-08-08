@@ -1,5 +1,6 @@
 import { DatabaseService } from './database.service';
 import { NotificationService } from './notification.service';
+import { db } from '../database/db-helpers';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 
@@ -28,7 +29,7 @@ export class CertificateService {
        JOIN courses co ON co.id = c.course_id
        WHERE c.expires_at IS NOT NULL
          AND c.renewal_reminder_sent_at IS NULL
-         AND c.expires_at BETWEEN SYSUTCDATETIME() AND DATEADD(day, @daysBefore, SYSUTCDATETIME())`,
+         AND c.expires_at BETWEEN ${db.now()} AND ${db.dateAdd('day', '@daysBefore', db.now())}`,
       { daysBefore: RENEWAL_REMINDER_DAYS_BEFORE }
     );
 
@@ -47,7 +48,7 @@ export class CertificateService {
       });
 
       await DatabaseService.execute(
-        `UPDATE certificates SET renewal_reminder_sent_at = SYSUTCDATETIME() WHERE id = @id`,
+        `UPDATE certificates SET renewal_reminder_sent_at = ${db.now()} WHERE id = @id`,
         { id: cert.id }
       );
       remindersSent++;

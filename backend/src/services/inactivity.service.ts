@@ -1,4 +1,5 @@
 import { DatabaseService } from './database.service';
+import { db } from '../database/db-helpers';
 import { AuditService } from './audit.service';
 import { NotificationService } from './notification.service';
 import { logger } from '../utils/logger';
@@ -49,7 +50,7 @@ export class InactivityPolicyService {
       );
     } else {
       await DatabaseService.execute(
-        `UPDATE inactivity_policies SET max_inactive_days = @maxInactiveDays, updated_by = @updatedBy, updated_at = SYSUTCDATETIME()
+        `UPDATE inactivity_policies SET max_inactive_days = @maxInactiveDays, updated_by = @updatedBy, updated_at = ${db.now()}
          WHERE tenant_id = @tenantId AND role = @role`,
         { tenantId, role, maxInactiveDays, updatedBy }
       );
@@ -74,13 +75,13 @@ export class InactivitySuspensionService {
       const staleUsers = await DatabaseService.query<{ id: number; tenant_id: number; display_name: string; email: string }>(
         `SELECT id, tenant_id, display_name, email FROM users
          WHERE tenant_id = @tenantId AND role = @role AND status = 'active' AND deleted_at IS NULL
-           AND ISNULL(last_login_at, created_at) < DATEADD(day, -@maxDays, SYSUTCDATETIME())`,
+           AND ISNULL(last_login_at, created_at) < ${db.dateAdd('day', '-@maxDays', db.now())}`,
         { tenantId: policy.tenant_id, role: policy.role, maxDays: policy.max_inactive_days }
       );
 
       for (const user of staleUsers) {
         await DatabaseService.execute(
-          `UPDATE users SET status = 'suspended', is_active = 0, updated_at = SYSUTCDATETIME() WHERE id = @id`,
+          `UPDATE users SET status = 'suspended', is_active = ${db.bool(false)}, updated_at = ${db.now()} WHERE id = @id`,
           { id: user.id }
         );
 

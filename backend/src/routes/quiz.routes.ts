@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { body, validationResult } from 'express-validator';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.middleware';
 import { DatabaseService } from '../services/database.service';
+import { IS_PG } from '../database/db-helpers';
 import { BadRequestError, NotFoundError } from '../middleware/error.middleware';
 
 const router = Router();
@@ -378,9 +379,13 @@ router.post(
       validate(req);
 
       const result = await DatabaseService.query<{ id: number }>(
-        `INSERT INTO quizzes (tenant_id, lesson_id, title, passing_score, randomized)
-         OUTPUT INSERTED.id
-         VALUES (@tenantId, @lessonId, @title, @passingScore, @randomized)`,
+        IS_PG
+          ? `INSERT INTO quizzes (tenant_id, lesson_id, title, passing_score, randomized)
+             VALUES (@tenantId, @lessonId, @title, @passingScore, @randomized)
+             RETURNING id`
+          : `INSERT INTO quizzes (tenant_id, lesson_id, title, passing_score, randomized)
+             OUTPUT INSERTED.id
+             VALUES (@tenantId, @lessonId, @title, @passingScore, @randomized)`,
         {
           tenantId: req.user!.tenantId,
           lessonId: req.body.lessonId,
@@ -537,9 +542,13 @@ router.post(
       }
 
       const result = await DatabaseService.query<{ id: number }>(
-        `INSERT INTO questions (tenant_id, quiz_id, type, prompt, position)
-         OUTPUT INSERTED.id
-         VALUES (@tenantId, @quizId, @type, @prompt, @position)`,
+        IS_PG
+          ? `INSERT INTO questions (tenant_id, quiz_id, type, prompt, position)
+             VALUES (@tenantId, @quizId, @type, @prompt, @position)
+             RETURNING id`
+          : `INSERT INTO questions (tenant_id, quiz_id, type, prompt, position)
+             OUTPUT INSERTED.id
+             VALUES (@tenantId, @quizId, @type, @prompt, @position)`,
         {
           tenantId: req.user!.tenantId,
           quizId,

@@ -4,6 +4,7 @@ import webPush from 'web-push';
 import admin from 'firebase-admin';
 import { config } from '../config';
 import { DatabaseService } from './database.service';
+import { db, IS_PG } from '../database/db-helpers';
 import { logger } from '../utils/logger';
 
 interface NotificationPayload {
@@ -95,9 +96,13 @@ export class NotificationService {
 
     // Create notification record
     const result = await DatabaseService.query<{ id: number }>(
-      `INSERT INTO notifications (tenant_id, user_id, channel, subject, body, action_url, metadata)
-       OUTPUT INSERTED.id
-       VALUES (@tenantId, @userId, @channel, @subject, @body, @actionUrl, @metadata)`,
+      IS_PG
+        ? `INSERT INTO notifications (tenant_id, user_id, channel, subject, body, action_url, metadata)
+           VALUES (@tenantId, @userId, @channel, @subject, @body, @actionUrl, @metadata)
+           RETURNING id`
+        : `INSERT INTO notifications (tenant_id, user_id, channel, subject, body, action_url, metadata)
+           OUTPUT INSERTED.id
+           VALUES (@tenantId, @userId, @channel, @subject, @body, @actionUrl, @metadata)`,
       {
         tenantId,
         userId,
@@ -134,16 +139,16 @@ export class NotificationService {
 
       // Update status to sent
       await DatabaseService.execute(
-        `UPDATE notifications SET sent_at = SYSUTCDATETIME(), external_id = @externalId WHERE id = @id`,
+        `UPDATE notifications SET sent_at = ${db.now()}, external_id = @externalId WHERE id = @id`,
         { id: notificationId, externalId }
       );
 
       return { id: notificationId, status: 'sent', channel, externalId };
     } catch (error) {
       logger.error('Failed to send notification', { notificationId, channel, error });
-      
+
       await DatabaseService.execute(
-        `UPDATE notifications SET failed_at = SYSUTCDATETIME(), error_message = @error WHERE id = @id`,
+        `UPDATE notifications SET failed_at = ${db.now()}, error_message = @error WHERE id = @id`,
         { id: notificationId, error: (error as Error).message }
       );
 

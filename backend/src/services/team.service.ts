@@ -1,4 +1,5 @@
 import { DatabaseService } from './database.service';
+import { db } from '../database/db-helpers';
 import { ROLE_HIERARCHY } from '../middleware/auth.middleware';
 
 export interface TeamMember {
@@ -87,11 +88,11 @@ export class TeamService {
            OR (ca.assignment_type = 'role' AND u2.role = ca.target_role)
          )
          LEFT JOIN enrollments en ON en.course_id = ca.course_id AND en.user_id = u2.id
-         WHERE ca.tenant_id = @tenantId AND ca.is_mandatory = 1 AND ca.due_date < SYSUTCDATETIME()
+         WHERE ca.tenant_id = @tenantId AND ca.is_mandatory = ${db.bool(true)} AND ca.due_date < ${db.now()}
            AND (en.completed_at IS NULL AND (en.progress_percent IS NULL OR en.progress_percent < 100))
          GROUP BY u2.id
        ) overdue ON overdue.user_id = u.id
-       WHERE u.tenant_id = @tenantId AND u.deleted_at IS NULL AND u.is_active = 1 AND ${scopeClause}
+       WHERE u.tenant_id = @tenantId AND u.deleted_at IS NULL AND u.is_active = ${db.bool(true)} AND ${scopeClause}
        ORDER BY u.display_name`,
       params
     );
