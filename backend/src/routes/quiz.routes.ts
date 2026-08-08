@@ -691,9 +691,9 @@ router.delete(
     try {
       const questionId = parseInt(req.params.questionId, 10);
       
-      // First delete quiz_answers for this question
+      // First delete answers for this question
       await DatabaseService.execute(
-        'DELETE FROM quiz_answers WHERE question_id = @questionId',
+        'DELETE FROM answers WHERE question_id = @questionId',
         { questionId }
       );
       

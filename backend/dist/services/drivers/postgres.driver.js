@@ -5,6 +5,13 @@ const pg_1 = require("pg");
 const config_1 = require("../../config");
 const logger_1 = require("../../utils/logger");
 const sql_dialect_1 = require("../../utils/sql-dialect");
+// Match the mssql driver's value shapes so route code behaves the same on both engines:
+// BIGINT (oid 20) as a JS number instead of pg's default string, and JSON/JSONB (oid
+// 114/3802) as raw text instead of pg's default auto-parsed object, since the codebase
+// was written against mssql's NVARCHAR(MAX) JSON columns and calls JSON.parse() itself.
+pg_1.types.setTypeParser(20, (value) => parseInt(value, 10));
+pg_1.types.setTypeParser(114, (value) => value);
+pg_1.types.setTypeParser(3802, (value) => value);
 class PostgresDriver {
     pool = null;
     getPool() {

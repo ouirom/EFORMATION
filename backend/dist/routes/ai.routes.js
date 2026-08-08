@@ -157,7 +157,7 @@ router.get('/recommendations/next-steps', auth_middleware_1.authenticate, async 
         const currentEnrollments = await database_service_1.DatabaseService.query(`SELECT e.*, c.title as course_title, 
               (SELECT TOP 1 l.title FROM lessons l 
                JOIN modules m ON l.module_id = m.id 
-               JOIN user_progress up ON up.lesson_id = l.id 
+               JOIN lesson_progress up ON up.lesson_id = l.id 
                WHERE m.course_id = c.id AND up.user_id = @userId AND up.completed = 0
                ORDER BY m.order_index, l.order_index) as next_lesson
        FROM enrollments e
@@ -165,7 +165,7 @@ router.get('/recommendations/next-steps', auth_middleware_1.authenticate, async 
        WHERE e.user_id = @userId AND e.progress < 100`, { userId: req.user.id });
         // Get user's quiz results
         const recentQuizResults = await database_service_1.DatabaseService.query(`SELECT TOP 5 q.title, qa.score, qa.passed 
-       FROM quiz_attempts qa
+       FROM attempts qa
        JOIN quizzes q ON qa.quiz_id = q.id
        WHERE qa.user_id = @userId
        ORDER BY qa.finished_at DESC`, { userId: req.user.id });
@@ -303,7 +303,7 @@ router.get('/insights/course-effectiveness/:courseId', auth_middleware_1.authent
         // Get quiz performance
         const quizData = await database_service_1.DatabaseService.query(`SELECT q.title, AVG(qa.score) as avg_score, 
                 SUM(CASE WHEN qa.passed = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as pass_rate
-         FROM quiz_attempts qa
+         FROM attempts qa
          JOIN quizzes q ON qa.quiz_id = q.id
          WHERE q.course_id = @courseId
          GROUP BY q.id, q.title`, { courseId });

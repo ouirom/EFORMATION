@@ -142,6 +142,26 @@ CREATE TABLE IF NOT EXISTS ai_chat_history (
 );
 CREATE INDEX IF NOT EXISTS idx_ai_chat_history_user ON ai_chat_history(user_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS user_profiles (
+  id             BIGSERIAL PRIMARY KEY,
+  tenant_id      BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  user_id        BIGINT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  interests      JSONB,
+  learning_goals JSONB,
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS ai_usage_logs (
+  id                 BIGSERIAL PRIMARY KEY,
+  tenant_id          BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  user_id            BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  feature            TEXT NOT NULL,
+  prompt_tokens      INT NOT NULL DEFAULT 0,
+  completion_tokens  INT NOT NULL DEFAULT 0,
+  model              TEXT,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- =====================
 -- Fichiers / Assets
 -- =====================
@@ -165,6 +185,9 @@ CREATE TABLE IF NOT EXISTS courses (
   tenant_id    BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   title        TEXT NOT NULL,
   description  TEXT,
+  category     TEXT,
+  level        TEXT,
+  duration     INT,
   audience_scope JSONB, -- {level:'enterprise'|'direction'|'service'|'role', ids:[...], roles:[...]}
   prerequisites JSONB,
   is_published BOOLEAN NOT NULL DEFAULT FALSE,
@@ -188,10 +211,51 @@ CREATE TABLE IF NOT EXISTS lessons (
   tenant_id    BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   module_id    BIGINT NOT NULL REFERENCES modules(id) ON DELETE CASCADE,
   title        TEXT NOT NULL,
+  description  TEXT,
+  type         TEXT,
   position     INT NOT NULL,
   duration_min INT,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS enrollments (
+  id               BIGSERIAL PRIMARY KEY,
+  tenant_id        BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  course_id        BIGINT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  user_id          BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  progress_percent INT NOT NULL DEFAULT 0,
+  started_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  completed_at     TIMESTAMPTZ,
+  UNIQUE (tenant_id, course_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS lesson_progress (
+  id                  BIGSERIAL PRIMARY KEY,
+  tenant_id           BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  user_id             BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  lesson_id           BIGINT NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
+  course_id           BIGINT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  status              TEXT NOT NULL DEFAULT 'not_started' CHECK (status IN ('not_started','in_progress','completed')),
+  progress_percent    INT NOT NULL DEFAULT 0,
+  time_spent_seconds  INT NOT NULL DEFAULT 0,
+  started_at          TIMESTAMPTZ,
+  last_accessed_at    TIMESTAMPTZ,
+  completed_at        TIMESTAMPTZ,
+  UNIQUE (tenant_id, user_id, lesson_id)
+);
+
+CREATE TABLE IF NOT EXISTS course_assignments (
+  id              BIGSERIAL PRIMARY KEY,
+  tenant_id       BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  course_id       BIGINT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  assignment_type TEXT NOT NULL, -- 'user','enterprise','direction','service','role'
+  target_id       BIGINT,
+  target_role     TEXT,
+  is_mandatory    BOOLEAN NOT NULL DEFAULT FALSE,
+  due_date        TIMESTAMPTZ,
+  assigned_by     BIGINT REFERENCES users(id),
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS contents (
@@ -246,8 +310,11 @@ CREATE TABLE IF NOT EXISTS attempts (
   user_id      BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   started_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   submitted_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
   score        INT,
-  status       TEXT NOT NULL CHECK (status IN ('in_progress','submitted','graded'))
+  passed       BOOLEAN,
+  time_spent   INT,
+  status       TEXT NOT NULL DEFAULT 'in_progress' CHECK (status IN ('in_progress','submitted','graded'))
 );
 
 CREATE TABLE IF NOT EXISTS answers (
@@ -310,21 +377,25 @@ CREATE TABLE IF NOT EXISTS course_evaluations (
 -- =====================
 -- Blog & communauté
 -- =====================
+CREATE TABLE IF NOT EXISTS categories (
+  id           BIGSERIAL PRIMARY KEY,
+  tenant_id    BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  name         TEXT NOT NULL UNIQUE,
+  slug         TEXT
+);
+
 CREATE TABLE IF NOT EXISTS blog_posts (
   id           BIGSERIAL PRIMARY KEY,
   tenant_id    BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   author_id    BIGINT REFERENCES users(id),
   title        TEXT NOT NULL,
+  slug         TEXT,
   body         TEXT NOT NULL,
+  category_id  BIGINT REFERENCES categories(id) ON DELETE SET NULL,
+  featured_image_id BIGINT REFERENCES file_assets(id) ON DELETE SET NULL,
   status       TEXT NOT NULL CHECK (status IN ('draft','published')),
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   published_at TIMESTAMPTZ
-);
-
-CREATE TABLE IF NOT EXISTS categories (
-  id           BIGSERIAL PRIMARY KEY,
-  tenant_id    BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-  name         TEXT NOT NULL UNIQUE
 );
 
 CREATE TABLE IF NOT EXISTS tags (
@@ -344,8 +415,10 @@ CREATE TABLE IF NOT EXISTS comments (
   tenant_id    BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   post_id      BIGINT NOT NULL REFERENCES blog_posts(id) ON DELETE CASCADE,
   user_id      BIGINT REFERENCES users(id),
+  parent_id    BIGINT REFERENCES comments(id) ON DELETE CASCADE,
   body         TEXT NOT NULL,
-  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  deleted_at   TIMESTAMPTZ
 );
 
 -- =====================
@@ -410,12 +483,29 @@ CREATE TABLE IF NOT EXISTS notification_preferences (
   UNIQUE (tenant_id, user_id)
 );
 
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id           BIGSERIAL PRIMARY KEY,
+  tenant_id    BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  user_id      BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  endpoint     TEXT NOT NULL,
+  p256dh       TEXT NOT NULL,
+  auth         TEXT NOT NULL,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (user_id, endpoint)
+);
+
 CREATE TABLE IF NOT EXISTS notifications (
   id           BIGSERIAL PRIMARY KEY,
   tenant_id    BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
   user_id      BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   template_id  BIGINT REFERENCES notification_templates(id),
   payload      JSONB,
+  external_id    TEXT,
+  sent_at        TIMESTAMPTZ,
+  failed_at      TIMESTAMPTZ,
+  error_message  TEXT,
+  read_at        TIMESTAMPTZ,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -529,18 +619,47 @@ CREATE TABLE IF NOT EXISTS search_index (
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS search_history (
+  id            BIGSERIAL PRIMARY KEY,
+  tenant_id     BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  user_id       BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  query         TEXT NOT NULL,
+  result_count  INT NOT NULL DEFAULT 0,
+  searched_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_search_history_user ON search_history(user_id, searched_at DESC);
+
 -- =====================
 -- Intégrations & API
 -- =====================
-CREATE TABLE IF NOT EXISTS webhook_subscriptions (
-  id           BIGSERIAL PRIMARY KEY,
-  tenant_id    BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-  url          TEXT NOT NULL,
-  event        TEXT NOT NULL, -- e.g., 'course.published', 'quiz.passed'
-  secret       TEXT,
-  is_active    BOOLEAN NOT NULL DEFAULT TRUE,
-  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+CREATE TABLE IF NOT EXISTS webhooks (
+  id                 BIGSERIAL PRIMARY KEY,
+  tenant_id          BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  name               TEXT NOT NULL,
+  url                TEXT NOT NULL,
+  events             JSONB NOT NULL, -- array of event names, e.g. ['course.published','quiz.completed']
+  secret             TEXT,
+  headers            JSONB,
+  is_active          BOOLEAN NOT NULL DEFAULT TRUE,
+  created_by         BIGINT REFERENCES users(id),
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_triggered_at  TIMESTAMPTZ
 );
+
+CREATE TABLE IF NOT EXISTS webhook_deliveries (
+  id                 BIGSERIAL PRIMARY KEY,
+  webhook_id         BIGINT NOT NULL REFERENCES webhooks(id) ON DELETE CASCADE,
+  event              TEXT NOT NULL,
+  payload            JSONB,
+  response_status    INT,
+  response_body      TEXT,
+  response_time_ms   INT,
+  success            BOOLEAN NOT NULL DEFAULT FALSE,
+  error_message      TEXT,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_webhook ON webhook_deliveries(webhook_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS api_keys (
   id           BIGSERIAL PRIMARY KEY,
@@ -563,6 +682,19 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   entity       TEXT,
   entity_id    BIGINT,
   metadata     JSONB,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS scheduled_reports (
+  id           BIGSERIAL PRIMARY KEY,
+  tenant_id    BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  report_type  TEXT NOT NULL,
+  frequency    TEXT NOT NULL,
+  format       TEXT NOT NULL,
+  recipients   JSONB NOT NULL,
+  filters      JSONB,
+  is_active    BOOLEAN NOT NULL DEFAULT TRUE,
+  created_by   BIGINT REFERENCES users(id),
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

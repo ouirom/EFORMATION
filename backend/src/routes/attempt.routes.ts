@@ -44,7 +44,7 @@ router.post(
 
       // Create attempt
       const attemptResult = await DatabaseService.query<{ id: number }>(
-        `INSERT INTO quiz_attempts (tenant_id, quiz_id, user_id, started_at, time_spent)
+        `INSERT INTO attempts (tenant_id, quiz_id, user_id, started_at, time_spent)
          OUTPUT INSERTED.id
          VALUES (@tenantId, @quizId, @userId, SYSUTCDATETIME(), @timeSpent)`,
         { 
@@ -84,7 +84,7 @@ router.post(
 
         // Save the answer
         await DatabaseService.execute(
-          `INSERT INTO quiz_answers (tenant_id, attempt_id, question_id, choice_id, is_correct)
+          `INSERT INTO answers (tenant_id, attempt_id, question_id, choice_id, is_correct)
            VALUES (@tenantId, @attemptId, @questionId, @choiceId, @isCorrect)`,
           {
             tenantId: req.user!.tenantId,
@@ -102,7 +102,7 @@ router.post(
 
       // Update attempt with score
       await DatabaseService.execute(
-        `UPDATE quiz_attempts 
+        `UPDATE attempts 
          SET score = @score, passed = @passed, completed_at = SYSUTCDATETIME()
          WHERE id = @attemptId`,
         { attemptId, score, passed }
@@ -112,7 +112,7 @@ router.post(
       const feedback = await DatabaseService.query<any>(
         `SELECT qa.question_id, qa.is_correct as correct, qa.choice_id as selected_choice,
                 (SELECT label FROM choices WHERE question_id = qa.question_id AND is_correct = 1) as correct_answer
-         FROM quiz_answers qa
+         FROM answers qa
          WHERE qa.attempt_id = @attemptId`,
         { attemptId }
       );

@@ -1,8 +1,16 @@
-import { Pool } from 'pg';
+import { Pool, types } from 'pg';
 import { config } from '../../config';
 import { logger } from '../../utils/logger';
 import { translateForPostgres } from '../../utils/sql-dialect';
 import { DatabaseDriver } from './types';
+
+// Match the mssql driver's value shapes so route code behaves the same on both engines:
+// BIGINT (oid 20) as a JS number instead of pg's default string, and JSON/JSONB (oid
+// 114/3802) as raw text instead of pg's default auto-parsed object, since the codebase
+// was written against mssql's NVARCHAR(MAX) JSON columns and calls JSON.parse() itself.
+types.setTypeParser(20, (value) => parseInt(value, 10));
+types.setTypeParser(114, (value) => value);
+types.setTypeParser(3802, (value) => value);
 
 export class PostgresDriver implements DatabaseDriver {
   private pool: Pool | null = null;

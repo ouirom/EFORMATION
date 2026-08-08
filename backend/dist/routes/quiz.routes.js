@@ -451,8 +451,8 @@ router.put('/:quizId/questions/:questionId', auth_middleware_1.authenticate, (0,
 router.delete('/:quizId/questions/:questionId', auth_middleware_1.authenticate, (0, auth_middleware_1.authorize)('admin', 'director', 'manager'), async (req, res, next) => {
     try {
         const questionId = parseInt(req.params.questionId, 10);
-        // First delete quiz_answers for this question
-        await database_service_1.DatabaseService.execute('DELETE FROM quiz_answers WHERE question_id = @questionId', { questionId });
+        // First delete answers for this question
+        await database_service_1.DatabaseService.execute('DELETE FROM answers WHERE question_id = @questionId', { questionId });
         // Delete answers for this question (answers references choices, so delete answers first)
         await database_service_1.DatabaseService.execute('DELETE FROM answers WHERE question_id = @questionId', { questionId });
         // Delete all choices for this question

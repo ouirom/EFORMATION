@@ -46,7 +46,7 @@ router.get('/my-stats', authenticate, async (req: AuthRequest, res, next) => {
            COUNT(*) as total_attempts,
            SUM(CASE WHEN passed = 1 THEN 1 ELSE 0 END) as passed,
            AVG(score) as avg_score
-         FROM quiz_attempts 
+         FROM attempts 
          WHERE tenant_id = @tenantId AND user_id = @userId`,
         { tenantId, userId }
       ),
@@ -132,7 +132,7 @@ router.get('/dashboard', authenticate, authorize('admin', 'director', 'manager')
       DatabaseService.query<any>(
         `SELECT 
            COUNT(*) as total_courses,
-           SUM(CASE WHEN status = 'published' THEN 1 ELSE 0 END) as published_courses,
+           SUM(CASE WHEN is_published = 1 THEN 1 ELSE 0 END) as published_courses,
            SUM(CASE WHEN created_at >= @startDate THEN 1 ELSE 0 END) as new_courses
          FROM courses WHERE tenant_id = @tenantId`,
         { tenantId, startDate }
@@ -141,7 +141,7 @@ router.get('/dashboard', authenticate, authorize('admin', 'director', 'manager')
       DatabaseService.query<any>(
         `SELECT 
            COUNT(*) as total_enrollments,
-           SUM(CASE WHEN enrolled_at >= @startDate THEN 1 ELSE 0 END) as new_enrollments,
+           SUM(CASE WHEN started_at >= @startDate THEN 1 ELSE 0 END) as new_enrollments,
            AVG(ISNULL(progress_percent, 0)) as avg_progress
          FROM enrollments e
          JOIN courses c ON e.course_id = c.id
@@ -164,7 +164,7 @@ router.get('/dashboard', authenticate, authorize('admin', 'director', 'manager')
            COUNT(*) as total_attempts,
            AVG(score) as avg_score,
            SUM(CASE WHEN passed = 1 THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0) as pass_rate
-         FROM quiz_attempts qa
+         FROM attempts qa
          JOIN quizzes q ON qa.quiz_id = q.id
          WHERE q.tenant_id = @tenantId AND qa.completed_at >= @startDate`,
         { tenantId, startDate }
@@ -292,8 +292,8 @@ router.get('/courses', authenticate, authorize('admin', 'director', 'manager'), 
     const courseRanking = await DatabaseService.query<any>(
       `SELECT c.id, c.title, 
               COUNT(e.id) as enrollment_count,
-              AVG(e.progress) as avg_progress,
-              SUM(CASE WHEN e.progress >= 100 THEN 1 ELSE 0 END) as completions
+              AVG(e.progress_percent) as avg_progress,
+              SUM(CASE WHEN e.progress_percent >= 100 THEN 1 ELSE 0 END) as completions
        FROM courses c
        LEFT JOIN enrollments e ON c.id = e.course_id
        WHERE c.tenant_id = @tenantId
@@ -314,7 +314,7 @@ router.get('/courses', authenticate, authorize('admin', 'director', 'manager'), 
     const completionRates = await DatabaseService.query<any>(
       `SELECT c.id, c.title,
               CASE WHEN COUNT(e.id) > 0 
-                   THEN SUM(CASE WHEN e.progress >= 100 THEN 1 ELSE 0 END) * 100.0 / COUNT(e.id)
+                   THEN SUM(CASE WHEN e.progress_percent >= 100 THEN 1 ELSE 0 END) * 100.0 / COUNT(e.id)
                    ELSE 0 END as completion_rate
        FROM courses c
        LEFT JOIN enrollments e ON c.id = e.course_id
@@ -377,7 +377,7 @@ router.get('/learning', authenticate, authorize('admin', 'director', 'manager'),
               MIN(qa.score) as min_score,
               MAX(qa.score) as max_score
        FROM quizzes q
-       JOIN quiz_attempts qa ON q.id = qa.quiz_id
+       JOIN attempts qa ON q.id = qa.quiz_id
        WHERE q.tenant_id = @tenantId
        GROUP BY q.id, q.title`,
       { tenantId }
@@ -387,11 +387,11 @@ router.get('/learning', authenticate, authorize('admin', 'director', 'manager'),
     const progressDistribution = await DatabaseService.query<any>(
       `SELECT 
          CASE 
-           WHEN progress = 0 THEN 'Not Started'
-           WHEN progress < 25 THEN '1-24%'
-           WHEN progress < 50 THEN '25-49%'
-           WHEN progress < 75 THEN '50-74%'
-           WHEN progress < 100 THEN '75-99%'
+           WHEN progress_percent = 0 THEN 'Not Started'
+           WHEN progress_percent < 25 THEN '1-24%'
+           WHEN progress_percent < 50 THEN '25-49%'
+           WHEN progress_percent < 75 THEN '50-74%'
+           WHEN progress_percent < 100 THEN '75-99%'
            ELSE 'Completed'
          END as range,
          COUNT(*) as count
@@ -400,11 +400,11 @@ router.get('/learning', authenticate, authorize('admin', 'director', 'manager'),
        WHERE c.tenant_id = @tenantId
        GROUP BY 
          CASE 
-           WHEN progress = 0 THEN 'Not Started'
-           WHEN progress < 25 THEN '1-24%'
-           WHEN progress < 50 THEN '25-49%'
-           WHEN progress < 75 THEN '50-74%'
-           WHEN progress < 100 THEN '75-99%'
+           WHEN progress_percent = 0 THEN 'Not Started'
+           WHEN progress_percent < 25 THEN '1-24%'
+           WHEN progress_percent < 50 THEN '25-49%'
+           WHEN progress_percent < 75 THEN '50-74%'
+           WHEN progress_percent < 100 THEN '75-99%'
            ELSE 'Completed'
          END`,
       { tenantId }
@@ -436,7 +436,7 @@ router.get('/badges', authenticate, authorize('admin', 'director'), async (req: 
     const badgeDistribution = await DatabaseService.query<any>(
       `SELECT b.id, b.name, b.type, COUNT(ab.id) as awarded_count
        FROM badges b
-       LEFT JOIN awarded_badges ab ON b.id = ab.badge_id
+       LEFT JOIN user_badges ab ON b.id = ab.badge_id
        WHERE b.tenant_id = @tenantId
        GROUP BY b.id, b.name, b.type
        ORDER BY awarded_count DESC`,
@@ -446,7 +446,7 @@ router.get('/badges', authenticate, authorize('admin', 'director'), async (req: 
     // Badges awarded over time
     const badgesOverTime = await DatabaseService.query<any>(
       `SELECT CAST(awarded_at AS DATE) as date, COUNT(*) as count
-       FROM awarded_badges ab
+       FROM user_badges ab
        JOIN badges b ON ab.badge_id = b.id
        WHERE b.tenant_id = @tenantId AND awarded_at >= DATEADD(day, -30, GETUTCDATE())
        GROUP BY CAST(awarded_at AS DATE)
@@ -458,7 +458,7 @@ router.get('/badges', authenticate, authorize('admin', 'director'), async (req: 
     const topEarners = await DatabaseService.query<any>(
       `SELECT TOP 10 u.id, u.display_name, COUNT(ab.id) as badge_count
        FROM users u
-       JOIN awarded_badges ab ON u.id = ab.user_id
+       JOIN user_badges ab ON u.id = ab.user_id
        WHERE u.tenant_id = @tenantId
        GROUP BY u.id, u.display_name
        ORDER BY badge_count DESC`,
@@ -495,25 +495,25 @@ router.get('/user/:userId', authenticate, async (req: AuthRequest, res, next) =>
     const [enrollments, completions, quizResults, badges, activity] = await Promise.all([
       // Enrollment stats
       DatabaseService.query<any>(
-        `SELECT COUNT(*) as total, AVG(progress) as avg_progress
+        `SELECT COUNT(*) as total, AVG(progress_percent) as avg_progress
          FROM enrollments WHERE user_id = @userId`,
         { userId }
       ),
       // Completions
       DatabaseService.query<any>(
-        `SELECT COUNT(*) as total FROM enrollments WHERE user_id = @userId AND progress >= 100`,
+        `SELECT COUNT(*) as total FROM enrollments WHERE user_id = @userId AND progress_percent >= 100`,
         { userId }
       ),
       // Quiz results
       DatabaseService.query<any>(
         `SELECT COUNT(*) as total_attempts, AVG(score) as avg_score,
                 SUM(CASE WHEN passed = 1 THEN 1 ELSE 0 END) as passed
-         FROM quiz_attempts WHERE user_id = @userId`,
+         FROM attempts WHERE user_id = @userId`,
         { userId }
       ),
       // Badges
       DatabaseService.query<any>(
-        `SELECT COUNT(*) as total FROM awarded_badges WHERE user_id = @userId`,
+        `SELECT COUNT(*) as total FROM user_badges WHERE user_id = @userId`,
         { userId }
       ),
       // Recent activity

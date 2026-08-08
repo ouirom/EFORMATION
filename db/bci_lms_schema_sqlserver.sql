@@ -202,6 +202,9 @@ CREATE TABLE db_eformation.dbo.courses (
   tenant_id    BIGINT NOT NULL,
   title        NVARCHAR(255) NOT NULL,
   description  NVARCHAR(MAX),
+  category     NVARCHAR(100) NULL,
+  level        NVARCHAR(50) NULL,
+  duration     INT NULL,
   audience_scope NVARCHAR(MAX), -- JSON string; validate via CHECK ISJSON if needed
   prerequisites NVARCHAR(MAX),  -- JSON string
   is_published BIT NOT NULL DEFAULT 0,
@@ -213,6 +216,15 @@ CREATE TABLE db_eformation.dbo.courses (
   CONSTRAINT chk_courses_audience_json CHECK (audience_scope IS NULL OR ISJSON(audience_scope) = 1),
   CONSTRAINT chk_courses_prereq_json CHECK (prerequisites IS NULL OR ISJSON(prerequisites) = 1)
 );
+END;
+ELSE
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[courses]') AND name = 'category')
+    ALTER TABLE db_eformation.dbo.courses ADD category NVARCHAR(100) NULL;
+  IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[courses]') AND name = 'level')
+    ALTER TABLE db_eformation.dbo.courses ADD level NVARCHAR(50) NULL;
+  IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[courses]') AND name = 'duration')
+    ALTER TABLE db_eformation.dbo.courses ADD duration INT NULL;
 END;
 
 IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[modules]') AND type in (N'U'))
@@ -237,12 +249,79 @@ CREATE TABLE db_eformation.dbo.lessons (
   tenant_id    BIGINT NOT NULL,
   module_id    BIGINT NOT NULL,
   title        NVARCHAR(255) NOT NULL,
+  description  NVARCHAR(MAX) NULL,
+  type         NVARCHAR(50) NULL,
   position     INT NOT NULL,
   duration_min INT,
   created_at   DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
   updated_at   DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
   CONSTRAINT fk_lessons_tenant FOREIGN KEY (tenant_id) REFERENCES dbo.tenants(id) ,
-  CONSTRAINT fk_lessons_module FOREIGN KEY (module_id) REFERENCES dbo.modules(id) 
+  CONSTRAINT fk_lessons_module FOREIGN KEY (module_id) REFERENCES dbo.modules(id)
+);
+END;
+ELSE
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[lessons]') AND name = 'description')
+    ALTER TABLE db_eformation.dbo.lessons ADD description NVARCHAR(MAX) NULL;
+  IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[lessons]') AND name = 'type')
+    ALTER TABLE db_eformation.dbo.lessons ADD type NVARCHAR(50) NULL;
+END;
+
+IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[enrollments]') AND type in (N'U'))
+BEGIN
+CREATE TABLE db_eformation.dbo.enrollments (
+  id               BIGINT IDENTITY(1,1) PRIMARY KEY,
+  tenant_id        BIGINT NOT NULL,
+  course_id        BIGINT NOT NULL,
+  user_id          BIGINT NOT NULL,
+  progress_percent INT NOT NULL DEFAULT 0,
+  started_at       DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
+  completed_at     DATETIME2(0) NULL,
+  CONSTRAINT fk_enrollments_tenant FOREIGN KEY (tenant_id) REFERENCES dbo.tenants(id) ,
+  CONSTRAINT fk_enrollments_course FOREIGN KEY (course_id) REFERENCES dbo.courses(id) ,
+  CONSTRAINT fk_enrollments_user FOREIGN KEY (user_id) REFERENCES dbo.users(id) ,
+  CONSTRAINT uq_enrollments UNIQUE (tenant_id, course_id, user_id)
+);
+END;
+
+IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[lesson_progress]') AND type in (N'U'))
+BEGIN
+CREATE TABLE db_eformation.dbo.lesson_progress (
+  id                  BIGINT IDENTITY(1,1) PRIMARY KEY,
+  tenant_id           BIGINT NOT NULL,
+  user_id             BIGINT NOT NULL,
+  lesson_id           BIGINT NOT NULL,
+  course_id           BIGINT NOT NULL,
+  status              NVARCHAR(20) NOT NULL DEFAULT 'not_started' CHECK (status IN ('not_started','in_progress','completed')),
+  progress_percent    INT NOT NULL DEFAULT 0,
+  time_spent_seconds  INT NOT NULL DEFAULT 0,
+  started_at          DATETIME2(0) NULL,
+  last_accessed_at    DATETIME2(0) NULL,
+  completed_at        DATETIME2(0) NULL,
+  CONSTRAINT fk_lesson_progress_tenant FOREIGN KEY (tenant_id) REFERENCES dbo.tenants(id) ,
+  CONSTRAINT fk_lesson_progress_user FOREIGN KEY (user_id) REFERENCES dbo.users(id) ,
+  CONSTRAINT fk_lesson_progress_lesson FOREIGN KEY (lesson_id) REFERENCES dbo.lessons(id) ,
+  CONSTRAINT fk_lesson_progress_course FOREIGN KEY (course_id) REFERENCES dbo.courses(id) ,
+  CONSTRAINT uq_lesson_progress UNIQUE (tenant_id, user_id, lesson_id)
+);
+END;
+
+IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[course_assignments]') AND type in (N'U'))
+BEGIN
+CREATE TABLE db_eformation.dbo.course_assignments (
+  id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+  tenant_id       BIGINT NOT NULL,
+  course_id       BIGINT NOT NULL,
+  assignment_type NVARCHAR(20) NOT NULL,
+  target_id       BIGINT NULL,
+  target_role     NVARCHAR(20) NULL,
+  is_mandatory    BIT NOT NULL DEFAULT 0,
+  due_date        DATETIME2(0) NULL,
+  assigned_by     BIGINT NULL,
+  created_at      DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
+  CONSTRAINT fk_course_assignments_tenant FOREIGN KEY (tenant_id) REFERENCES dbo.tenants(id) ,
+  CONSTRAINT fk_course_assignments_course FOREIGN KEY (course_id) REFERENCES dbo.courses(id) ,
+  CONSTRAINT fk_course_assignments_assigner FOREIGN KEY (assigned_by) REFERENCES dbo.users(id)
 );
 END;
 
@@ -321,11 +400,14 @@ CREATE TABLE db_eformation.dbo.attempts (
   user_id      BIGINT NOT NULL,
   started_at   DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
   submitted_at DATETIME2(0) NULL,
+  completed_at DATETIME2(0) NULL,
   score        INT,
-  status       NVARCHAR(20) NOT NULL CHECK (status IN ('in_progress','submitted','graded')),
+  passed       BIT NULL,
+  time_spent   INT NULL,
+  status       NVARCHAR(20) NOT NULL DEFAULT 'in_progress' CHECK (status IN ('in_progress','submitted','graded')),
   CONSTRAINT fk_attempts_tenant FOREIGN KEY (tenant_id) REFERENCES dbo.tenants(id) ,
   CONSTRAINT fk_attempts_quiz FOREIGN KEY (quiz_id) REFERENCES dbo.quizzes(id) ,
-  CONSTRAINT fk_attempts_user FOREIGN KEY (user_id) REFERENCES dbo.users(id) 
+  CONSTRAINT fk_attempts_user FOREIGN KEY (user_id) REFERENCES dbo.users(id)
 );
 END;
 
@@ -436,6 +518,23 @@ END;
 -- =====================
 -- Blog & communauté
 -- =====================
+IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[categories]') AND type in (N'U'))
+BEGIN
+CREATE TABLE db_eformation.dbo.categories (
+  id           BIGINT IDENTITY(1,1) PRIMARY KEY,
+  tenant_id    BIGINT NOT NULL,
+  name         NVARCHAR(255) NOT NULL,
+  slug         NVARCHAR(255) NULL,
+  CONSTRAINT uq_category_name UNIQUE (tenant_id, name),
+  CONSTRAINT fk_categories_tenant FOREIGN KEY (tenant_id) REFERENCES dbo.tenants(id)
+);
+END;
+ELSE
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[categories]') AND name = 'slug')
+    ALTER TABLE db_eformation.dbo.categories ADD slug NVARCHAR(255) NULL;
+END;
+
 IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[blog_posts]') AND type in (N'U'))
 BEGIN
 CREATE TABLE db_eformation.dbo.blog_posts (
@@ -443,24 +542,27 @@ CREATE TABLE db_eformation.dbo.blog_posts (
   tenant_id    BIGINT NOT NULL,
   author_id    BIGINT NULL,
   title        NVARCHAR(500) NOT NULL,
+  slug         NVARCHAR(500) NULL,
   body         NVARCHAR(MAX) NOT NULL,
+  category_id  BIGINT NULL,
+  featured_image_id BIGINT NULL,
   status       NVARCHAR(20) NOT NULL CHECK (status IN ('draft','published')),
   created_at   DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
   published_at DATETIME2(0) NULL,
   CONSTRAINT fk_blog_tenant FOREIGN KEY (tenant_id) REFERENCES dbo.tenants(id) ,
-  CONSTRAINT fk_blog_author FOREIGN KEY (author_id) REFERENCES dbo.users(id) 
+  CONSTRAINT fk_blog_author FOREIGN KEY (author_id) REFERENCES dbo.users(id) ,
+  CONSTRAINT fk_blog_category FOREIGN KEY (category_id) REFERENCES dbo.categories(id) ,
+  CONSTRAINT fk_blog_featured_image FOREIGN KEY (featured_image_id) REFERENCES dbo.file_assets(id)
 );
 END;
-
-IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[categories]') AND type in (N'U'))
+ELSE
 BEGIN
-CREATE TABLE db_eformation.dbo.categories (
-  id           BIGINT IDENTITY(1,1) PRIMARY KEY,
-  tenant_id    BIGINT NOT NULL,
-  name         NVARCHAR(255) NOT NULL,
-  CONSTRAINT uq_category_name UNIQUE (tenant_id, name),
-  CONSTRAINT fk_categories_tenant FOREIGN KEY (tenant_id) REFERENCES dbo.tenants(id) 
-);
+  IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[blog_posts]') AND name = 'slug')
+    ALTER TABLE db_eformation.dbo.blog_posts ADD slug NVARCHAR(500) NULL;
+  IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[blog_posts]') AND name = 'category_id')
+    ALTER TABLE db_eformation.dbo.blog_posts ADD category_id BIGINT NULL;
+  IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[blog_posts]') AND name = 'featured_image_id')
+    ALTER TABLE db_eformation.dbo.blog_posts ADD featured_image_id BIGINT NULL;
 END;
 
 IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[tags]') AND type in (N'U'))
@@ -492,12 +594,22 @@ CREATE TABLE db_eformation.dbo.comments (
   tenant_id    BIGINT NOT NULL,
   post_id      BIGINT NOT NULL,
   user_id      BIGINT NULL,
+  parent_id    BIGINT NULL,
   body         NVARCHAR(MAX) NOT NULL,
   created_at   DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
+  deleted_at   DATETIME2(0) NULL,
   CONSTRAINT fk_comments_tenant FOREIGN KEY (tenant_id) REFERENCES dbo.tenants(id) ,
   CONSTRAINT fk_comments_post FOREIGN KEY (post_id) REFERENCES dbo.blog_posts(id) ,
-  CONSTRAINT fk_comments_user FOREIGN KEY (user_id) REFERENCES dbo.users(id) 
+  CONSTRAINT fk_comments_user FOREIGN KEY (user_id) REFERENCES dbo.users(id) ,
+  CONSTRAINT fk_comments_parent FOREIGN KEY (parent_id) REFERENCES dbo.comments(id)
 );
+END;
+ELSE
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[comments]') AND name = 'parent_id')
+    ALTER TABLE db_eformation.dbo.comments ADD parent_id BIGINT NULL;
+  IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[comments]') AND name = 'deleted_at')
+    ALTER TABLE db_eformation.dbo.comments ADD deleted_at DATETIME2(0) NULL;
 END;
 
 -- =====================
@@ -590,7 +702,23 @@ CREATE TABLE db_eformation.dbo.notification_preferences (
   updated_at   DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
   CONSTRAINT uq_notif_pref UNIQUE (tenant_id, user_id),
   CONSTRAINT fk_notif_pref_tenant FOREIGN KEY (tenant_id) REFERENCES dbo.tenants(id) ,
-  CONSTRAINT fk_notif_pref_user FOREIGN KEY (user_id) REFERENCES dbo.users(id) 
+  CONSTRAINT fk_notif_pref_user FOREIGN KEY (user_id) REFERENCES dbo.users(id)
+);
+END;
+
+IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[push_subscriptions]') AND type in (N'U'))
+BEGIN
+CREATE TABLE db_eformation.dbo.push_subscriptions (
+  id           BIGINT IDENTITY(1,1) PRIMARY KEY,
+  tenant_id    BIGINT NOT NULL,
+  user_id      BIGINT NOT NULL,
+  endpoint     NVARCHAR(1000) NOT NULL,
+  p256dh       NVARCHAR(500) NOT NULL,
+  auth         NVARCHAR(500) NOT NULL,
+  created_at   DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
+  updated_at   DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
+  CONSTRAINT fk_push_sub_tenant FOREIGN KEY (tenant_id) REFERENCES dbo.tenants(id) ,
+  CONSTRAINT fk_push_sub_user FOREIGN KEY (user_id) REFERENCES dbo.users(id)
 );
 END;
 
@@ -602,12 +730,30 @@ CREATE TABLE db_eformation.dbo.notifications (
   user_id      BIGINT NOT NULL,
   template_id  BIGINT NULL,
   payload      NVARCHAR(MAX) NULL,
+  external_id    NVARCHAR(255) NULL,
+  sent_at        DATETIME2(0) NULL,
+  failed_at      DATETIME2(0) NULL,
+  error_message  NVARCHAR(MAX) NULL,
+  read_at        DATETIME2(0) NULL,
   created_at   DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
   CONSTRAINT fk_notifications_tenant FOREIGN KEY (tenant_id) REFERENCES dbo.tenants(id) ,
   CONSTRAINT fk_notifications_user FOREIGN KEY (user_id) REFERENCES dbo.users(id) ,
   CONSTRAINT fk_notifications_template FOREIGN KEY (template_id) REFERENCES dbo.notification_templates(id) ,
   CONSTRAINT chk_notifications_payload_json CHECK (payload IS NULL OR ISJSON(payload) = 1)
 );
+END;
+ELSE
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[notifications]') AND name = 'external_id')
+    ALTER TABLE db_eformation.dbo.notifications ADD external_id NVARCHAR(255) NULL;
+  IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[notifications]') AND name = 'sent_at')
+    ALTER TABLE db_eformation.dbo.notifications ADD sent_at DATETIME2(0) NULL;
+  IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[notifications]') AND name = 'failed_at')
+    ALTER TABLE db_eformation.dbo.notifications ADD failed_at DATETIME2(0) NULL;
+  IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[notifications]') AND name = 'error_message')
+    ALTER TABLE db_eformation.dbo.notifications ADD error_message NVARCHAR(MAX) NULL;
+  IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[notifications]') AND name = 'read_at')
+    ALTER TABLE db_eformation.dbo.notifications ADD read_at DATETIME2(0) NULL;
 END;
 
 IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[notification_deliveries]') AND type in (N'U'))
@@ -759,6 +905,36 @@ CREATE TABLE db_eformation.dbo.ai_chat_history (
 CREATE INDEX idx_ai_chat_history_user ON db_eformation.dbo.ai_chat_history(user_id, created_at DESC);
 END;
 
+IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[user_profiles]') AND type in (N'U'))
+BEGIN
+CREATE TABLE db_eformation.dbo.user_profiles (
+  id             BIGINT IDENTITY(1,1) PRIMARY KEY,
+  tenant_id      BIGINT NOT NULL,
+  user_id        BIGINT NOT NULL UNIQUE,
+  interests      NVARCHAR(MAX) NULL,
+  learning_goals NVARCHAR(MAX) NULL,
+  updated_at     DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
+  CONSTRAINT fk_user_profiles_tenant FOREIGN KEY (tenant_id) REFERENCES dbo.tenants(id) ,
+  CONSTRAINT fk_user_profiles_user FOREIGN KEY (user_id) REFERENCES dbo.users(id)
+);
+END;
+
+IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[ai_usage_logs]') AND type in (N'U'))
+BEGIN
+CREATE TABLE db_eformation.dbo.ai_usage_logs (
+  id                 BIGINT IDENTITY(1,1) PRIMARY KEY,
+  tenant_id          BIGINT NOT NULL,
+  user_id            BIGINT NOT NULL,
+  feature            NVARCHAR(100) NOT NULL,
+  prompt_tokens      INT NOT NULL DEFAULT 0,
+  completion_tokens  INT NOT NULL DEFAULT 0,
+  model              NVARCHAR(100) NULL,
+  created_at         DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
+  CONSTRAINT fk_ai_usage_logs_tenant FOREIGN KEY (tenant_id) REFERENCES dbo.tenants(id) ,
+  CONSTRAINT fk_ai_usage_logs_user FOREIGN KEY (user_id) REFERENCES dbo.users(id)
+);
+END;
+
 IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[learning_analytics]') AND type in (N'U'))
 BEGIN
 CREATE TABLE db_eformation.dbo.learning_analytics (
@@ -792,21 +968,61 @@ CREATE TABLE db_eformation.dbo.search_index (
 );
 END;
 
+IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[search_history]') AND type in (N'U'))
+BEGIN
+CREATE TABLE db_eformation.dbo.search_history (
+  id            BIGINT IDENTITY(1,1) PRIMARY KEY,
+  tenant_id     BIGINT NOT NULL,
+  user_id       BIGINT NOT NULL,
+  query         NVARCHAR(500) NOT NULL,
+  result_count  INT NOT NULL DEFAULT 0,
+  searched_at   DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
+  CONSTRAINT fk_search_history_tenant FOREIGN KEY (tenant_id) REFERENCES dbo.tenants(id) ,
+  CONSTRAINT fk_search_history_user FOREIGN KEY (user_id) REFERENCES dbo.users(id)
+);
+CREATE INDEX idx_search_history_user ON db_eformation.dbo.search_history(user_id, searched_at DESC);
+END;
+
 -- =====================
 -- Intégrations & API
 -- =====================
-IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[webhook_subscriptions]') AND type in (N'U'))
+IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[webhooks]') AND type in (N'U'))
 BEGIN
-CREATE TABLE db_eformation.dbo.webhook_subscriptions (
-  id           BIGINT IDENTITY(1,1) PRIMARY KEY,
-  tenant_id    BIGINT NOT NULL,
-  url          NVARCHAR(1000) NOT NULL,
-  event        NVARCHAR(100) NOT NULL,
-  secret       NVARCHAR(255),
-  is_active    BIT NOT NULL DEFAULT 1,
-  created_at   DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
-  CONSTRAINT fk_webhook_tenant FOREIGN KEY (tenant_id) REFERENCES dbo.tenants(id) 
+CREATE TABLE db_eformation.dbo.webhooks (
+  id                 BIGINT IDENTITY(1,1) PRIMARY KEY,
+  tenant_id          BIGINT NOT NULL,
+  name               NVARCHAR(255) NOT NULL,
+  url                NVARCHAR(1000) NOT NULL,
+  events             NVARCHAR(MAX) NOT NULL, -- JSON array of event names
+  secret             NVARCHAR(255),
+  headers            NVARCHAR(MAX) NULL,
+  is_active          BIT NOT NULL DEFAULT 1,
+  created_by         BIGINT NULL,
+  created_at         DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
+  updated_at         DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
+  last_triggered_at  DATETIME2(0) NULL,
+  CONSTRAINT fk_webhook_tenant FOREIGN KEY (tenant_id) REFERENCES dbo.tenants(id) ,
+  CONSTRAINT fk_webhook_creator FOREIGN KEY (created_by) REFERENCES dbo.users(id) ,
+  CONSTRAINT chk_webhook_events_json CHECK (ISJSON(events) = 1)
 );
+END;
+
+IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[webhook_deliveries]') AND type in (N'U'))
+BEGIN
+CREATE TABLE db_eformation.dbo.webhook_deliveries (
+  id                 BIGINT IDENTITY(1,1) PRIMARY KEY,
+  webhook_id         BIGINT NOT NULL,
+  event              NVARCHAR(100) NOT NULL,
+  payload            NVARCHAR(MAX) NULL,
+  response_status    INT NULL,
+  response_body      NVARCHAR(MAX) NULL,
+  response_time_ms   INT NULL,
+  success            BIT NOT NULL DEFAULT 0,
+  error_message      NVARCHAR(MAX) NULL,
+  created_at         DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
+  CONSTRAINT fk_webhook_deliveries_webhook FOREIGN KEY (webhook_id) REFERENCES dbo.webhooks(id) ON DELETE CASCADE
+);
+CREATE INDEX idx_webhook_deliveries_webhook ON db_eformation.dbo.webhook_deliveries(webhook_id, created_at DESC);
 END;
 
 IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[api_keys]') AND type in (N'U'))
@@ -840,7 +1056,25 @@ CREATE TABLE db_eformation.dbo.audit_logs (
   metadata     NVARCHAR(MAX),
   created_at   DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
   CONSTRAINT fk_audit_tenant FOREIGN KEY (tenant_id) REFERENCES dbo.tenants(id) ,
-  CONSTRAINT fk_audit_user FOREIGN KEY (user_id) REFERENCES dbo.users(id) 
+  CONSTRAINT fk_audit_user FOREIGN KEY (user_id) REFERENCES dbo.users(id)
+);
+END;
+
+IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[scheduled_reports]') AND type in (N'U'))
+BEGIN
+CREATE TABLE db_eformation.dbo.scheduled_reports (
+  id           BIGINT IDENTITY(1,1) PRIMARY KEY,
+  tenant_id    BIGINT NOT NULL,
+  report_type  NVARCHAR(50) NOT NULL,
+  frequency    NVARCHAR(20) NOT NULL,
+  format       NVARCHAR(20) NOT NULL,
+  recipients   NVARCHAR(MAX) NOT NULL,
+  filters      NVARCHAR(MAX) NULL,
+  is_active    BIT NOT NULL DEFAULT 1,
+  created_by   BIGINT NULL,
+  created_at   DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
+  CONSTRAINT fk_scheduled_reports_tenant FOREIGN KEY (tenant_id) REFERENCES dbo.tenants(id) ,
+  CONSTRAINT fk_scheduled_reports_creator FOREIGN KEY (created_by) REFERENCES dbo.users(id)
 );
 END;
 

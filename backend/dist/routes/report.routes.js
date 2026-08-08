@@ -159,8 +159,8 @@ async function generateReportData(reportType, tenantId, filters) {
             return database_service_1.DatabaseService.query(`SELECT u.id, u.display_name, u.email, u.role,
                 e.name as enterprise,
                 COUNT(DISTINCT en.course_id) as enrolled_courses,
-                AVG(en.progress) as avg_progress,
-                SUM(CASE WHEN en.progress >= 100 THEN 1 ELSE 0 END) as completed_courses
+                AVG(en.progress_percent) as avg_progress,
+                SUM(CASE WHEN en.progress_percent >= 100 THEN 1 ELSE 0 END) as completed_courses
          FROM users u
          LEFT JOIN enterprises e ON u.enterprise_id = e.id
          LEFT JOIN enrollments en ON u.id = en.user_id
@@ -170,8 +170,8 @@ async function generateReportData(reportType, tenantId, filters) {
         case 'course_completion':
             return database_service_1.DatabaseService.query(`SELECT c.id, c.title, c.category,
                 COUNT(e.id) as total_enrollments,
-                SUM(CASE WHEN e.progress >= 100 THEN 1 ELSE 0 END) as completions,
-                AVG(e.progress) as avg_progress,
+                SUM(CASE WHEN e.progress_percent >= 100 THEN 1 ELSE 0 END) as completions,
+                AVG(e.progress_percent) as avg_progress,
                 AVG(DATEDIFF(day, e.started_at, e.completed_at)) as avg_days_to_complete
          FROM courses c
          LEFT JOIN enrollments e ON c.id = e.course_id
@@ -187,7 +187,7 @@ async function generateReportData(reportType, tenantId, filters) {
                 SUM(CASE WHEN qa.passed = 1 THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(qa.id), 0) as pass_rate
          FROM quizzes q
          LEFT JOIN courses c ON q.course_id = c.id
-         LEFT JOIN quiz_attempts qa ON q.id = qa.quiz_id
+         LEFT JOIN attempts qa ON q.id = qa.quiz_id
          WHERE q.tenant_id = @tenantId ${dateFilter}
          GROUP BY q.id, q.title, c.title
          ORDER BY total_attempts DESC`, { tenantId, startDate, endDate });
@@ -206,7 +206,7 @@ async function generateReportData(reportType, tenantId, filters) {
                 COUNT(ab.id) as times_awarded,
                 COUNT(DISTINCT ab.user_id) as unique_recipients
          FROM badges b
-         LEFT JOIN awarded_badges ab ON b.id = ab.badge_id
+         LEFT JOIN user_badges ab ON b.id = ab.badge_id
          WHERE b.tenant_id = @tenantId ${dateFilter.replace('created_at', 'ab.awarded_at')}
          GROUP BY b.id, b.name, b.type
          ORDER BY times_awarded DESC`, { tenantId, startDate, endDate });
@@ -229,7 +229,7 @@ async function generateReportData(reportType, tenantId, filters) {
             return database_service_1.DatabaseService.query(`SELECT e.name as enterprise, d.name as direction, s.name as service,
                 COUNT(DISTINCT u.id) as users,
                 COUNT(DISTINCT en.id) as enrollments,
-                AVG(en.progress) as avg_progress
+                AVG(en.progress_percent) as avg_progress
          FROM enterprises e
          LEFT JOIN directions d ON e.id = d.enterprise_id
          LEFT JOIN services s ON d.id = s.direction_id

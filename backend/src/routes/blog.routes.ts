@@ -30,10 +30,10 @@ router.get('/posts', authenticate, async (req: AuthRequest, res, next) => {
     const search = req.query.search as string;
 
     let query = `SELECT bp.*, u.display_name as author_name, bc.name as category_name,
-                        (SELECT COUNT(*) FROM blog_comments WHERE post_id = bp.id AND deleted_at IS NULL) as comment_count
+                        (SELECT COUNT(*) FROM comments WHERE post_id = bp.id AND deleted_at IS NULL) as comment_count
                  FROM blog_posts bp
                  LEFT JOIN users u ON bp.author_id = u.id
-                 LEFT JOIN blog_categories bc ON bp.category_id = bc.id
+                 LEFT JOIN categories bc ON bp.category_id = bc.id
                  WHERE bp.tenant_id = @tenantId`;
     const params: Record<string, any> = { tenantId: req.user!.tenantId };
 
@@ -71,8 +71,8 @@ router.get('/posts', authenticate, async (req: AuthRequest, res, next) => {
     const postsWithTags = await Promise.all(
       posts.map(async (post: any) => {
         const tags = await DatabaseService.query<any>(
-          `SELECT bt.* FROM blog_tags bt
-           JOIN blog_post_tags bpt ON bt.id = bpt.tag_id
+          `SELECT bt.* FROM tags bt
+           JOIN post_tags bpt ON bt.id = bpt.tag_id
            WHERE bpt.post_id = @postId`,
           { postId: post.id }
         );
@@ -107,7 +107,7 @@ router.get('/posts/:id', authenticate, async (req: AuthRequest, res, next) => {
       `SELECT bp.*, u.display_name as author_name, bc.name as category_name
        FROM blog_posts bp
        LEFT JOIN users u ON bp.author_id = u.id
-       LEFT JOIN blog_categories bc ON bp.category_id = bc.id
+       LEFT JOIN categories bc ON bp.category_id = bc.id
        WHERE bp.id = @postId AND bp.tenant_id = @tenantId`,
       { postId, tenantId: req.user!.tenantId }
     );
@@ -118,8 +118,8 @@ router.get('/posts/:id', authenticate, async (req: AuthRequest, res, next) => {
 
     // Get tags
     const tags = await DatabaseService.query<any>(
-      `SELECT bt.* FROM blog_tags bt
-       JOIN blog_post_tags bpt ON bt.id = bpt.tag_id
+      `SELECT bt.* FROM tags bt
+       JOIN post_tags bpt ON bt.id = bpt.tag_id
        WHERE bpt.post_id = @postId`,
       { postId }
     );
@@ -187,7 +187,7 @@ router.post(
       if (tagIds && tagIds.length > 0) {
         for (const tagId of tagIds) {
           await DatabaseService.execute(
-            `INSERT INTO blog_post_tags (post_id, tag_id) VALUES (@postId, @tagId)`,
+            `INSERT INTO post_tags (post_id, tag_id) VALUES (@postId, @tagId)`,
             { postId, tagId }
           );
         }
@@ -260,10 +260,10 @@ router.put(
 
       // Update tags
       if (tagIds !== undefined) {
-        await DatabaseService.execute('DELETE FROM blog_post_tags WHERE post_id = @postId', { postId });
+        await DatabaseService.execute('DELETE FROM post_tags WHERE post_id = @postId', { postId });
         for (const tagId of tagIds) {
           await DatabaseService.execute(
-            `INSERT INTO blog_post_tags (post_id, tag_id) VALUES (@postId, @tagId)`,
+            `INSERT INTO post_tags (post_id, tag_id) VALUES (@postId, @tagId)`,
             { postId, tagId }
           );
         }
@@ -308,7 +308,7 @@ router.get('/categories', authenticate, async (req: AuthRequest, res, next) => {
   try {
     const categories = await DatabaseService.query<any>(
       `SELECT bc.*, (SELECT COUNT(*) FROM blog_posts WHERE category_id = bc.id) as post_count
-       FROM blog_categories bc
+       FROM categories bc
        WHERE bc.tenant_id = @tenantId
        ORDER BY bc.name`,
       { tenantId: req.user!.tenantId }
@@ -338,14 +338,14 @@ router.post(
         .replace(/(^-|-$)/g, '');
 
       const result = await DatabaseService.query<{ id: number }>(
-        `INSERT INTO blog_categories (tenant_id, name, slug)
+        `INSERT INTO categories (tenant_id, name, slug)
          OUTPUT INSERTED.id
          VALUES (@tenantId, @name, @slug)`,
         { tenantId: req.user!.tenantId, name: req.body.name, slug }
       );
 
       const category = await DatabaseService.query<any>(
-        'SELECT * FROM blog_categories WHERE id = @id',
+        'SELECT * FROM categories WHERE id = @id',
         { id: result[0].id }
       );
 
@@ -365,8 +365,8 @@ router.post(
 router.get('/tags', authenticate, async (req: AuthRequest, res, next) => {
   try {
     const tags = await DatabaseService.query<any>(
-      `SELECT bt.*, (SELECT COUNT(*) FROM blog_post_tags WHERE tag_id = bt.id) as post_count
-       FROM blog_tags bt
+      `SELECT bt.*, (SELECT COUNT(*) FROM post_tags WHERE tag_id = bt.id) as post_count
+       FROM tags bt
        WHERE bt.tenant_id = @tenantId
        ORDER BY bt.name`,
       { tenantId: req.user!.tenantId }
@@ -396,14 +396,14 @@ router.post(
         .replace(/(^-|-$)/g, '');
 
       const result = await DatabaseService.query<{ id: number }>(
-        `INSERT INTO blog_tags (tenant_id, name, slug)
+        `INSERT INTO tags (tenant_id, name, slug)
          OUTPUT INSERTED.id
          VALUES (@tenantId, @name, @slug)`,
         { tenantId: req.user!.tenantId, name: req.body.name, slug }
       );
 
       const tag = await DatabaseService.query<any>(
-        'SELECT * FROM blog_tags WHERE id = @id',
+        'SELECT * FROM tags WHERE id = @id',
         { id: result[0].id }
       );
 
@@ -426,7 +426,7 @@ router.get('/posts/:id/comments', authenticate, async (req: AuthRequest, res, ne
 
     const comments = await DatabaseService.query<any>(
       `SELECT bc.*, u.display_name as author_name
-       FROM blog_comments bc
+       FROM comments bc
        LEFT JOIN users u ON bc.user_id = u.id
        WHERE bc.post_id = @postId AND bc.deleted_at IS NULL
        ORDER BY bc.created_at ASC`,
@@ -476,7 +476,7 @@ router.post(
       const postId = parseInt(req.params.id, 10);
 
       const result = await DatabaseService.query<{ id: number }>(
-        `INSERT INTO blog_comments (tenant_id, post_id, user_id, body, parent_id)
+        `INSERT INTO comments (tenant_id, post_id, user_id, body, parent_id)
          OUTPUT INSERTED.id
          VALUES (@tenantId, @postId, @userId, @body, @parentId)`,
         {
@@ -490,7 +490,7 @@ router.post(
 
       const comment = await DatabaseService.query<any>(
         `SELECT bc.*, u.display_name as author_name
-         FROM blog_comments bc
+         FROM comments bc
          LEFT JOIN users u ON bc.user_id = u.id
          WHERE bc.id = @id`,
         { id: result[0].id }
@@ -513,7 +513,7 @@ router.delete('/comments/:id', authenticate, async (req: AuthRequest, res, next)
 
     // Check ownership or admin
     const comments = await DatabaseService.query<any>(
-      'SELECT user_id FROM blog_comments WHERE id = @commentId',
+      'SELECT user_id FROM comments WHERE id = @commentId',
       { commentId }
     );
 
@@ -526,7 +526,7 @@ router.delete('/comments/:id', authenticate, async (req: AuthRequest, res, next)
     }
 
     await DatabaseService.execute(
-      'UPDATE blog_comments SET deleted_at = SYSUTCDATETIME() WHERE id = @commentId',
+      'UPDATE comments SET deleted_at = SYSUTCDATETIME() WHERE id = @commentId',
       { commentId }
     );
 

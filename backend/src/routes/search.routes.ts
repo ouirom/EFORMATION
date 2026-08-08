@@ -36,7 +36,7 @@ router.get(
         const courses = await DatabaseService.query<any>(
           `SELECT TOP (@limit) id, title, description, category, 'course' as type
            FROM courses
-           WHERE tenant_id = @tenantId AND status = 'published'
+           WHERE tenant_id = @tenantId AND is_published = 1
              AND (title LIKE @search OR description LIKE @search OR category LIKE @search)
            ORDER BY 
              CASE WHEN title LIKE @exactSearch THEN 0 ELSE 1 END,
@@ -53,7 +53,7 @@ router.get(
            FROM lessons l
            JOIN modules m ON l.module_id = m.id
            JOIN courses c ON m.course_id = c.id
-           WHERE c.tenant_id = @tenantId AND c.status = 'published'
+           WHERE c.tenant_id = @tenantId AND c.is_published = 1
              AND (l.title LIKE @search OR l.description LIKE @search)
            ORDER BY 
              CASE WHEN l.title LIKE @exactSearch THEN 0 ELSE 1 END,
@@ -153,31 +153,29 @@ router.get('/courses', authenticate, async (req: AuthRequest, res, next) => {
     const sortBy = req.query.sortBy as string || 'title';
     const sortOrder = req.query.sortOrder as string || 'asc';
 
+    let whereClause = 'WHERE c.tenant_id = @tenantId AND c.is_published = 1';
+    const params: Record<string, any> = { tenantId: req.user!.tenantId };
+
+    if (searchQuery) {
+      whereClause += ' AND (c.title LIKE @search OR c.description LIKE @search)';
+      params.search = `%${searchQuery}%`;
+    }
+    if (category) {
+      whereClause += ' AND c.category = @category';
+      params.category = category;
+    }
+    if (difficulty) {
+      whereClause += ' AND c.level = @difficulty';
+      params.difficulty = difficulty;
+    }
+
     let query = `SELECT c.*, u.display_name as author_name,
                         (SELECT COUNT(*) FROM enrollments WHERE course_id = c.id) as enrollment_count
                  FROM courses c
                  LEFT JOIN users u ON c.created_by = u.id
-                 WHERE c.tenant_id = @tenantId AND c.status = 'published'`;
-    const params: Record<string, any> = { tenantId: req.user!.tenantId };
+                 ${whereClause}`;
 
-    if (searchQuery) {
-      query += ' AND (c.title LIKE @search OR c.description LIKE @search)';
-      params.search = `%${searchQuery}%`;
-    }
-    if (category) {
-      query += ' AND c.category = @category';
-      params.category = category;
-    }
-    if (difficulty) {
-      query += ' AND c.difficulty_level = @difficulty';
-      params.difficulty = difficulty;
-    }
-
-    // Count query
-    const countQuery = query.replace(
-      'SELECT c.*, u.display_name as author_name, (SELECT COUNT(*) FROM enrollments WHERE course_id = c.id) as enrollment_count',
-      'SELECT COUNT(*) as total'
-    );
+    const countQuery = `SELECT COUNT(*) as total FROM courses c ${whereClause}`;
 
     const validSortFields = ['title', 'created_at', 'enrollment_count'];
     const sortField = validSortFields.includes(sortBy) ? sortBy : 'title';
@@ -304,12 +302,12 @@ router.get('/suggestions', authenticate, async (req: AuthRequest, res, next) => 
     const suggestions = await DatabaseService.query<any>(
       `SELECT TOP 25 text, type FROM (
          SELECT title as text, 'course' as type FROM courses
-         WHERE tenant_id = @tenantId AND status = 'published' AND title LIKE @prefix
+         WHERE tenant_id = @tenantId AND is_published = 1 AND title LIKE @prefix
          UNION
          SELECT l.title as text, 'lesson' as type FROM lessons l
          JOIN modules m ON l.module_id = m.id
          JOIN courses c ON m.course_id = c.id
-         WHERE c.tenant_id = @tenantId AND c.status = 'published' AND l.title LIKE @prefix
+         WHERE c.tenant_id = @tenantId AND c.is_published = 1 AND l.title LIKE @prefix
          UNION
          SELECT name as text, 'badge' as type FROM badges
          WHERE tenant_id = @tenantId AND name LIKE @prefix

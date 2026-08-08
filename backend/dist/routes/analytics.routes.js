@@ -33,7 +33,7 @@ router.get('/my-stats', auth_middleware_1.authenticate, async (req, res, next) =
            COUNT(*) as total_attempts,
            SUM(CASE WHEN passed = 1 THEN 1 ELSE 0 END) as passed,
            AVG(score) as avg_score
-         FROM quiz_attempts 
+         FROM attempts 
          WHERE tenant_id = @tenantId AND user_id = @userId`, { tenantId, userId }),
             // Badge stats
             database_service_1.DatabaseService.query(`SELECT COUNT(*) as total_badges
@@ -97,13 +97,13 @@ router.get('/dashboard', auth_middleware_1.authenticate, (0, auth_middleware_1.a
             // Course statistics
             database_service_1.DatabaseService.query(`SELECT 
            COUNT(*) as total_courses,
-           SUM(CASE WHEN status = 'published' THEN 1 ELSE 0 END) as published_courses,
+           SUM(CASE WHEN is_published = 1 THEN 1 ELSE 0 END) as published_courses,
            SUM(CASE WHEN created_at >= @startDate THEN 1 ELSE 0 END) as new_courses
          FROM courses WHERE tenant_id = @tenantId`, { tenantId, startDate }),
             // Enrollment statistics
             database_service_1.DatabaseService.query(`SELECT 
            COUNT(*) as total_enrollments,
-           SUM(CASE WHEN enrolled_at >= @startDate THEN 1 ELSE 0 END) as new_enrollments,
+           SUM(CASE WHEN started_at >= @startDate THEN 1 ELSE 0 END) as new_enrollments,
            AVG(ISNULL(progress_percent, 0)) as avg_progress
          FROM enrollments e
          JOIN courses c ON e.course_id = c.id
@@ -120,7 +120,7 @@ router.get('/dashboard', auth_middleware_1.authenticate, (0, auth_middleware_1.a
            COUNT(*) as total_attempts,
            AVG(score) as avg_score,
            SUM(CASE WHEN passed = 1 THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0) as pass_rate
-         FROM quiz_attempts qa
+         FROM attempts qa
          JOIN quizzes q ON qa.quiz_id = q.id
          WHERE q.tenant_id = @tenantId AND qa.completed_at >= @startDate`, { tenantId, startDate }),
             // Recent activity
@@ -223,8 +223,8 @@ router.get('/courses', auth_middleware_1.authenticate, (0, auth_middleware_1.aut
         // Course enrollment ranking
         const courseRanking = await database_service_1.DatabaseService.query(`SELECT c.id, c.title, 
               COUNT(e.id) as enrollment_count,
-              AVG(e.progress) as avg_progress,
-              SUM(CASE WHEN e.progress >= 100 THEN 1 ELSE 0 END) as completions
+              AVG(e.progress_percent) as avg_progress,
+              SUM(CASE WHEN e.progress_percent >= 100 THEN 1 ELSE 0 END) as completions
        FROM courses c
        LEFT JOIN enrollments e ON c.id = e.course_id
        WHERE c.tenant_id = @tenantId
@@ -237,7 +237,7 @@ router.get('/courses', auth_middleware_1.authenticate, (0, auth_middleware_1.aut
         // Course completion rates
         const completionRates = await database_service_1.DatabaseService.query(`SELECT c.id, c.title,
               CASE WHEN COUNT(e.id) > 0 
-                   THEN SUM(CASE WHEN e.progress >= 100 THEN 1 ELSE 0 END) * 100.0 / COUNT(e.id)
+                   THEN SUM(CASE WHEN e.progress_percent >= 100 THEN 1 ELSE 0 END) * 100.0 / COUNT(e.id)
                    ELSE 0 END as completion_rate
        FROM courses c
        LEFT JOIN enrollments e ON c.id = e.course_id
@@ -287,17 +287,17 @@ router.get('/learning', auth_middleware_1.authenticate, (0, auth_middleware_1.au
               MIN(qa.score) as min_score,
               MAX(qa.score) as max_score
        FROM quizzes q
-       JOIN quiz_attempts qa ON q.id = qa.quiz_id
+       JOIN attempts qa ON q.id = qa.quiz_id
        WHERE q.tenant_id = @tenantId
        GROUP BY q.id, q.title`, { tenantId });
         // Progress distribution
         const progressDistribution = await database_service_1.DatabaseService.query(`SELECT 
          CASE 
-           WHEN progress = 0 THEN 'Not Started'
-           WHEN progress < 25 THEN '1-24%'
-           WHEN progress < 50 THEN '25-49%'
-           WHEN progress < 75 THEN '50-74%'
-           WHEN progress < 100 THEN '75-99%'
+           WHEN progress_percent = 0 THEN 'Not Started'
+           WHEN progress_percent < 25 THEN '1-24%'
+           WHEN progress_percent < 50 THEN '25-49%'
+           WHEN progress_percent < 75 THEN '50-74%'
+           WHEN progress_percent < 100 THEN '75-99%'
            ELSE 'Completed'
          END as range,
          COUNT(*) as count
@@ -306,11 +306,11 @@ router.get('/learning', auth_middleware_1.authenticate, (0, auth_middleware_1.au
        WHERE c.tenant_id = @tenantId
        GROUP BY 
          CASE 
-           WHEN progress = 0 THEN 'Not Started'
-           WHEN progress < 25 THEN '1-24%'
-           WHEN progress < 50 THEN '25-49%'
-           WHEN progress < 75 THEN '50-74%'
-           WHEN progress < 100 THEN '75-99%'
+           WHEN progress_percent = 0 THEN 'Not Started'
+           WHEN progress_percent < 25 THEN '1-24%'
+           WHEN progress_percent < 50 THEN '25-49%'
+           WHEN progress_percent < 75 THEN '50-74%'
+           WHEN progress_percent < 100 THEN '75-99%'
            ELSE 'Completed'
          END`, { tenantId });
         res.json({
@@ -337,13 +337,13 @@ router.get('/badges', auth_middleware_1.authenticate, (0, auth_middleware_1.auth
         // Badge distribution
         const badgeDistribution = await database_service_1.DatabaseService.query(`SELECT b.id, b.name, b.type, COUNT(ab.id) as awarded_count
        FROM badges b
-       LEFT JOIN awarded_badges ab ON b.id = ab.badge_id
+       LEFT JOIN user_badges ab ON b.id = ab.badge_id
        WHERE b.tenant_id = @tenantId
        GROUP BY b.id, b.name, b.type
        ORDER BY awarded_count DESC`, { tenantId });
         // Badges awarded over time
         const badgesOverTime = await database_service_1.DatabaseService.query(`SELECT CAST(awarded_at AS DATE) as date, COUNT(*) as count
-       FROM awarded_badges ab
+       FROM user_badges ab
        JOIN badges b ON ab.badge_id = b.id
        WHERE b.tenant_id = @tenantId AND awarded_at >= DATEADD(day, -30, GETUTCDATE())
        GROUP BY CAST(awarded_at AS DATE)
@@ -351,7 +351,7 @@ router.get('/badges', auth_middleware_1.authenticate, (0, auth_middleware_1.auth
         // Top badge earners
         const topEarners = await database_service_1.DatabaseService.query(`SELECT TOP 10 u.id, u.display_name, COUNT(ab.id) as badge_count
        FROM users u
-       JOIN awarded_badges ab ON u.id = ab.user_id
+       JOIN user_badges ab ON u.id = ab.user_id
        WHERE u.tenant_id = @tenantId
        GROUP BY u.id, u.display_name
        ORDER BY badge_count DESC`, { tenantId });
@@ -382,16 +382,16 @@ router.get('/user/:userId', auth_middleware_1.authenticate, async (req, res, nex
         }
         const [enrollments, completions, quizResults, badges, activity] = await Promise.all([
             // Enrollment stats
-            database_service_1.DatabaseService.query(`SELECT COUNT(*) as total, AVG(progress) as avg_progress
+            database_service_1.DatabaseService.query(`SELECT COUNT(*) as total, AVG(progress_percent) as avg_progress
          FROM enrollments WHERE user_id = @userId`, { userId }),
             // Completions
-            database_service_1.DatabaseService.query(`SELECT COUNT(*) as total FROM enrollments WHERE user_id = @userId AND progress >= 100`, { userId }),
+            database_service_1.DatabaseService.query(`SELECT COUNT(*) as total FROM enrollments WHERE user_id = @userId AND progress_percent >= 100`, { userId }),
             // Quiz results
             database_service_1.DatabaseService.query(`SELECT COUNT(*) as total_attempts, AVG(score) as avg_score,
                 SUM(CASE WHEN passed = 1 THEN 1 ELSE 0 END) as passed
-         FROM quiz_attempts WHERE user_id = @userId`, { userId }),
+         FROM attempts WHERE user_id = @userId`, { userId }),
             // Badges
-            database_service_1.DatabaseService.query(`SELECT COUNT(*) as total FROM awarded_badges WHERE user_id = @userId`, { userId }),
+            database_service_1.DatabaseService.query(`SELECT COUNT(*) as total FROM user_badges WHERE user_id = @userId`, { userId }),
             // Recent activity
             database_service_1.DatabaseService.query(`SELECT TOP 20 action, resource_type, resource_id, created_at
          FROM audit_logs

@@ -185,6 +185,37 @@ router.get('/', authenticate, authorize('admin', 'director', 'manager'), async (
 });
 
 /**
+ * @route GET /api/v1/users/me
+ * @desc Get the authenticated user's own profile
+ */
+router.get('/me', authenticate, async (req: AuthRequest, res, next) => {
+  try {
+    const users = await DatabaseService.query<any>(
+      `SELECT u.id, u.email, u.username, u.display_name, u.avatar_url, u.role, u.is_active,
+              u.enterprise_id, u.direction_id, u.service_id, u.created_at, u.updated_at,
+              e.name as enterprise_name, d.name as direction_name, s.name as service_name
+       FROM users u
+       LEFT JOIN enterprises e ON u.enterprise_id = e.id
+       LEFT JOIN directions d ON u.direction_id = d.id
+       LEFT JOIN services s ON u.service_id = s.id
+       WHERE u.id = @userId AND u.tenant_id = @tenantId AND u.deleted_at IS NULL`,
+      { userId: req.user!.id, tenantId: req.user!.tenantId }
+    );
+
+    if (users.length === 0) {
+      throw NotFoundError('User');
+    }
+
+    res.json({
+      success: true,
+      data: users[0],
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
  * @route GET /api/v1/users/:id
  * @desc Get user by ID
  */

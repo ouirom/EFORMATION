@@ -27,10 +27,10 @@ router.get('/posts', auth_middleware_1.authenticate, async (req, res, next) => {
         const status = req.query.status;
         const search = req.query.search;
         let query = `SELECT bp.*, u.display_name as author_name, bc.name as category_name,
-                        (SELECT COUNT(*) FROM blog_comments WHERE post_id = bp.id AND deleted_at IS NULL) as comment_count
+                        (SELECT COUNT(*) FROM comments WHERE post_id = bp.id AND deleted_at IS NULL) as comment_count
                  FROM blog_posts bp
                  LEFT JOIN users u ON bp.author_id = u.id
-                 LEFT JOIN blog_categories bc ON bp.category_id = bc.id
+                 LEFT JOIN categories bc ON bp.category_id = bc.id
                  WHERE bp.tenant_id = @tenantId`;
         const params = { tenantId: req.user.tenantId };
         // Non-admins only see published posts
@@ -56,8 +56,8 @@ router.get('/posts', auth_middleware_1.authenticate, async (req, res, next) => {
         ]);
         // Get tags for posts
         const postsWithTags = await Promise.all(posts.map(async (post) => {
-            const tags = await database_service_1.DatabaseService.query(`SELECT bt.* FROM blog_tags bt
-           JOIN blog_post_tags bpt ON bt.id = bpt.tag_id
+            const tags = await database_service_1.DatabaseService.query(`SELECT bt.* FROM tags bt
+           JOIN post_tags bpt ON bt.id = bpt.tag_id
            WHERE bpt.post_id = @postId`, { postId: post.id });
             return { ...post, tags };
         }));
@@ -86,14 +86,14 @@ router.get('/posts/:id', auth_middleware_1.authenticate, async (req, res, next) 
         const posts = await database_service_1.DatabaseService.query(`SELECT bp.*, u.display_name as author_name, bc.name as category_name
        FROM blog_posts bp
        LEFT JOIN users u ON bp.author_id = u.id
-       LEFT JOIN blog_categories bc ON bp.category_id = bc.id
+       LEFT JOIN categories bc ON bp.category_id = bc.id
        WHERE bp.id = @postId AND bp.tenant_id = @tenantId`, { postId, tenantId: req.user.tenantId });
         if (posts.length === 0) {
             throw (0, error_middleware_1.NotFoundError)('Blog post');
         }
         // Get tags
-        const tags = await database_service_1.DatabaseService.query(`SELECT bt.* FROM blog_tags bt
-       JOIN blog_post_tags bpt ON bt.id = bpt.tag_id
+        const tags = await database_service_1.DatabaseService.query(`SELECT bt.* FROM tags bt
+       JOIN post_tags bpt ON bt.id = bpt.tag_id
        WHERE bpt.post_id = @postId`, { postId });
         // Increment view count
         await database_service_1.DatabaseService.execute('UPDATE blog_posts SET view_count = view_count + 1 WHERE id = @postId', { postId });
@@ -141,7 +141,7 @@ router.post('/posts', auth_middleware_1.authenticate, (0, auth_middleware_1.auth
         // Add tags
         if (tagIds && tagIds.length > 0) {
             for (const tagId of tagIds) {
-                await database_service_1.DatabaseService.execute(`INSERT INTO blog_post_tags (post_id, tag_id) VALUES (@postId, @tagId)`, { postId, tagId });
+                await database_service_1.DatabaseService.execute(`INSERT INTO post_tags (post_id, tag_id) VALUES (@postId, @tagId)`, { postId, tagId });
             }
         }
         const post = await database_service_1.DatabaseService.query('SELECT * FROM blog_posts WHERE id = @postId', { postId });
@@ -195,9 +195,9 @@ router.put('/posts/:id', auth_middleware_1.authenticate, (0, auth_middleware_1.a
         }
         // Update tags
         if (tagIds !== undefined) {
-            await database_service_1.DatabaseService.execute('DELETE FROM blog_post_tags WHERE post_id = @postId', { postId });
+            await database_service_1.DatabaseService.execute('DELETE FROM post_tags WHERE post_id = @postId', { postId });
             for (const tagId of tagIds) {
-                await database_service_1.DatabaseService.execute(`INSERT INTO blog_post_tags (post_id, tag_id) VALUES (@postId, @tagId)`, { postId, tagId });
+                await database_service_1.DatabaseService.execute(`INSERT INTO post_tags (post_id, tag_id) VALUES (@postId, @tagId)`, { postId, tagId });
             }
         }
         const post = await database_service_1.DatabaseService.query('SELECT * FROM blog_posts WHERE id = @postId', { postId });
@@ -229,7 +229,7 @@ router.delete('/posts/:id', auth_middleware_1.authenticate, (0, auth_middleware_
 router.get('/categories', auth_middleware_1.authenticate, async (req, res, next) => {
     try {
         const categories = await database_service_1.DatabaseService.query(`SELECT bc.*, (SELECT COUNT(*) FROM blog_posts WHERE category_id = bc.id) as post_count
-       FROM blog_categories bc
+       FROM categories bc
        WHERE bc.tenant_id = @tenantId
        ORDER BY bc.name`, { tenantId: req.user.tenantId });
         res.json({ success: true, data: categories });
@@ -249,10 +249,10 @@ router.post('/categories', auth_middleware_1.authenticate, (0, auth_middleware_1
             .toLowerCase()
             .replace(/[^a-z0-9]+/g, '-')
             .replace(/(^-|-$)/g, '');
-        const result = await database_service_1.DatabaseService.query(`INSERT INTO blog_categories (tenant_id, name, slug)
+        const result = await database_service_1.DatabaseService.query(`INSERT INTO categories (tenant_id, name, slug)
          OUTPUT INSERTED.id
          VALUES (@tenantId, @name, @slug)`, { tenantId: req.user.tenantId, name: req.body.name, slug });
-        const category = await database_service_1.DatabaseService.query('SELECT * FROM blog_categories WHERE id = @id', { id: result[0].id });
+        const category = await database_service_1.DatabaseService.query('SELECT * FROM categories WHERE id = @id', { id: result[0].id });
         res.status(201).json({ success: true, data: category[0] });
     }
     catch (error) {
@@ -266,8 +266,8 @@ router.post('/categories', auth_middleware_1.authenticate, (0, auth_middleware_1
  */
 router.get('/tags', auth_middleware_1.authenticate, async (req, res, next) => {
     try {
-        const tags = await database_service_1.DatabaseService.query(`SELECT bt.*, (SELECT COUNT(*) FROM blog_post_tags WHERE tag_id = bt.id) as post_count
-       FROM blog_tags bt
+        const tags = await database_service_1.DatabaseService.query(`SELECT bt.*, (SELECT COUNT(*) FROM post_tags WHERE tag_id = bt.id) as post_count
+       FROM tags bt
        WHERE bt.tenant_id = @tenantId
        ORDER BY bt.name`, { tenantId: req.user.tenantId });
         res.json({ success: true, data: tags });
@@ -287,10 +287,10 @@ router.post('/tags', auth_middleware_1.authenticate, (0, auth_middleware_1.autho
             .toLowerCase()
             .replace(/[^a-z0-9]+/g, '-')
             .replace(/(^-|-$)/g, '');
-        const result = await database_service_1.DatabaseService.query(`INSERT INTO blog_tags (tenant_id, name, slug)
+        const result = await database_service_1.DatabaseService.query(`INSERT INTO tags (tenant_id, name, slug)
          OUTPUT INSERTED.id
          VALUES (@tenantId, @name, @slug)`, { tenantId: req.user.tenantId, name: req.body.name, slug });
-        const tag = await database_service_1.DatabaseService.query('SELECT * FROM blog_tags WHERE id = @id', { id: result[0].id });
+        const tag = await database_service_1.DatabaseService.query('SELECT * FROM tags WHERE id = @id', { id: result[0].id });
         res.status(201).json({ success: true, data: tag[0] });
     }
     catch (error) {
@@ -306,7 +306,7 @@ router.get('/posts/:id/comments', auth_middleware_1.authenticate, async (req, re
     try {
         const postId = parseInt(req.params.id, 10);
         const comments = await database_service_1.DatabaseService.query(`SELECT bc.*, u.display_name as author_name
-       FROM blog_comments bc
+       FROM comments bc
        LEFT JOIN users u ON bc.user_id = u.id
        WHERE bc.post_id = @postId AND bc.deleted_at IS NULL
        ORDER BY bc.created_at ASC`, { postId });
@@ -345,7 +345,7 @@ router.post('/posts/:id/comments', auth_middleware_1.authenticate, [
     try {
         validate(req);
         const postId = parseInt(req.params.id, 10);
-        const result = await database_service_1.DatabaseService.query(`INSERT INTO blog_comments (tenant_id, post_id, user_id, body, parent_id)
+        const result = await database_service_1.DatabaseService.query(`INSERT INTO comments (tenant_id, post_id, user_id, body, parent_id)
          OUTPUT INSERTED.id
          VALUES (@tenantId, @postId, @userId, @body, @parentId)`, {
             tenantId: req.user.tenantId,
@@ -355,7 +355,7 @@ router.post('/posts/:id/comments', auth_middleware_1.authenticate, [
             parentId: req.body.parentId || null,
         });
         const comment = await database_service_1.DatabaseService.query(`SELECT bc.*, u.display_name as author_name
-         FROM blog_comments bc
+         FROM comments bc
          LEFT JOIN users u ON bc.user_id = u.id
          WHERE bc.id = @id`, { id: result[0].id });
         res.status(201).json({ success: true, data: comment[0] });
@@ -372,14 +372,14 @@ router.delete('/comments/:id', auth_middleware_1.authenticate, async (req, res, 
     try {
         const commentId = parseInt(req.params.id, 10);
         // Check ownership or admin
-        const comments = await database_service_1.DatabaseService.query('SELECT user_id FROM blog_comments WHERE id = @commentId', { commentId });
+        const comments = await database_service_1.DatabaseService.query('SELECT user_id FROM comments WHERE id = @commentId', { commentId });
         if (comments.length === 0) {
             throw (0, error_middleware_1.NotFoundError)('Comment');
         }
         if (comments[0].user_id !== req.user.id && !['admin', 'director'].includes(req.user.role)) {
             throw (0, error_middleware_1.BadRequestError)('Not authorized to delete this comment');
         }
-        await database_service_1.DatabaseService.execute('UPDATE blog_comments SET deleted_at = SYSUTCDATETIME() WHERE id = @commentId', { commentId });
+        await database_service_1.DatabaseService.execute('UPDATE comments SET deleted_at = SYSUTCDATETIME() WHERE id = @commentId', { commentId });
         res.json({ success: true, message: 'Comment deleted' });
     }
     catch (error) {

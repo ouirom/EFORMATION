@@ -31,7 +31,7 @@ router.post('/', auth_middleware_1.authenticate, [
         }
         const quiz = quizzes[0];
         // Create attempt
-        const attemptResult = await database_service_1.DatabaseService.query(`INSERT INTO quiz_attempts (tenant_id, quiz_id, user_id, started_at, time_spent)
+        const attemptResult = await database_service_1.DatabaseService.query(`INSERT INTO attempts (tenant_id, quiz_id, user_id, started_at, time_spent)
          OUTPUT INSERTED.id
          VALUES (@tenantId, @quizId, @userId, SYSUTCDATETIME(), @timeSpent)`, {
             tenantId: req.user.tenantId,
@@ -59,7 +59,7 @@ router.post('/', auth_middleware_1.authenticate, [
                 correctCount++;
             }
             // Save the answer
-            await database_service_1.DatabaseService.execute(`INSERT INTO quiz_answers (tenant_id, attempt_id, question_id, choice_id, is_correct)
+            await database_service_1.DatabaseService.execute(`INSERT INTO answers (tenant_id, attempt_id, question_id, choice_id, is_correct)
            VALUES (@tenantId, @attemptId, @questionId, @choiceId, @isCorrect)`, {
                 tenantId: req.user.tenantId,
                 attemptId,
@@ -72,13 +72,13 @@ router.post('/', auth_middleware_1.authenticate, [
         const score = totalQuestions > 0 ? Math.round((correctCount / totalQuestions) * 100) : 0;
         const passed = score >= quiz.passing_score;
         // Update attempt with score
-        await database_service_1.DatabaseService.execute(`UPDATE quiz_attempts 
+        await database_service_1.DatabaseService.execute(`UPDATE attempts 
          SET score = @score, passed = @passed, completed_at = SYSUTCDATETIME()
          WHERE id = @attemptId`, { attemptId, score, passed });
         // Get feedback for each question
         const feedback = await database_service_1.DatabaseService.query(`SELECT qa.question_id, qa.is_correct as correct, qa.choice_id as selected_choice,
                 (SELECT label FROM choices WHERE question_id = qa.question_id AND is_correct = 1) as correct_answer
-         FROM quiz_answers qa
+         FROM answers qa
          WHERE qa.attempt_id = @attemptId`, { attemptId });
         res.status(201).json({
             success: true,
