@@ -127,7 +127,7 @@ router.get('/recommendations/courses', auth_middleware_1.authenticate, async (re
         const completedCourses = await database_service_1.DatabaseService.query(`SELECT c.id, c.title, c.category 
        FROM enrollments e
        JOIN courses c ON e.course_id = c.id
-       WHERE e.user_id = @userId AND e.progress >= 100`, { userId: req.user.id });
+       WHERE e.user_id = @userId AND e.progress_percent >= 100`, { userId: req.user.id });
         // Get user's interests from profile
         const userPrefs = await database_service_1.DatabaseService.query(`SELECT interests, learning_goals FROM user_profiles WHERE user_id = @userId`, { userId: req.user.id });
         // Get AI recommendations
@@ -154,21 +154,21 @@ router.get('/recommendations/courses', auth_middleware_1.authenticate, async (re
 router.get('/recommendations/next-steps', auth_middleware_1.authenticate, async (req, res, next) => {
     try {
         // Get current enrollments
-        const currentEnrollments = await database_service_1.DatabaseService.query(`SELECT e.*, c.title as course_title, 
-              (SELECT TOP 1 l.title FROM lessons l 
-               JOIN modules m ON l.module_id = m.id 
-               JOIN lesson_progress up ON up.lesson_id = l.id 
-               WHERE m.course_id = c.id AND up.user_id = @userId AND up.completed = 0
-               ORDER BY m.order_index, l.order_index) as next_lesson
+        const currentEnrollments = await database_service_1.DatabaseService.query(`SELECT e.*, c.title as course_title,
+              (SELECT TOP 1 l.title FROM lessons l
+               JOIN modules m ON l.module_id = m.id
+               JOIN lesson_progress up ON up.lesson_id = l.id
+               WHERE m.course_id = c.id AND up.user_id = @userId AND up.status <> 'completed'
+               ORDER BY m.position, l.position) as next_lesson
        FROM enrollments e
        JOIN courses c ON e.course_id = c.id
-       WHERE e.user_id = @userId AND e.progress < 100`, { userId: req.user.id });
+       WHERE e.user_id = @userId AND e.progress_percent < 100`, { userId: req.user.id });
         // Get user's quiz results
-        const recentQuizResults = await database_service_1.DatabaseService.query(`SELECT TOP 5 q.title, qa.score, qa.passed 
+        const recentQuizResults = await database_service_1.DatabaseService.query(`SELECT TOP 5 q.title, qa.score, qa.passed
        FROM attempts qa
        JOIN quizzes q ON qa.quiz_id = q.id
        WHERE qa.user_id = @userId
-       ORDER BY qa.finished_at DESC`, { userId: req.user.id });
+       ORDER BY qa.submitted_at DESC`, { userId: req.user.id });
         const nextSteps = await ai_service_1.AIService.getNextSteps({
             currentEnrollments,
             recentQuizResults,
@@ -271,7 +271,7 @@ router.get('/insights/learning-patterns', auth_middleware_1.authenticate, async 
        FROM audit_logs
        WHERE user_id = @userId AND action IN ('lesson_completed', 'quiz_completed', 'content_viewed')
        GROUP BY DATEPART(hour, created_at)`, { userId });
-        const progressData = await database_service_1.DatabaseService.query(`SELECT e.course_id, c.title, e.progress, e.started_at, e.completed_at,
+        const progressData = await database_service_1.DatabaseService.query(`SELECT e.course_id, c.title, e.progress_percent, e.started_at, e.completed_at,
               DATEDIFF(day, e.started_at, COALESCE(e.completed_at, GETUTCDATE())) as days_elapsed
        FROM enrollments e
        JOIN courses c ON e.course_id = c.id
@@ -296,8 +296,8 @@ router.get('/insights/course-effectiveness/:courseId', auth_middleware_1.authent
         // Get course completion data
         const completionData = await database_service_1.DatabaseService.query(`SELECT 
            COUNT(*) as total_enrollments,
-           SUM(CASE WHEN progress >= 100 THEN 1 ELSE 0 END) as completions,
-           AVG(progress) as avg_progress
+           SUM(CASE WHEN progress_percent >= 100 THEN 1 ELSE 0 END) as completions,
+           AVG(progress_percent) as avg_progress
          FROM enrollments
          WHERE course_id = @courseId`, { courseId });
         // Get quiz performance

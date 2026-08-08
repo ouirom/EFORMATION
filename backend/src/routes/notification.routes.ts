@@ -279,9 +279,10 @@ router.put('/preferences', authenticate, async (req: AuthRequest, res, next) => 
     if (existing.length === 0) {
       // Create new preferences
       await DatabaseService.execute(
-        `INSERT INTO notification_preferences (user_id, email_enabled, sms_enabled, whatsapp_enabled, push_enabled, in_app_enabled, digest_frequency)
-         VALUES (@userId, @email, @sms, @whatsapp, @push, @inApp, @digest)`,
+        `INSERT INTO notification_preferences (tenant_id, user_id, email_enabled, sms_enabled, whatsapp_enabled, push_enabled, in_app_enabled, digest_frequency)
+         VALUES (@tenantId, @userId, @email, @sms, @whatsapp, @push, @inApp, @digest)`,
         {
+          tenantId: req.user!.tenantId,
           userId: req.user!.id,
           email: email_enabled ?? true,
           sms: sms_enabled ?? false,

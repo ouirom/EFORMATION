@@ -167,7 +167,7 @@ router.get('/recommendations/courses', authenticate, async (req: AuthRequest, re
       `SELECT c.id, c.title, c.category 
        FROM enrollments e
        JOIN courses c ON e.course_id = c.id
-       WHERE e.user_id = @userId AND e.progress >= 100`,
+       WHERE e.user_id = @userId AND e.progress_percent >= 100`,
       { userId: req.user!.id }
     );
 
@@ -207,25 +207,25 @@ router.get('/recommendations/next-steps', authenticate, async (req: AuthRequest,
   try {
     // Get current enrollments
     const currentEnrollments = await DatabaseService.query<any>(
-      `SELECT e.*, c.title as course_title, 
-              (SELECT TOP 1 l.title FROM lessons l 
-               JOIN modules m ON l.module_id = m.id 
-               JOIN lesson_progress up ON up.lesson_id = l.id 
-               WHERE m.course_id = c.id AND up.user_id = @userId AND up.completed = 0
-               ORDER BY m.order_index, l.order_index) as next_lesson
+      `SELECT e.*, c.title as course_title,
+              (SELECT TOP 1 l.title FROM lessons l
+               JOIN modules m ON l.module_id = m.id
+               JOIN lesson_progress up ON up.lesson_id = l.id
+               WHERE m.course_id = c.id AND up.user_id = @userId AND up.status <> 'completed'
+               ORDER BY m.position, l.position) as next_lesson
        FROM enrollments e
        JOIN courses c ON e.course_id = c.id
-       WHERE e.user_id = @userId AND e.progress < 100`,
+       WHERE e.user_id = @userId AND e.progress_percent < 100`,
       { userId: req.user!.id }
     );
 
     // Get user's quiz results
     const recentQuizResults = await DatabaseService.query<any>(
-      `SELECT TOP 5 q.title, qa.score, qa.passed 
+      `SELECT TOP 5 q.title, qa.score, qa.passed
        FROM attempts qa
        JOIN quizzes q ON qa.quiz_id = q.id
        WHERE qa.user_id = @userId
-       ORDER BY qa.finished_at DESC`,
+       ORDER BY qa.submitted_at DESC`,
       { userId: req.user!.id }
     );
 
@@ -368,7 +368,7 @@ router.get('/insights/learning-patterns', authenticate, async (req: AuthRequest,
     );
 
     const progressData = await DatabaseService.query<any>(
-      `SELECT e.course_id, c.title, e.progress, e.started_at, e.completed_at,
+      `SELECT e.course_id, c.title, e.progress_percent, e.started_at, e.completed_at,
               DATEDIFF(day, e.started_at, COALESCE(e.completed_at, GETUTCDATE())) as days_elapsed
        FROM enrollments e
        JOIN courses c ON e.course_id = c.id
@@ -403,8 +403,8 @@ router.get(
       const completionData = await DatabaseService.query<any>(
         `SELECT 
            COUNT(*) as total_enrollments,
-           SUM(CASE WHEN progress >= 100 THEN 1 ELSE 0 END) as completions,
-           AVG(progress) as avg_progress
+           SUM(CASE WHEN progress_percent >= 100 THEN 1 ELSE 0 END) as completions,
+           AVG(progress_percent) as avg_progress
          FROM enrollments
          WHERE course_id = @courseId`,
         { courseId }

@@ -116,6 +116,7 @@ CREATE TABLE IF NOT EXISTS users (
   display_name   TEXT NOT NULL,
   role           user_role NOT NULL DEFAULT 'agent',
   avatar_url     TEXT,
+  phone          TEXT,
   is_active      BOOLEAN NOT NULL DEFAULT TRUE,
   created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -471,15 +472,16 @@ CREATE TABLE IF NOT EXISTS notification_templates (
 );
 
 CREATE TABLE IF NOT EXISTS notification_preferences (
-  id           BIGSERIAL PRIMARY KEY,
-  tenant_id    BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-  user_id      BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  email        BOOLEAN NOT NULL DEFAULT TRUE,
-  whatsapp     BOOLEAN NOT NULL DEFAULT FALSE,
-  sms          BOOLEAN NOT NULL DEFAULT FALSE,
-  push_web     BOOLEAN NOT NULL DEFAULT TRUE,
-  push_mobile  BOOLEAN NOT NULL DEFAULT TRUE,
-  updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  id               BIGSERIAL PRIMARY KEY,
+  tenant_id        BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  user_id          BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  email_enabled    BOOLEAN NOT NULL DEFAULT TRUE,
+  sms_enabled      BOOLEAN NOT NULL DEFAULT FALSE,
+  whatsapp_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  push_enabled     BOOLEAN NOT NULL DEFAULT TRUE,
+  in_app_enabled   BOOLEAN NOT NULL DEFAULT TRUE,
+  digest_frequency TEXT NOT NULL DEFAULT 'immediate',
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (tenant_id, user_id)
 );
 
@@ -496,17 +498,20 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
 );
 
 CREATE TABLE IF NOT EXISTS notifications (
-  id           BIGSERIAL PRIMARY KEY,
-  tenant_id    BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-  user_id      BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  template_id  BIGINT REFERENCES notification_templates(id),
-  payload      JSONB,
+  id             BIGSERIAL PRIMARY KEY,
+  tenant_id      BIGINT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+  user_id        BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  channel        TEXT NOT NULL CHECK (channel IN ('email','sms','whatsapp','push','in_app')),
+  subject        TEXT,
+  body           TEXT NOT NULL,
+  action_url     TEXT,
+  metadata       JSONB,
   external_id    TEXT,
   sent_at        TIMESTAMPTZ,
   failed_at      TIMESTAMPTZ,
   error_message  TEXT,
   read_at        TIMESTAMPTZ,
-  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS notification_deliveries (

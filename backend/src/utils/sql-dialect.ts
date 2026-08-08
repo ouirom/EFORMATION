@@ -74,6 +74,10 @@ function translateDateFunctions(text: string): string {
     }
     return `EXTRACT(EPOCH FROM ((${end}) - (${start})))`;
   });
+  result = replaceBalancedCall(result, 'DATEPART', (args) => {
+    const [unit, expr] = args;
+    return `EXTRACT(${unit.trim().toUpperCase()} FROM ${expr})::int`;
+  });
   return result;
 }
 

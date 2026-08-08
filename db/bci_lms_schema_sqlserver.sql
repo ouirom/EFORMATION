@@ -140,6 +140,7 @@ CREATE TABLE db_eformation.dbo.users (
   display_name   NVARCHAR(255) NOT NULL,
   role           NVARCHAR(20) NOT NULL CHECK (role IN ('admin','director','manager','supervisor','agent')),
   avatar_url     NVARCHAR(500) NULL,
+  phone          NVARCHAR(50) NULL,
   is_active      BIT NOT NULL DEFAULT 1,
   created_at     DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
   updated_at     DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
@@ -155,6 +156,10 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[users]') AND name = 'avatar_url')
   BEGIN
     ALTER TABLE db_eformation.dbo.users ADD avatar_url NVARCHAR(500) NULL;
+  END;
+  IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[users]') AND name = 'phone')
+  BEGIN
+    ALTER TABLE db_eformation.dbo.users ADD phone NVARCHAR(50) NULL;
   END;
 END;
 
@@ -691,15 +696,16 @@ END;
 IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[notification_preferences]') AND type in (N'U'))
 BEGIN
 CREATE TABLE db_eformation.dbo.notification_preferences (
-  id           BIGINT IDENTITY(1,1) PRIMARY KEY,
-  tenant_id    BIGINT NOT NULL,
-  user_id      BIGINT NOT NULL,
-  email        BIT NOT NULL DEFAULT 1,
-  whatsapp     BIT NOT NULL DEFAULT 0,
-  sms          BIT NOT NULL DEFAULT 0,
-  push_web     BIT NOT NULL DEFAULT 1,
-  push_mobile  BIT NOT NULL DEFAULT 1,
-  updated_at   DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
+  id               BIGINT IDENTITY(1,1) PRIMARY KEY,
+  tenant_id        BIGINT NOT NULL,
+  user_id          BIGINT NOT NULL,
+  email_enabled    BIT NOT NULL DEFAULT 1,
+  sms_enabled      BIT NOT NULL DEFAULT 0,
+  whatsapp_enabled BIT NOT NULL DEFAULT 0,
+  push_enabled     BIT NOT NULL DEFAULT 1,
+  in_app_enabled   BIT NOT NULL DEFAULT 1,
+  digest_frequency NVARCHAR(20) NOT NULL DEFAULT 'immediate',
+  updated_at       DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
   CONSTRAINT uq_notif_pref UNIQUE (tenant_id, user_id),
   CONSTRAINT fk_notif_pref_tenant FOREIGN KEY (tenant_id) REFERENCES dbo.tenants(id) ,
   CONSTRAINT fk_notif_pref_user FOREIGN KEY (user_id) REFERENCES dbo.users(id)
@@ -725,21 +731,23 @@ END;
 IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[notifications]') AND type in (N'U'))
 BEGIN
 CREATE TABLE db_eformation.dbo.notifications (
-  id           BIGINT IDENTITY(1,1) PRIMARY KEY,
-  tenant_id    BIGINT NOT NULL,
-  user_id      BIGINT NOT NULL,
-  template_id  BIGINT NULL,
-  payload      NVARCHAR(MAX) NULL,
+  id             BIGINT IDENTITY(1,1) PRIMARY KEY,
+  tenant_id      BIGINT NOT NULL,
+  user_id        BIGINT NOT NULL,
+  channel        NVARCHAR(20) NOT NULL CHECK (channel IN ('email','sms','whatsapp','push','in_app')),
+  subject        NVARCHAR(500) NULL,
+  body           NVARCHAR(MAX) NOT NULL,
+  action_url     NVARCHAR(1000) NULL,
+  metadata       NVARCHAR(MAX) NULL,
   external_id    NVARCHAR(255) NULL,
   sent_at        DATETIME2(0) NULL,
   failed_at      DATETIME2(0) NULL,
   error_message  NVARCHAR(MAX) NULL,
   read_at        DATETIME2(0) NULL,
-  created_at   DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
+  created_at     DATETIME2(0) NOT NULL DEFAULT SYSUTCDATETIME(),
   CONSTRAINT fk_notifications_tenant FOREIGN KEY (tenant_id) REFERENCES dbo.tenants(id) ,
   CONSTRAINT fk_notifications_user FOREIGN KEY (user_id) REFERENCES dbo.users(id) ,
-  CONSTRAINT fk_notifications_template FOREIGN KEY (template_id) REFERENCES dbo.notification_templates(id) ,
-  CONSTRAINT chk_notifications_payload_json CHECK (payload IS NULL OR ISJSON(payload) = 1)
+  CONSTRAINT chk_notifications_metadata_json CHECK (metadata IS NULL OR ISJSON(metadata) = 1)
 );
 END;
 ELSE
@@ -754,6 +762,16 @@ BEGIN
     ALTER TABLE db_eformation.dbo.notifications ADD error_message NVARCHAR(MAX) NULL;
   IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[notifications]') AND name = 'read_at')
     ALTER TABLE db_eformation.dbo.notifications ADD read_at DATETIME2(0) NULL;
+  IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[notifications]') AND name = 'channel')
+    ALTER TABLE db_eformation.dbo.notifications ADD channel NVARCHAR(20) NULL;
+  IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[notifications]') AND name = 'subject')
+    ALTER TABLE db_eformation.dbo.notifications ADD subject NVARCHAR(500) NULL;
+  IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[notifications]') AND name = 'body')
+    ALTER TABLE db_eformation.dbo.notifications ADD body NVARCHAR(MAX) NULL;
+  IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[notifications]') AND name = 'action_url')
+    ALTER TABLE db_eformation.dbo.notifications ADD action_url NVARCHAR(1000) NULL;
+  IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[notifications]') AND name = 'metadata')
+    ALTER TABLE db_eformation.dbo.notifications ADD metadata NVARCHAR(MAX) NULL;
 END;
 
 IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[notification_deliveries]') AND type in (N'U'))

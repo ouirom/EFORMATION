@@ -227,9 +227,9 @@ Respond with JSON:
   static async getRecommendations(input: RecommendationInput): Promise<any[]> {
     // Get available courses
     const availableCourses = await DatabaseService.query<any>(
-      `SELECT c.id, c.title, c.description, c.category, c.difficulty_level
+      `SELECT c.id, c.title, c.description, c.category, c.level as difficulty_level
        FROM courses c
-       WHERE c.tenant_id = @tenantId AND c.status = 'published'
+       WHERE c.tenant_id = @tenantId AND c.is_published = 1
        AND c.id NOT IN (SELECT course_id FROM enrollments WHERE user_id = @userId)`,
       { tenantId: input.tenantId, userId: input.userId }
     );
