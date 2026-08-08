@@ -674,10 +674,22 @@ export class AuthService {
       { expiresIn: '1h' }
     );
 
-    // TODO: Send email with reset link
-    logger.info(`Password reset token generated for user ${user.id}: ${resetToken}`);
+    const resetUrl = `${config.frontendUrl}/reset-password?token=${resetToken}`;
 
-    return resetToken; // In production, don't return this - send via email
+    // Best-effort: a failed email must never reveal whether the account exists
+    // (the caller always gets the same generic message either way).
+    NotificationService.send({
+      tenantId: user.tenant_id,
+      userId: user.id,
+      channel: 'email',
+      subject: 'Réinitialisation de votre mot de passe',
+      body: `Vous avez demandé la réinitialisation de votre mot de passe. Cliquez sur le lien ci-dessous pour choisir un nouveau mot de passe (valable 1 heure) :\n\n${resetUrl}\n\nSi vous n'êtes pas à l'origine de cette demande, ignorez cet email.`,
+      actionUrl: resetUrl,
+    }).catch((error) => {
+      logger.error('Failed to send password reset email', { error, userId: user.id });
+    });
+
+    return 'If the email exists, a reset link will be sent';
   }
 
   /**

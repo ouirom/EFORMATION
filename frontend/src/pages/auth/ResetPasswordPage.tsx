@@ -43,7 +43,7 @@ export default function ResetPasswordPage() {
     setIsLoading(true)
 
     try {
-      await api.post('/auth/reset-password', { token, password })
+      await api.post('/auth/reset-password', { token, newPassword: password })
       setIsSuccess(true)
     } catch (error: any) {
       toast({
