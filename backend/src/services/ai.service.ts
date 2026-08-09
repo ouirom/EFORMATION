@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { config } from '../config';
 import { DatabaseService } from './database.service';
+import { IS_PG } from '../database/db-helpers';
 import { logger } from '../utils/logger';
 
 const openai = config.openai.apiKey
@@ -333,9 +334,13 @@ Respond with JSON array of top ${input.limit} recommendations:
 
     // Get recent chat history for context
     const history = await DatabaseService.query<any>(
-      `SELECT TOP 10 role, message FROM ai_chat_history 
-       WHERE user_id = @userId 
-       ORDER BY created_at DESC`,
+      IS_PG
+        ? `SELECT role, message FROM ai_chat_history
+           WHERE user_id = @userId
+           ORDER BY created_at DESC LIMIT 10`
+        : `SELECT TOP 10 role, message FROM ai_chat_history
+           WHERE user_id = @userId
+           ORDER BY created_at DESC`,
       { userId: input.userId }
     );
 

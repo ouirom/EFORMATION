@@ -60,6 +60,11 @@ export const db = {
     return IS_PG ? `EXTRACT(EPOCH FROM (${b} - ${a}))` : `DATEDIFF(SECOND, ${a}, ${b})`;
   },
 
+  /** Replaces `DATEDIFF(day, a, b)` — whole days elapsed from `a` to `b`. */
+  diffDays(a: string, b: string): string {
+    return IS_PG ? `EXTRACT(DAY FROM (${b} - ${a}))` : `DATEDIFF(day, ${a}, ${b})`;
+  },
+
   /**
    * A boolean literal for inline use in a WHERE clause or SET/VALUES list
    * (e.g. `` `is_active = ${db.bool(true)}` ``) — mssql's BIT columns accept

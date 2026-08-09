@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { body, validationResult } from 'express-validator';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.middleware';
 import { DatabaseService } from '../services/database.service';
+import { IS_PG } from '../database/db-helpers';
 import { AuditService } from '../services/audit.service';
 import { BadRequestError, ConflictError } from '../middleware/error.middleware';
 
@@ -76,7 +77,9 @@ router.post(
       }
 
       const result = await DatabaseService.query<{ id: number }>(
-        `INSERT INTO tenants (name, slug) OUTPUT INSERTED.id VALUES (@name, @slug)`,
+        IS_PG
+          ? `INSERT INTO tenants (name, slug) VALUES (@name, @slug) RETURNING id`
+          : `INSERT INTO tenants (name, slug) OUTPUT INSERTED.id VALUES (@name, @slug)`,
         { name, slug }
       );
 

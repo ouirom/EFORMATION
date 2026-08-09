@@ -5,6 +5,7 @@ import { authenticate, authorize, AuthRequest } from '../middleware/auth.middlew
 import { BadRequestError } from '../middleware/error.middleware';
 import { DatabaseService } from '../services/database.service';
 import { AuditService } from '../services/audit.service';
+import { db, IS_PG } from '../database/db-helpers';
 
 // A lesson revisited within this window is treated as normal in-session navigation,
 // not a deliberate return to the training — avoids inflating the "resume" count with
@@ -249,14 +250,16 @@ router.post('/:id/start', authenticate, async (req: AuthRequest, res, next) => {
       // Update last accessed
       await DatabaseService.query(
         `UPDATE lesson_progress
-         SET last_accessed_at = GETDATE(), status = CASE WHEN status = 'not_started' THEN 'in_progress' ELSE status END
+         SET last_accessed_at = ${db.now()}, status = CASE WHEN status = 'not_started' THEN 'in_progress' ELSE status END
          WHERE lesson_id = @lessonId AND user_id = @userId AND tenant_id = @tenantId`,
         { lessonId, userId, tenantId }
       );
     } else {
       // First time this user touches ANY lesson in this course? Log a course start.
       const anyProgressInCourse = await DatabaseService.query<{ id: number }>(
-        `SELECT TOP 1 id FROM lesson_progress WHERE user_id = @userId AND tenant_id = @tenantId AND course_id = @courseId`,
+        IS_PG
+          ? `SELECT id FROM lesson_progress WHERE user_id = @userId AND tenant_id = @tenantId AND course_id = @courseId LIMIT 1`
+          : `SELECT TOP 1 id FROM lesson_progress WHERE user_id = @userId AND tenant_id = @tenantId AND course_id = @courseId`,
         { userId, tenantId, courseId }
       );
       if (anyProgressInCourse.length === 0) {
@@ -266,7 +269,7 @@ router.post('/:id/start', authenticate, async (req: AuthRequest, res, next) => {
       // Create new progress record
       await DatabaseService.query(
         `INSERT INTO lesson_progress (tenant_id, user_id, lesson_id, course_id, status, progress_percent, started_at, last_accessed_at)
-         VALUES (@tenantId, @userId, @lessonId, @courseId, 'in_progress', 0, GETDATE(), GETDATE())`,
+         VALUES (@tenantId, @userId, @lessonId, @courseId, 'in_progress', 0, ${db.now()}, ${db.now()})`,
         { tenantId, userId, lessonId, courseId }
       );
     }
@@ -295,12 +298,12 @@ router.post('/:id/progress', authenticate, async (req: AuthRequest, res, next) =
     const tenantId = req.user!.tenantId;
 
     await DatabaseService.query(
-      `UPDATE lesson_progress 
-       SET progress_percent = @progressPercent, 
-           time_spent_seconds = time_spent_seconds + ISNULL(@timeSpentSeconds, 0),
-           last_accessed_at = GETDATE(),
+      `UPDATE lesson_progress
+       SET progress_percent = @progressPercent,
+           time_spent_seconds = time_spent_seconds + COALESCE(@timeSpentSeconds, 0),
+           last_accessed_at = ${db.now()},
            status = CASE WHEN @progressPercent >= 100 THEN 'completed' ELSE 'in_progress' END,
-           completed_at = CASE WHEN @progressPercent >= 100 AND completed_at IS NULL THEN GETDATE() ELSE completed_at END
+           completed_at = CASE WHEN @progressPercent >= 100 AND completed_at IS NULL THEN ${db.now()} ELSE completed_at END
        WHERE lesson_id = @lessonId AND user_id = @userId AND tenant_id = @tenantId`,
       { lessonId, userId, tenantId, progressPercent, timeSpentSeconds }
     );
@@ -328,11 +331,11 @@ router.post('/:id/complete', authenticate, async (req: AuthRequest, res, next) =
     const tenantId = req.user!.tenantId;
 
     await DatabaseService.query(
-      `UPDATE lesson_progress 
-       SET status = 'completed', 
+      `UPDATE lesson_progress
+       SET status = 'completed',
            progress_percent = 100,
-           completed_at = GETDATE(),
-           last_accessed_at = GETDATE()
+           completed_at = ${db.now()},
+           last_accessed_at = ${db.now()}
        WHERE lesson_id = @lessonId AND user_id = @userId AND tenant_id = @tenantId`,
       { lessonId, userId, tenantId }
     );
@@ -366,7 +369,7 @@ router.post('/:id/complete', authenticate, async (req: AuthRequest, res, next) =
       if (existingEnrollment.length === 0) {
         await DatabaseService.execute(
           `INSERT INTO enrollments (tenant_id, user_id, course_id, progress_percent, enrolled_at, started_at)
-           VALUES (@tenantId, @userId, @courseId, 0, SYSUTCDATETIME(), SYSUTCDATETIME())`,
+           VALUES (@tenantId, @userId, @courseId, 0, ${db.now()}, ${db.now()})`,
           { tenantId, userId, courseId: course_id }
         );
       }
@@ -374,7 +377,7 @@ router.post('/:id/complete', authenticate, async (req: AuthRequest, res, next) =
       await DatabaseService.query(
         `UPDATE enrollments
          SET progress_percent = @progressPercent,
-             completed_at = CASE WHEN @progressPercent = 100 THEN GETDATE() ELSE completed_at END
+             completed_at = CASE WHEN @progressPercent = 100 THEN ${db.now()} ELSE completed_at END
          WHERE course_id = @courseId AND user_id = @userId AND tenant_id = @tenantId`,
         { courseId: course_id, userId, tenantId, progressPercent }
       );

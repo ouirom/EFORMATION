@@ -5,6 +5,7 @@ import { DatabaseService } from '../services/database.service';
 import { TeamService } from '../services/team.service';
 import { TeamReportService } from '../services/team-report.service';
 import { BadRequestError } from '../middleware/error.middleware';
+import { db, IS_PG } from '../database/db-helpers';
 
 const router = Router();
 
@@ -29,7 +30,7 @@ router.get('/my-stats', authenticate, async (req: AuthRequest, res, next) => {
         `SELECT 
            COUNT(*) as total_enrolled,
            SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) as completed,
-           AVG(ISNULL(progress_percent, 0)) as avg_progress
+           AVG(COALESCE(progress_percent, 0)) as avg_progress
          FROM enrollments 
          WHERE tenant_id = @tenantId AND user_id = @userId`,
         { tenantId, userId }
@@ -39,7 +40,7 @@ router.get('/my-stats', authenticate, async (req: AuthRequest, res, next) => {
         `SELECT 
            COUNT(*) as total_started,
            SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
-           SUM(ISNULL(time_spent_seconds, 0)) as total_time_seconds
+           SUM(COALESCE(time_spent_seconds, 0)) as total_time_seconds
          FROM lesson_progress 
          WHERE tenant_id = @tenantId AND user_id = @userId`,
         { tenantId, userId }
@@ -48,9 +49,9 @@ router.get('/my-stats', authenticate, async (req: AuthRequest, res, next) => {
       DatabaseService.query<any>(
         `SELECT 
            COUNT(*) as total_attempts,
-           SUM(CASE WHEN passed = 1 THEN 1 ELSE 0 END) as passed,
+           SUM(CASE WHEN passed = ${db.bool(true)} THEN 1 ELSE 0 END) as passed,
            AVG(score) as avg_score
-         FROM quiz_attempts 
+         FROM quiz_attempts
          WHERE tenant_id = @tenantId AND user_id = @userId`,
         { tenantId, userId }
       ),
@@ -190,7 +191,7 @@ router.put(
         await DatabaseService.execute(
           `UPDATE team_report_subscriptions
            SET is_enabled = @isEnabled, frequency = @frequency, weekday = @weekday,
-               channel_email = @channelEmail, channel_in_app = @channelInApp, updated_at = SYSUTCDATETIME()
+               channel_email = @channelEmail, channel_in_app = @channelInApp, updated_at = ${db.now()}
            WHERE tenant_id = @tenantId AND user_id = @userId`,
           { tenantId, userId, isEnabled, frequency, weekday, channelEmail, channelInApp }
         );
@@ -250,7 +251,7 @@ router.get('/dashboard', authenticate, authorize('admin', 'director', 'manager')
         `SELECT 
            COUNT(*) as total_users,
            SUM(CASE WHEN created_at >= @startDate THEN 1 ELSE 0 END) as new_users,
-           SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) as active_users
+           SUM(CASE WHEN is_active = ${db.bool(true)} THEN 1 ELSE 0 END) as active_users
          FROM users WHERE tenant_id = @tenantId`,
         { tenantId, startDate }
       ),
@@ -268,7 +269,7 @@ router.get('/dashboard', authenticate, authorize('admin', 'director', 'manager')
         `SELECT 
            COUNT(*) as total_enrollments,
            SUM(CASE WHEN enrolled_at >= @startDate THEN 1 ELSE 0 END) as new_enrollments,
-           AVG(ISNULL(progress_percent, 0)) as avg_progress
+           AVG(COALESCE(progress_percent, 0)) as avg_progress
          FROM enrollments e
          JOIN courses c ON e.course_id = c.id
          WHERE c.tenant_id = @tenantId`,
@@ -289,7 +290,7 @@ router.get('/dashboard', authenticate, authorize('admin', 'director', 'manager')
         `SELECT 
            COUNT(*) as total_attempts,
            AVG(score) as avg_score,
-           SUM(CASE WHEN passed = 1 THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0) as pass_rate
+           SUM(CASE WHEN passed = ${db.bool(true)} THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0) as pass_rate
          FROM quiz_attempts qa
          JOIN quizzes q ON qa.quiz_id = q.id
          WHERE q.tenant_id = @tenantId AND qa.completed_at >= @startDate`,
@@ -297,11 +298,18 @@ router.get('/dashboard', authenticate, authorize('admin', 'director', 'manager')
       ),
       // Recent activity
       DatabaseService.query<any>(
-        `SELECT TOP 10 action, COUNT(*) as count
-         FROM audit_logs
-         WHERE tenant_id = @tenantId AND created_at >= @startDate
-         GROUP BY action
-         ORDER BY count DESC`,
+        IS_PG
+          ? `SELECT action, COUNT(*) as count
+             FROM audit_logs
+             WHERE tenant_id = @tenantId AND created_at >= @startDate
+             GROUP BY action
+             ORDER BY count DESC
+             LIMIT 10`
+          : `SELECT TOP 10 action, COUNT(*) as count
+             FROM audit_logs
+             WHERE tenant_id = @tenantId AND created_at >= @startDate
+             GROUP BY action
+             ORDER BY count DESC`,
         { tenantId, startDate }
       ),
     ]);
@@ -352,11 +360,11 @@ router.get('/users', authenticate, authorize('admin', 'director'), async (req: A
 
     // User growth over time
     const userGrowth = await DatabaseService.query<any>(
-      `SELECT 
+      `SELECT
          CAST(created_at AS DATE) as date,
          COUNT(*) as new_users
        FROM users
-       WHERE tenant_id = @tenantId AND created_at >= DATEADD(day, -30, GETUTCDATE())
+       WHERE tenant_id = @tenantId AND created_at >= ${db.dateAdd('day', '-30', db.now())}
        GROUP BY CAST(created_at AS DATE)
        ORDER BY date`,
       { tenantId }
@@ -383,12 +391,20 @@ router.get('/users', authenticate, authorize('admin', 'director'), async (req: A
 
     // Most active users
     const mostActiveUsers = await DatabaseService.query<any>(
-      `SELECT TOP 10 u.id, u.display_name, u.email, COUNT(al.id) as activity_count
-       FROM users u
-       LEFT JOIN audit_logs al ON u.id = al.user_id AND al.created_at >= DATEADD(day, -30, GETUTCDATE())
-       WHERE u.tenant_id = @tenantId
-       GROUP BY u.id, u.display_name, u.email
-       ORDER BY activity_count DESC`,
+      IS_PG
+        ? `SELECT u.id, u.display_name, u.email, COUNT(al.id) as activity_count
+           FROM users u
+           LEFT JOIN audit_logs al ON u.id = al.user_id AND al.created_at >= ${db.dateAdd('day', '-30', db.now())}
+           WHERE u.tenant_id = @tenantId
+           GROUP BY u.id, u.display_name, u.email
+           ORDER BY activity_count DESC
+           LIMIT 10`
+        : `SELECT TOP 10 u.id, u.display_name, u.email, COUNT(al.id) as activity_count
+           FROM users u
+           LEFT JOIN audit_logs al ON u.id = al.user_id AND al.created_at >= ${db.dateAdd('day', '-30', db.now())}
+           WHERE u.tenant_id = @tenantId
+           GROUP BY u.id, u.display_name, u.email
+           ORDER BY activity_count DESC`,
       { tenantId }
     );
 
@@ -540,9 +556,9 @@ router.get('/learning', authenticate, authorize('admin', 'director', 'manager'),
     const learningActivity = await DatabaseService.query<any>(
       `SELECT CAST(created_at AS DATE) as date, COUNT(*) as activities
        FROM audit_logs
-       WHERE tenant_id = @tenantId 
+       WHERE tenant_id = @tenantId
          AND action IN ('lesson_completed', 'content_viewed', 'quiz_completed')
-         AND created_at >= DATEADD(day, -30, GETUTCDATE())
+         AND created_at >= ${db.dateAdd('day', '-30', db.now())}
        GROUP BY CAST(created_at AS DATE)
        ORDER BY date`,
       { tenantId }
@@ -551,7 +567,7 @@ router.get('/learning', authenticate, authorize('admin', 'director', 'manager'),
     // Average time to completion
     const avgCompletionTime = await DatabaseService.query<any>(
       `SELECT c.id, c.title,
-              AVG(DATEDIFF(day, e.started_at, e.completed_at)) as avg_days_to_complete
+              AVG(${db.diffDays('e.started_at', 'e.completed_at')}) as avg_days_to_complete
        FROM courses c
        JOIN enrollments e ON c.id = e.course_id
        WHERE c.tenant_id = @tenantId AND e.completed_at IS NOT NULL
@@ -639,7 +655,7 @@ router.get('/badges', authenticate, authorize('admin', 'director'), async (req: 
       `SELECT CAST(awarded_at AS DATE) as date, COUNT(*) as count
        FROM awarded_badges ab
        JOIN badges b ON ab.badge_id = b.id
-       WHERE b.tenant_id = @tenantId AND awarded_at >= DATEADD(day, -30, GETUTCDATE())
+       WHERE b.tenant_id = @tenantId AND awarded_at >= ${db.dateAdd('day', '-30', db.now())}
        GROUP BY CAST(awarded_at AS DATE)
        ORDER BY date`,
       { tenantId }
@@ -647,12 +663,20 @@ router.get('/badges', authenticate, authorize('admin', 'director'), async (req: 
 
     // Top badge earners
     const topEarners = await DatabaseService.query<any>(
-      `SELECT TOP 10 u.id, u.display_name, COUNT(ab.id) as badge_count
-       FROM users u
-       JOIN awarded_badges ab ON u.id = ab.user_id
-       WHERE u.tenant_id = @tenantId
-       GROUP BY u.id, u.display_name
-       ORDER BY badge_count DESC`,
+      IS_PG
+        ? `SELECT u.id, u.display_name, COUNT(ab.id) as badge_count
+           FROM users u
+           JOIN awarded_badges ab ON u.id = ab.user_id
+           WHERE u.tenant_id = @tenantId
+           GROUP BY u.id, u.display_name
+           ORDER BY badge_count DESC
+           LIMIT 10`
+        : `SELECT TOP 10 u.id, u.display_name, COUNT(ab.id) as badge_count
+           FROM users u
+           JOIN awarded_badges ab ON u.id = ab.user_id
+           WHERE u.tenant_id = @tenantId
+           GROUP BY u.id, u.display_name
+           ORDER BY badge_count DESC`,
       { tenantId }
     );
 
@@ -698,7 +722,7 @@ router.get('/user/:userId', authenticate, async (req: AuthRequest, res, next) =>
       // Quiz results
       DatabaseService.query<any>(
         `SELECT COUNT(*) as total_attempts, AVG(score) as avg_score,
-                SUM(CASE WHEN passed = 1 THEN 1 ELSE 0 END) as passed
+                SUM(CASE WHEN passed = ${db.bool(true)} THEN 1 ELSE 0 END) as passed
          FROM quiz_attempts WHERE user_id = @userId`,
         { userId }
       ),
@@ -709,10 +733,16 @@ router.get('/user/:userId', authenticate, async (req: AuthRequest, res, next) =>
       ),
       // Recent activity
       DatabaseService.query<any>(
-        `SELECT TOP 20 action, resource_type, resource_id, created_at
-         FROM audit_logs
-         WHERE user_id = @userId
-         ORDER BY created_at DESC`,
+        IS_PG
+          ? `SELECT action, resource_type, resource_id, created_at
+             FROM audit_logs
+             WHERE user_id = @userId
+             ORDER BY created_at DESC
+             LIMIT 20`
+          : `SELECT TOP 20 action, resource_type, resource_id, created_at
+             FROM audit_logs
+             WHERE user_id = @userId
+             ORDER BY created_at DESC`,
         { userId }
       ),
     ]);

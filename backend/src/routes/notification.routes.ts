@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { body, validationResult } from 'express-validator';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.middleware';
 import { DatabaseService } from '../services/database.service';
+import { db } from '../database/db-helpers';
 import { BadRequestError, NotFoundError } from '../middleware/error.middleware';
 import { NotificationService } from '../services/notification.service';
 
@@ -172,7 +173,7 @@ router.put('/:id/read', authenticate, async (req: AuthRequest, res, next) => {
     const notificationId = parseInt(req.params.id, 10);
 
     await DatabaseService.execute(
-      `UPDATE notifications SET read_at = SYSUTCDATETIME() 
+      `UPDATE notifications SET read_at = ${db.now()}
        WHERE id = @notificationId AND user_id = @userId AND read_at IS NULL`,
       { notificationId, userId: req.user!.id }
     );
@@ -190,7 +191,7 @@ router.put('/:id/read', authenticate, async (req: AuthRequest, res, next) => {
 router.put('/read-all', authenticate, async (req: AuthRequest, res, next) => {
   try {
     await DatabaseService.execute(
-      `UPDATE notifications SET read_at = SYSUTCDATETIME() 
+      `UPDATE notifications SET read_at = ${db.now()}
        WHERE user_id = @userId AND tenant_id = @tenantId AND read_at IS NULL`,
       { userId: req.user!.id, tenantId: req.user!.tenantId }
     );
@@ -367,7 +368,7 @@ router.post(
       if (existing.length > 0) {
         // Update existing
         await DatabaseService.execute(
-          `UPDATE push_subscriptions SET p256dh = @p256dh, auth = @auth, updated_at = SYSUTCDATETIME() 
+          `UPDATE push_subscriptions SET p256dh = @p256dh, auth = @auth, updated_at = ${db.now()}
            WHERE id = @id`,
           { id: existing[0].id, p256dh: keys.p256dh, auth: keys.auth }
         );

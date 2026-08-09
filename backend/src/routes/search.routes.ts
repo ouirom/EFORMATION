@@ -3,6 +3,7 @@ import { query, validationResult } from 'express-validator';
 import { authenticate, AuthRequest } from '../middleware/auth.middleware';
 import { DatabaseService } from '../services/database.service';
 import { BadRequestError } from '../middleware/error.middleware';
+import { db, IS_PG } from '../database/db-helpers';
 
 const router = Router();
 
@@ -15,7 +16,9 @@ const validate = (req: any) => {
 
 /**
  * @route GET /api/v1/search
- * @desc Global search across multiple entities
+ * @desc Global search across multiple entities. Returns a flat, ranked array
+ * of { id, type, title, description, url, metadata, score } so the frontend
+ * can render results directly without knowing the underlying entity shape.
  */
 router.get(
   '/',
@@ -25,111 +28,241 @@ router.get(
     try {
       validate(req);
       const searchQuery = req.query.q as string;
-      const types = (req.query.types as string)?.split(',') || ['courses', 'lessons', 'users', 'blog'];
+      const requestedTypes = ((req.query.types as string) || (req.query.type as string) || '')
+        .split(',')
+        .map((t) => t.trim())
+        .filter(Boolean);
+      const isAdmin = ['admin', 'director', 'manager'].includes(req.user!.role);
+      const allTypes = ['course', 'lesson', 'quiz', 'blog', 'badge', 'live_session', ...(isAdmin ? ['user'] : [])];
+      const types = requestedTypes.length > 0 && !requestedTypes.includes('all') ? requestedTypes : allTypes;
       const limit = Math.min(parseInt(req.query.limit as string) || 10, 50);
       const tenantId = req.user!.tenantId;
+      const like = `%${searchQuery}%`;
+      const exact = `${searchQuery}%`;
+      const startsWithQuery = (title: string) => title?.toLowerCase().startsWith(searchQuery.toLowerCase());
 
-      const results: Record<string, any[]> = {};
+      const results: any[] = [];
 
       // Search courses
-      if (types.includes('courses')) {
+      if (types.includes('course')) {
         const courses = await DatabaseService.query<any>(
-          `SELECT TOP (@limit) id, title, description, category, 'course' as type
-           FROM courses
-           WHERE tenant_id = @tenantId AND status = 'published'
-             AND (title LIKE @search OR description LIKE @search OR category LIKE @search)
-           ORDER BY 
-             CASE WHEN title LIKE @exactSearch THEN 0 ELSE 1 END,
-             title`,
-          { tenantId, search: `%${searchQuery}%`, exactSearch: `${searchQuery}%`, limit }
+          IS_PG
+            ? `SELECT id, title, description, category
+               FROM courses
+               WHERE tenant_id = @tenantId AND is_published = ${db.bool(true)}
+                 AND (title LIKE @like OR description LIKE @like OR category LIKE @like)
+               ORDER BY CASE WHEN title LIKE @exact THEN 0 ELSE 1 END, title
+               LIMIT @limit`
+            : `SELECT TOP (@limit) id, title, description, category
+               FROM courses
+               WHERE tenant_id = @tenantId AND is_published = ${db.bool(true)}
+                 AND (title LIKE @like OR description LIKE @like OR category LIKE @like)
+               ORDER BY CASE WHEN title LIKE @exact THEN 0 ELSE 1 END, title`,
+          { tenantId, like, exact, limit }
         );
-        results.courses = courses;
+        results.push(
+          ...courses.map((c) => ({
+            id: c.id,
+            type: 'course',
+            title: c.title,
+            description: c.description || c.category || '',
+            url: `/courses/${c.id}`,
+            metadata: { category: c.category },
+            score: startsWithQuery(c.title) ? 1 : 0.75,
+          }))
+        );
       }
 
       // Search lessons
-      if (types.includes('lessons')) {
+      if (types.includes('lesson')) {
         const lessons = await DatabaseService.query<any>(
-          `SELECT TOP (@limit) l.id, l.title, l.description, c.title as course_title, 'lesson' as type
-           FROM lessons l
-           JOIN modules m ON l.module_id = m.id
-           JOIN courses c ON m.course_id = c.id
-           WHERE c.tenant_id = @tenantId AND c.status = 'published'
-             AND (l.title LIKE @search OR l.description LIKE @search)
-           ORDER BY 
-             CASE WHEN l.title LIKE @exactSearch THEN 0 ELSE 1 END,
-             l.title`,
-          { tenantId, search: `%${searchQuery}%`, exactSearch: `${searchQuery}%`, limit }
+          IS_PG
+            ? `SELECT l.id, l.title, c.id as course_id, c.title as course_title
+               FROM lessons l
+               JOIN modules m ON l.module_id = m.id
+               JOIN courses c ON m.course_id = c.id
+               WHERE c.tenant_id = @tenantId AND c.is_published = ${db.bool(true)} AND l.title LIKE @like
+               ORDER BY CASE WHEN l.title LIKE @exact THEN 0 ELSE 1 END, l.title
+               LIMIT @limit`
+            : `SELECT TOP (@limit) l.id, l.title, c.id as course_id, c.title as course_title
+               FROM lessons l
+               JOIN modules m ON l.module_id = m.id
+               JOIN courses c ON m.course_id = c.id
+               WHERE c.tenant_id = @tenantId AND c.is_published = ${db.bool(true)} AND l.title LIKE @like
+               ORDER BY CASE WHEN l.title LIKE @exact THEN 0 ELSE 1 END, l.title`,
+          { tenantId, like, exact, limit }
         );
-        results.lessons = lessons;
-      }
-
-      // Search users (admin/director only)
-      if (types.includes('users') && ['admin', 'director', 'manager'].includes(req.user!.role)) {
-        const users = await DatabaseService.query<any>(
-          `SELECT TOP (@limit) id, display_name, email, role, 'user' as type
-           FROM users
-           WHERE tenant_id = @tenantId AND is_active = 1
-             AND (display_name LIKE @search OR email LIKE @search)
-           ORDER BY 
-             CASE WHEN display_name LIKE @exactSearch THEN 0 ELSE 1 END,
-             display_name`,
-          { tenantId, search: `%${searchQuery}%`, exactSearch: `${searchQuery}%`, limit }
+        results.push(
+          ...lessons.map((l) => ({
+            id: l.id,
+            type: 'lesson',
+            title: l.title,
+            description: l.course_title,
+            url: `/courses/${l.course_id}/lessons/${l.id}`,
+            metadata: { courseTitle: l.course_title },
+            score: startsWithQuery(l.title) ? 0.9 : 0.65,
+          }))
         );
-        results.users = users;
-      }
-
-      // Search blog posts
-      if (types.includes('blog')) {
-        const posts = await DatabaseService.query<any>(
-          `SELECT TOP (@limit) id, title, slug, 'blog_post' as type
-           FROM blog_posts
-           WHERE tenant_id = @tenantId AND status = 'published'
-             AND (title LIKE @search OR body LIKE @search)
-           ORDER BY 
-             CASE WHEN title LIKE @exactSearch THEN 0 ELSE 1 END,
-             title`,
-          { tenantId, search: `%${searchQuery}%`, exactSearch: `${searchQuery}%`, limit }
-        );
-        results.blog = posts;
       }
 
       // Search quizzes
-      if (types.includes('quizzes')) {
+      if (types.includes('quiz')) {
         const quizzes = await DatabaseService.query<any>(
-          `SELECT TOP (@limit) q.id, q.title, c.title as course_title, 'quiz' as type
-           FROM quizzes q
-           LEFT JOIN courses c ON q.course_id = c.id
-           WHERE q.tenant_id = @tenantId
-             AND q.title LIKE @search
-           ORDER BY q.title`,
-          { tenantId, search: `%${searchQuery}%`, limit }
+          IS_PG
+            ? `SELECT q.id, q.title, c.title as course_title
+               FROM quizzes q
+               JOIN lessons l ON q.lesson_id = l.id
+               JOIN modules m ON l.module_id = m.id
+               JOIN courses c ON m.course_id = c.id
+               WHERE q.tenant_id = @tenantId AND c.is_published = ${db.bool(true)} AND q.title LIKE @like
+               ORDER BY CASE WHEN q.title LIKE @exact THEN 0 ELSE 1 END, q.title
+               LIMIT @limit`
+            : `SELECT TOP (@limit) q.id, q.title, c.title as course_title
+               FROM quizzes q
+               JOIN lessons l ON q.lesson_id = l.id
+               JOIN modules m ON l.module_id = m.id
+               JOIN courses c ON m.course_id = c.id
+               WHERE q.tenant_id = @tenantId AND c.is_published = ${db.bool(true)} AND q.title LIKE @like
+               ORDER BY CASE WHEN q.title LIKE @exact THEN 0 ELSE 1 END, q.title`,
+          { tenantId, like, exact, limit }
         );
-        results.quizzes = quizzes;
+        results.push(
+          ...quizzes.map((q) => ({
+            id: q.id,
+            type: 'quiz',
+            title: q.title,
+            description: q.course_title,
+            url: `/quizzes/${q.id}`,
+            metadata: { courseTitle: q.course_title },
+            score: startsWithQuery(q.title) ? 0.85 : 0.6,
+          }))
+        );
       }
 
-      // Search badges
-      if (types.includes('badges')) {
+      // Search blog posts (no per-post page yet, link to the blog list)
+      if (types.includes('blog')) {
+        const posts = await DatabaseService.query<any>(
+          IS_PG
+            ? `SELECT id, title
+               FROM blog_posts
+               WHERE tenant_id = @tenantId AND status = 'published'
+                 AND (title LIKE @like OR body LIKE @like)
+               ORDER BY CASE WHEN title LIKE @exact THEN 0 ELSE 1 END, title
+               LIMIT @limit`
+            : `SELECT TOP (@limit) id, title
+               FROM blog_posts
+               WHERE tenant_id = @tenantId AND status = 'published'
+                 AND (title LIKE @like OR body LIKE @like)
+               ORDER BY CASE WHEN title LIKE @exact THEN 0 ELSE 1 END, title`,
+          { tenantId, like, exact, limit }
+        );
+        results.push(
+          ...posts.map((p) => ({
+            id: p.id,
+            type: 'blog',
+            title: p.title,
+            description: '',
+            url: '/blog',
+            metadata: {},
+            score: startsWithQuery(p.title) ? 0.8 : 0.55,
+          }))
+        );
+      }
+
+      // Search badges (no per-badge page yet, link to the badges list)
+      if (types.includes('badge')) {
         const badges = await DatabaseService.query<any>(
-          `SELECT TOP (@limit) id, name, description, type, 'badge' as type
-           FROM badges
-           WHERE tenant_id = @tenantId
-             AND (name LIKE @search OR description LIKE @search)
-           ORDER BY name`,
-          { tenantId, search: `%${searchQuery}%`, limit }
+          IS_PG
+            ? `SELECT id, name, description
+               FROM badges
+               WHERE tenant_id = @tenantId AND (name LIKE @like OR description LIKE @like)
+               ORDER BY name
+               LIMIT @limit`
+            : `SELECT TOP (@limit) id, name, description
+               FROM badges
+               WHERE tenant_id = @tenantId AND (name LIKE @like OR description LIKE @like)
+               ORDER BY name`,
+          { tenantId, like, limit }
         );
-        results.badges = badges;
+        results.push(
+          ...badges.map((b) => ({
+            id: b.id,
+            type: 'badge',
+            title: b.name,
+            description: b.description || '',
+            url: isAdmin ? '/admin/badges' : '/badges',
+            metadata: {},
+            score: 0.5,
+          }))
+        );
       }
 
-      // Calculate total results
-      const totalResults = Object.values(results).reduce((sum, arr) => sum + arr.length, 0);
+      // Search live sessions (no per-session page yet, link to the sessions list)
+      if (types.includes('live_session')) {
+        const sessions = await DatabaseService.query<any>(
+          IS_PG
+            ? `SELECT id, title, status
+               FROM live_sessions
+               WHERE tenant_id = @tenantId AND title LIKE @like
+               ORDER BY CASE WHEN title LIKE @exact THEN 0 ELSE 1 END, title
+               LIMIT @limit`
+            : `SELECT TOP (@limit) id, title, status
+               FROM live_sessions
+               WHERE tenant_id = @tenantId AND title LIKE @like
+               ORDER BY CASE WHEN title LIKE @exact THEN 0 ELSE 1 END, title`,
+          { tenantId, like, exact, limit }
+        );
+        results.push(
+          ...sessions.map((s) => ({
+            id: s.id,
+            type: 'live_session',
+            title: s.title,
+            description: s.status,
+            url: isAdmin ? '/admin/live-sessions' : '/live',
+            metadata: { status: s.status },
+            score: startsWithQuery(s.title) ? 0.8 : 0.55,
+          }))
+        );
+      }
+
+      // Search users (admin/director/manager only)
+      if (types.includes('user') && isAdmin) {
+        const users = await DatabaseService.query<any>(
+          IS_PG
+            ? `SELECT id, display_name, email, role
+               FROM users
+               WHERE tenant_id = @tenantId AND is_active = ${db.bool(true)}
+                 AND (display_name LIKE @like OR email LIKE @like)
+               ORDER BY CASE WHEN display_name LIKE @exact THEN 0 ELSE 1 END, display_name
+               LIMIT @limit`
+            : `SELECT TOP (@limit) id, display_name, email, role
+               FROM users
+               WHERE tenant_id = @tenantId AND is_active = ${db.bool(true)}
+                 AND (display_name LIKE @like OR email LIKE @like)
+               ORDER BY CASE WHEN display_name LIKE @exact THEN 0 ELSE 1 END, display_name`,
+          { tenantId, like, exact, limit }
+        );
+        results.push(
+          ...users.map((u) => ({
+            id: u.id,
+            type: 'user',
+            title: u.display_name,
+            description: u.email,
+            url: '/admin/users',
+            metadata: { role: u.role },
+            score: startsWithQuery(u.display_name) ? 0.9 : 0.65,
+          }))
+        );
+      }
+
+      results.sort((a, b) => b.score - a.score);
 
       res.json({
         success: true,
         data: results,
         meta: {
           query: searchQuery,
-          totalResults,
-          types: Object.keys(results),
+          totalResults: results.length,
         },
       });
     } catch (error) {
@@ -302,16 +435,27 @@ router.get('/suggestions', authenticate, async (req: AuthRequest, res, next) => 
 
     // Get suggestions from courses and lessons
     const suggestions = await DatabaseService.query<any>(
-      `SELECT TOP 10 title as text, 'course' as type FROM courses 
-       WHERE tenant_id = @tenantId AND status = 'published' AND title LIKE @prefix
-       UNION
-       SELECT TOP 10 l.title as text, 'lesson' as type FROM lessons l
-       JOIN modules m ON l.module_id = m.id
-       JOIN courses c ON m.course_id = c.id
-       WHERE c.tenant_id = @tenantId AND c.status = 'published' AND l.title LIKE @prefix
-       UNION
-       SELECT TOP 5 name as text, 'badge' as type FROM badges
-       WHERE tenant_id = @tenantId AND name LIKE @prefix`,
+      IS_PG
+        ? `(SELECT title as text, 'course' as type FROM courses
+            WHERE tenant_id = @tenantId AND status = 'published' AND title LIKE @prefix LIMIT 10)
+           UNION
+           (SELECT l.title as text, 'lesson' as type FROM lessons l
+            JOIN modules m ON l.module_id = m.id
+            JOIN courses c ON m.course_id = c.id
+            WHERE c.tenant_id = @tenantId AND c.status = 'published' AND l.title LIKE @prefix LIMIT 10)
+           UNION
+           (SELECT name as text, 'badge' as type FROM badges
+            WHERE tenant_id = @tenantId AND name LIKE @prefix LIMIT 5)`
+        : `SELECT TOP 10 title as text, 'course' as type FROM courses
+           WHERE tenant_id = @tenantId AND status = 'published' AND title LIKE @prefix
+           UNION
+           SELECT TOP 10 l.title as text, 'lesson' as type FROM lessons l
+           JOIN modules m ON l.module_id = m.id
+           JOIN courses c ON m.course_id = c.id
+           WHERE c.tenant_id = @tenantId AND c.status = 'published' AND l.title LIKE @prefix
+           UNION
+           SELECT TOP 5 name as text, 'badge' as type FROM badges
+           WHERE tenant_id = @tenantId AND name LIKE @prefix`,
       { tenantId, prefix: `${prefix}%` }
     );
 
@@ -328,9 +472,14 @@ router.get('/suggestions', authenticate, async (req: AuthRequest, res, next) => 
 router.get('/recent', authenticate, async (req: AuthRequest, res, next) => {
   try {
     const searches = await DatabaseService.query<any>(
-      `SELECT TOP 10 query, searched_at FROM search_history
-       WHERE user_id = @userId
-       ORDER BY searched_at DESC`,
+      IS_PG
+        ? `SELECT query, searched_at FROM search_history
+           WHERE user_id = @userId
+           ORDER BY searched_at DESC
+           LIMIT 10`
+        : `SELECT TOP 10 query, searched_at FROM search_history
+           WHERE user_id = @userId
+           ORDER BY searched_at DESC`,
       { userId: req.user!.id }
     );
 

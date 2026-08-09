@@ -6,6 +6,7 @@ import { AuditService } from '../services/audit.service';
 import { CourseService, ModuleService, LessonService } from '../services/course.service';
 import { BadRequestError } from '../middleware/error.middleware';
 import { parseSpreadsheet, buildXlsxTemplate } from '../utils/xlsx';
+import { db, IS_PG } from '../database/db-helpers';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -118,7 +119,9 @@ router.post('/organization', authenticate, authorize('admin'), upload.single('fi
             enterpriseId = existing[0].id;
           } else {
             const inserted = await DatabaseService.query<{ id: number }>(
-              `INSERT INTO enterprises (tenant_id, name, code) OUTPUT INSERTED.id VALUES (@tenantId, @name, @code)`,
+              IS_PG
+                ? `INSERT INTO enterprises (tenant_id, name, code) VALUES (@tenantId, @name, @code) RETURNING id`
+                : `INSERT INTO enterprises (tenant_id, name, code) OUTPUT INSERTED.id VALUES (@tenantId, @name, @code)`,
               { tenantId, name: enterpriseName, code: enterpriseCode }
             );
             enterpriseId = inserted[0].id;
@@ -150,7 +153,9 @@ router.post('/organization', authenticate, authorize('admin'), upload.single('fi
             directionId = existing[0].id;
           } else {
             const inserted = await DatabaseService.query<{ id: number }>(
-              `INSERT INTO directions (tenant_id, enterprise_id, name, code) OUTPUT INSERTED.id VALUES (@tenantId, @enterpriseId, @name, @code)`,
+              IS_PG
+                ? `INSERT INTO directions (tenant_id, enterprise_id, name, code) VALUES (@tenantId, @enterpriseId, @name, @code) RETURNING id`
+                : `INSERT INTO directions (tenant_id, enterprise_id, name, code) OUTPUT INSERTED.id VALUES (@tenantId, @enterpriseId, @name, @code)`,
               { tenantId, enterpriseId, name: directionName, code: directionCode }
             );
             directionId = inserted[0].id;
@@ -311,7 +316,7 @@ router.post('/courses', authenticate, authorize('admin', 'director', 'manager'),
 
         if (truthy(row.isPublished)) {
           await DatabaseService.execute(
-            'UPDATE courses SET is_published = 1 WHERE id = @id AND tenant_id = @tenantId',
+            `UPDATE courses SET is_published = ${db.bool(true)} WHERE id = @id AND tenant_id = @tenantId`,
             { id: course.id, tenantId }
           );
         }
@@ -553,8 +558,11 @@ router.post('/quizzes', authenticate, authorize('admin', 'director', 'manager'),
           } else {
             const passingScore = row.passingScore ? parseInt(row.passingScore, 10) : 70;
             const inserted = await DatabaseService.query<{ id: number }>(
-              `INSERT INTO quizzes (tenant_id, lesson_id, title, passing_score)
-               OUTPUT INSERTED.id VALUES (@tenantId, @lessonId, @title, @passingScore)`,
+              IS_PG
+                ? `INSERT INTO quizzes (tenant_id, lesson_id, title, passing_score)
+                   VALUES (@tenantId, @lessonId, @title, @passingScore) RETURNING id`
+                : `INSERT INTO quizzes (tenant_id, lesson_id, title, passing_score)
+                   OUTPUT INSERTED.id VALUES (@tenantId, @lessonId, @title, @passingScore)`,
               { tenantId, lessonId, title: quizTitle, passingScore }
             );
             quizId = inserted[0].id;
@@ -569,8 +577,11 @@ router.post('/quizzes', authenticate, authorize('admin', 'director', 'manager'),
         const points = row.questionPoints ? parseInt(row.questionPoints, 10) : 1;
 
         const insertedQuestion = await DatabaseService.query<{ id: number }>(
-          `INSERT INTO questions (tenant_id, quiz_id, type, prompt, position, points)
-           OUTPUT INSERTED.id VALUES (@tenantId, @quizId, @type, @prompt, @position, @points)`,
+          IS_PG
+            ? `INSERT INTO questions (tenant_id, quiz_id, type, prompt, position, points)
+               VALUES (@tenantId, @quizId, @type, @prompt, @position, @points) RETURNING id`
+            : `INSERT INTO questions (tenant_id, quiz_id, type, prompt, position, points)
+               OUTPUT INSERTED.id VALUES (@tenantId, @quizId, @type, @prompt, @position, @points)`,
           { tenantId, quizId, type: questionType, prompt: questionPrompt, position: maxPos[0].max_pos + 1, points }
         );
         const questionId = insertedQuestion[0].id;

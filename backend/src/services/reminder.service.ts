@@ -1,4 +1,5 @@
 import { DatabaseService } from './database.service';
+import { db, IS_PG } from '../database/db-helpers';
 import { NotificationService } from './notification.service';
 import { config } from '../config';
 import { logger } from '../utils/logger';
@@ -50,9 +51,9 @@ export class ReminderService {
          OR (ca.assignment_type = 'role' AND u.role = ca.target_role)
        )
        LEFT JOIN enrollments e ON e.course_id = ca.course_id AND e.user_id = u.id
-       WHERE ca.is_mandatory = 1
+       WHERE ca.is_mandatory = ${db.bool(true)}
          AND ca.due_date IS NOT NULL
-         AND u.is_active = 1 AND u.deleted_at IS NULL
+         AND u.is_active = ${db.bool(true)} AND u.deleted_at IS NULL
          AND (e.completed_at IS NULL AND (e.progress_percent IS NULL OR e.progress_percent < 100))`
     );
 
@@ -145,22 +146,24 @@ export class ReminderService {
 
     if (row.supervisor_id) {
       const directSupervisor = await DatabaseService.query<{ id: number; display_name: string }>(
-        'SELECT id, display_name FROM users WHERE id = @supervisorId AND is_active = 1 AND deleted_at IS NULL',
+        `SELECT id, display_name FROM users WHERE id = @supervisorId AND is_active = ${db.bool(true)} AND deleted_at IS NULL`,
         { supervisorId: row.supervisor_id }
       );
       manager = directSupervisor[0] || null;
     }
 
     if (!manager) {
-      const managers = await DatabaseService.query<{ id: number; display_name: string }>(
-        `SELECT TOP 1 id, display_name FROM users
-         WHERE tenant_id = @tenantId AND is_active = 1 AND deleted_at IS NULL
+      const orderBy = `ORDER BY CASE WHEN service_id = @serviceId THEN 0 ELSE 1 END,
+                  CASE role WHEN 'supervisor' THEN 0 WHEN 'manager' THEN 1 ELSE 2 END`;
+      const whereClause = `WHERE tenant_id = @tenantId AND is_active = ${db.bool(true)} AND deleted_at IS NULL
            AND (
              (service_id = @serviceId AND role IN ('supervisor', 'manager'))
              OR (direction_id = @directionId AND role = 'director')
-           )
-         ORDER BY CASE WHEN service_id = @serviceId THEN 0 ELSE 1 END,
-                  CASE role WHEN 'supervisor' THEN 0 WHEN 'manager' THEN 1 ELSE 2 END`,
+           )`;
+      const managers = await DatabaseService.query<{ id: number; display_name: string }>(
+        IS_PG
+          ? `SELECT id, display_name FROM users ${whereClause} ${orderBy} LIMIT 1`
+          : `SELECT TOP 1 id, display_name FROM users ${whereClause} ${orderBy}`,
         { tenantId: row.tenant_id, serviceId: row.service_id, directionId: row.direction_id }
       );
       manager = managers[0] || null;

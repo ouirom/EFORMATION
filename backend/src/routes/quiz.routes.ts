@@ -221,7 +221,7 @@ router.post(
 
       // Get current max position in this quiz
       const maxPosition = await DatabaseService.query<any>(
-        'SELECT ISNULL(MAX(position), 0) as max_pos FROM questions WHERE quiz_id = @quizId',
+        'SELECT COALESCE(MAX(position), 0) as max_pos FROM questions WHERE quiz_id = @quizId',
         { quizId }
       );
 

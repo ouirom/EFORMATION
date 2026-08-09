@@ -3,6 +3,7 @@ import { body, validationResult } from 'express-validator';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.middleware';
 import { DatabaseService } from '../services/database.service';
 import { BadRequestError, NotFoundError } from '../middleware/error.middleware';
+import { db, IS_PG } from '../database/db-helpers';
 
 const router = Router();
 
@@ -12,6 +13,32 @@ const validate = (req: any) => {
     throw BadRequestError('Validation error', 'VALIDATION_ERROR', errors.array());
   }
 };
+
+// The DB and its joins use snake_case (scheduled_at, organizer_id, meeting_link, ...);
+// the frontend's LiveSession type expects camelCase. Centralizing the mapping here means
+// every response shape stays consistent, instead of each route hand-rolling its own subset.
+function mapSession(row: any) {
+  return {
+    id: row.id,
+    title: row.title,
+    description: row.description,
+    instructorId: row.organizer_id,
+    instructorName: row.organizer_name,
+    scheduledAt: row.scheduled_at,
+    duration: row.duration,
+    meetingUrl: row.meeting_link,
+    meetingProvider: row.meeting_provider,
+    maxParticipants: row.max_participants,
+    currentParticipants: row.participant_count ?? 0,
+    status: row.status,
+    recordingUrl: row.recording_url ?? null,
+    courseId: row.course_id,
+    courseName: row.course_title,
+    startedAt: row.started_at,
+    endedAt: row.ended_at,
+    createdAt: row.created_at,
+  };
+}
 
 // ==================== LIVE SESSIONS ====================
 
@@ -44,7 +71,7 @@ router.get('/', authenticate, async (req: AuthRequest, res, next) => {
     query += ' ORDER BY ls.scheduled_at DESC';
 
     const sessions = await DatabaseService.query<any>(query, params);
-    res.json({ success: true, data: sessions });
+    res.json({ success: true, data: sessions.map(mapSession) });
   } catch (error) {
     next(error);
   }
@@ -98,7 +125,7 @@ router.get('/:id', authenticate, async (req: AuthRequest, res, next) => {
     res.json({
       success: true,
       data: {
-        ...sessions[0],
+        ...mapSession(sessions[0]),
         participants,
         breakoutRooms,
         recordings,
@@ -119,29 +146,51 @@ router.post(
   authorize('admin', 'director', 'manager'),
   [
     body('title').notEmpty().trim(),
-    body('courseId').optional().isInt(),
-    body('moduleId').optional().isInt(),
-    body('scheduledAt').optional().isISO8601(),
+    body('description').optional({ nullable: true }).trim(),
+    body('courseId').optional({ nullable: true }).isInt(),
+    body('moduleId').optional({ nullable: true }).isInt(),
+    body('scheduledAt').optional({ nullable: true }).isISO8601(),
+    body('duration').optional({ nullable: true }).isInt({ min: 1 }),
+    body('maxParticipants').optional({ nullable: true }).isInt({ min: 1 }),
     body('meetingProvider').optional().isIn(['webrtc', 'zoom', 'teams', 'meet']),
-    body('meetingLink').optional().trim(),
+    body('meetingUrl').optional({ nullable: true }).trim(),
   ],
   async (req: AuthRequest, res, next) => {
     try {
       validate(req);
 
       const result = await DatabaseService.query<{ id: number }>(
-        `INSERT INTO live_sessions (tenant_id, title, course_id, module_id, status, scheduled_at, organizer_id, meeting_provider, meeting_link)
-         OUTPUT INSERTED.id
-         VALUES (@tenantId, @title, @courseId, @moduleId, 'scheduled', @scheduledAt, @organizerId, @meetingProvider, @meetingLink)`,
+        IS_PG
+          ? `INSERT INTO live_sessions (
+               tenant_id, title, description, course_id, module_id, status, scheduled_at,
+               duration, organizer_id, meeting_provider, meeting_link, max_participants
+             )
+             VALUES (
+               @tenantId, @title, @description, @courseId, @moduleId, 'scheduled', @scheduledAt,
+               @duration, @organizerId, @meetingProvider, @meetingLink, @maxParticipants
+             )
+             RETURNING id`
+          : `INSERT INTO live_sessions (
+               tenant_id, title, description, course_id, module_id, status, scheduled_at,
+               duration, organizer_id, meeting_provider, meeting_link, max_participants
+             )
+             OUTPUT INSERTED.id
+             VALUES (
+               @tenantId, @title, @description, @courseId, @moduleId, 'scheduled', @scheduledAt,
+               @duration, @organizerId, @meetingProvider, @meetingLink, @maxParticipants
+             )`,
         {
           tenantId: req.user!.tenantId,
           title: req.body.title,
+          description: req.body.description || null,
           courseId: req.body.courseId || null,
           moduleId: req.body.moduleId || null,
-          scheduledAt: req.body.scheduledAt || null,
+          scheduledAt: req.body.scheduledAt ? new Date(req.body.scheduledAt) : null,
+          duration: req.body.duration || null,
           organizerId: req.user!.id,
           meetingProvider: req.body.meetingProvider || 'webrtc',
-          meetingLink: req.body.meetingLink || null,
+          meetingLink: req.body.meetingUrl || null,
+          maxParticipants: req.body.maxParticipants || null,
         }
       );
 
@@ -153,11 +202,15 @@ router.post(
       );
 
       const session = await DatabaseService.query<any>(
-        'SELECT * FROM live_sessions WHERE id = @id',
+        `SELECT ls.*, u.display_name as organizer_name, c.title as course_title
+         FROM live_sessions ls
+         LEFT JOIN users u ON ls.organizer_id = u.id
+         LEFT JOIN courses c ON ls.course_id = c.id
+         WHERE ls.id = @id`,
         { id: result[0].id }
       );
 
-      res.status(201).json({ success: true, data: session[0] });
+      res.status(201).json({ success: true, data: mapSession(session[0]) });
     } catch (error) {
       next(error);
     }
@@ -183,13 +236,25 @@ router.put(
         updateFields.push('title = @title');
         params.title = req.body.title;
       }
+      if (req.body.description !== undefined) {
+        updateFields.push('description = @description');
+        params.description = req.body.description;
+      }
       if (req.body.scheduledAt) {
         updateFields.push('scheduled_at = @scheduledAt');
-        params.scheduledAt = req.body.scheduledAt;
+        params.scheduledAt = new Date(req.body.scheduledAt);
       }
-      if (req.body.meetingLink) {
+      if (req.body.duration !== undefined) {
+        updateFields.push('duration = @duration');
+        params.duration = req.body.duration;
+      }
+      if (req.body.maxParticipants !== undefined) {
+        updateFields.push('max_participants = @maxParticipants');
+        params.maxParticipants = req.body.maxParticipants;
+      }
+      if (req.body.meetingUrl) {
         updateFields.push('meeting_link = @meetingLink');
-        params.meetingLink = req.body.meetingLink;
+        params.meetingLink = req.body.meetingUrl;
       }
 
       if (updateFields.length > 0) {
@@ -200,11 +265,15 @@ router.put(
       }
 
       const session = await DatabaseService.query<any>(
-        'SELECT * FROM live_sessions WHERE id = @sessionId',
+        `SELECT ls.*, u.display_name as organizer_name, c.title as course_title
+         FROM live_sessions ls
+         LEFT JOIN users u ON ls.organizer_id = u.id
+         LEFT JOIN courses c ON ls.course_id = c.id
+         WHERE ls.id = @sessionId`,
         { sessionId }
       );
 
-      res.json({ success: true, data: session[0] });
+      res.json({ success: true, data: mapSession(session[0]) });
     } catch (error) {
       next(error);
     }
@@ -230,16 +299,20 @@ router.post('/:id/start', authenticate, async (req: AuthRequest, res, next) => {
     }
 
     await DatabaseService.execute(
-      `UPDATE live_sessions SET status = 'live', started_at = SYSUTCDATETIME() WHERE id = @sessionId`,
+      `UPDATE live_sessions SET status = 'live', started_at = ${db.now()} WHERE id = @sessionId`,
       { sessionId }
     );
 
     const session = await DatabaseService.query<any>(
-      'SELECT * FROM live_sessions WHERE id = @sessionId',
+      `SELECT ls.*, u.display_name as organizer_name, c.title as course_title
+       FROM live_sessions ls
+       LEFT JOIN users u ON ls.organizer_id = u.id
+       LEFT JOIN courses c ON ls.course_id = c.id
+       WHERE ls.id = @sessionId`,
       { sessionId }
     );
 
-    res.json({ success: true, data: session[0] });
+    res.json({ success: true, data: mapSession(session[0]) });
   } catch (error) {
     next(error);
   }
@@ -254,13 +327,13 @@ router.post('/:id/end', authenticate, async (req: AuthRequest, res, next) => {
     const sessionId = parseInt(req.params.id, 10);
 
     await DatabaseService.execute(
-      `UPDATE live_sessions SET status = 'ended', ended_at = SYSUTCDATETIME() WHERE id = @sessionId`,
+      `UPDATE live_sessions SET status = 'ended', ended_at = ${db.now()} WHERE id = @sessionId`,
       { sessionId }
     );
 
     // Update all participants' left_at
     await DatabaseService.execute(
-      `UPDATE live_participants SET left_at = SYSUTCDATETIME() WHERE session_id = @sessionId AND left_at IS NULL`,
+      `UPDATE live_participants SET left_at = ${db.now()} WHERE session_id = @sessionId AND left_at IS NULL`,
       { sessionId }
     );
 
@@ -287,25 +360,29 @@ router.post('/:id/join', authenticate, async (req: AuthRequest, res, next) => {
     if (existing.length > 0) {
       // Update joined_at
       await DatabaseService.execute(
-        `UPDATE live_participants SET joined_at = SYSUTCDATETIME(), left_at = NULL WHERE session_id = @sessionId AND user_id = @userId`,
+        `UPDATE live_participants SET joined_at = ${db.now()}, left_at = NULL WHERE session_id = @sessionId AND user_id = @userId`,
         { sessionId, userId: req.user!.id }
       );
     } else {
       // Add as attendee
       await DatabaseService.execute(
         `INSERT INTO live_participants (session_id, user_id, role, joined_at)
-         VALUES (@sessionId, @userId, 'attendee', SYSUTCDATETIME())`,
+         VALUES (@sessionId, @userId, 'attendee', ${db.now()})`,
         { sessionId, userId: req.user!.id }
       );
     }
 
     // Get session details
     const sessions = await DatabaseService.query<any>(
-      'SELECT * FROM live_sessions WHERE id = @sessionId AND tenant_id = @tenantId',
+      `SELECT ls.*, u.display_name as organizer_name, c.title as course_title
+       FROM live_sessions ls
+       LEFT JOIN users u ON ls.organizer_id = u.id
+       LEFT JOIN courses c ON ls.course_id = c.id
+       WHERE ls.id = @sessionId AND ls.tenant_id = @tenantId`,
       { sessionId, tenantId: req.user!.tenantId }
     );
 
-    res.json({ success: true, data: sessions[0] });
+    res.json({ success: true, data: mapSession(sessions[0]) });
   } catch (error) {
     next(error);
   }
@@ -320,7 +397,7 @@ router.post('/:id/leave', authenticate, async (req: AuthRequest, res, next) => {
     const sessionId = parseInt(req.params.id, 10);
 
     await DatabaseService.execute(
-      `UPDATE live_participants SET left_at = SYSUTCDATETIME() WHERE session_id = @sessionId AND user_id = @userId`,
+      `UPDATE live_participants SET left_at = ${db.now()} WHERE session_id = @sessionId AND user_id = @userId`,
       { sessionId, userId: req.user!.id }
     );
 
@@ -346,9 +423,13 @@ router.post(
       const sessionId = parseInt(req.params.id, 10);
 
       const result = await DatabaseService.query<{ id: number }>(
-        `INSERT INTO breakout_rooms (tenant_id, session_id, name)
-         OUTPUT INSERTED.id
-         VALUES (@tenantId, @sessionId, @name)`,
+        IS_PG
+          ? `INSERT INTO breakout_rooms (tenant_id, session_id, name)
+             VALUES (@tenantId, @sessionId, @name)
+             RETURNING id`
+          : `INSERT INTO breakout_rooms (tenant_id, session_id, name)
+             OUTPUT INSERTED.id
+             VALUES (@tenantId, @sessionId, @name)`,
         { tenantId: req.user!.tenantId, sessionId, name: req.body.name }
       );
 
@@ -382,9 +463,13 @@ router.get('/:id/whiteboard', authenticate, async (req: AuthRequest, res, next) 
     if (whiteboards.length === 0) {
       // Create new whiteboard
       const result = await DatabaseService.query<{ id: number }>(
-        `INSERT INTO whiteboards (tenant_id, session_id, data)
-         OUTPUT INSERTED.id
-         VALUES (@tenantId, @sessionId, '{}')`,
+        IS_PG
+          ? `INSERT INTO whiteboards (tenant_id, session_id, data)
+             VALUES (@tenantId, @sessionId, '{}')
+             RETURNING id`
+          : `INSERT INTO whiteboards (tenant_id, session_id, data)
+             OUTPUT INSERTED.id
+             VALUES (@tenantId, @sessionId, '{}')`,
         { tenantId: req.user!.tenantId, sessionId }
       );
 
@@ -413,7 +498,7 @@ router.put('/:id/whiteboard', authenticate, [body('data').isObject()], async (re
     const sessionId = parseInt(req.params.id, 10);
 
     await DatabaseService.execute(
-      `UPDATE whiteboards SET data = @data, updated_at = SYSUTCDATETIME() 
+      `UPDATE whiteboards SET data = @data, updated_at = ${db.now()}
        WHERE session_id = @sessionId AND tenant_id = @tenantId`,
       { sessionId, tenantId: req.user!.tenantId, data: JSON.stringify(req.body.data) }
     );

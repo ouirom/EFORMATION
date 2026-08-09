@@ -5,10 +5,12 @@ import sharp from 'sharp';
 import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
-import { authenticate, authorize, optionalAuth, AuthRequest } from '../middleware/auth.middleware';
+import jwt from 'jsonwebtoken';
+import { authenticate, authorize, AuthRequest, UserPayload } from '../middleware/auth.middleware';
 import { DatabaseService } from '../services/database.service';
-import { BadRequestError, NotFoundError } from '../middleware/error.middleware';
+import { BadRequestError, NotFoundError, UnauthorizedError } from '../middleware/error.middleware';
 import { config } from '../config';
+import { IS_PG } from '../database/db-helpers';
 
 const router = Router();
 
@@ -180,9 +182,13 @@ router.post('/upload', authenticate, upload.single('file'), async (req: AuthRequ
 
     // Save to database
     const result = await DatabaseService.query<{ id: number }>(
-      `INSERT INTO file_assets (tenant_id, filename, mime_type, size_bytes, storage_key, created_by)
-       OUTPUT INSERTED.id
-       VALUES (@tenantId, @filename, @mimeType, @sizeBytes, @storageKey, @createdBy)`,
+      IS_PG
+        ? `INSERT INTO file_assets (tenant_id, filename, mime_type, size_bytes, storage_key, created_by)
+           VALUES (@tenantId, @filename, @mimeType, @sizeBytes, @storageKey, @createdBy)
+           RETURNING id`
+        : `INSERT INTO file_assets (tenant_id, filename, mime_type, size_bytes, storage_key, created_by)
+           OUTPUT INSERTED.id
+           VALUES (@tenantId, @filename, @mimeType, @sizeBytes, @storageKey, @createdBy)`,
       {
         tenantId: req.user!.tenantId,
         filename: file.originalname,
@@ -257,9 +263,13 @@ router.post('/upload-multiple', authenticate, upload.array('files', 10), async (
       }
 
       const result = await DatabaseService.query<{ id: number }>(
-        `INSERT INTO file_assets (tenant_id, filename, mime_type, size_bytes, storage_key, created_by)
-         OUTPUT INSERTED.id
-         VALUES (@tenantId, @filename, @mimeType, @sizeBytes, @storageKey, @createdBy)`,
+        IS_PG
+          ? `INSERT INTO file_assets (tenant_id, filename, mime_type, size_bytes, storage_key, created_by)
+             VALUES (@tenantId, @filename, @mimeType, @sizeBytes, @storageKey, @createdBy)
+             RETURNING id`
+          : `INSERT INTO file_assets (tenant_id, filename, mime_type, size_bytes, storage_key, created_by)
+             OUTPUT INSERTED.id
+             VALUES (@tenantId, @filename, @mimeType, @sizeBytes, @storageKey, @createdBy)`,
         {
           tenantId: req.user!.tenantId,
           filename: file.originalname,
@@ -364,15 +374,31 @@ router.get('/:id/download', authenticate, async (req: AuthRequest, res, next) =>
 
 /**
  * @route GET /api/v1/files/:id/stream
- * @desc Stream a file (for video/audio/PDF preview)
- * Supports authentication via Authorization header or X-Tenant-ID header
+ * @desc Stream a file (for video/audio/PDF preview in <video>/<iframe>, which can't send
+ * custom headers). Accepts the access token via the standard Authorization header OR a
+ * `?token=` query param, and always trusts the token's own tenantId — never a client-supplied
+ * header — to prevent cross-tenant file access.
  */
-router.get('/:id/stream', optionalAuth, async (req: AuthRequest, res, next) => {
+router.get('/:id/stream', async (req: AuthRequest, res, next) => {
   try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith('Bearer ')
+      ? authHeader.slice(7)
+      : (req.query.token as string | undefined);
+
+    if (!token) {
+      throw UnauthorizedError('Authentication required');
+    }
+
+    let payload: UserPayload;
+    try {
+      payload = jwt.verify(token, config.jwt.secret) as UserPayload;
+    } catch {
+      throw UnauthorizedError('Invalid or expired token');
+    }
+
     const fileId = parseInt(req.params.id, 10);
-    
-    // Get tenant ID from authenticated user or from header
-    const tenantId = req.user?.tenantId || parseInt(req.headers['x-tenant-id'] as string) || 1;
+    const tenantId = payload.tenantId;
 
     const files = await DatabaseService.query<any>(
       'SELECT * FROM file_assets WHERE id = @fileId AND tenant_id = @tenantId',

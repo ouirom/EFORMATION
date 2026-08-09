@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { body, validationResult } from 'express-validator';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.middleware';
 import { DatabaseService } from '../services/database.service';
+import { db, IS_PG } from '../database/db-helpers';
 import { BadRequestError, NotFoundError } from '../middleware/error.middleware';
 
 const router = Router();
@@ -57,11 +58,18 @@ router.get('/:id', authenticate, async (req: AuthRequest, res, next) => {
 
     // Get recent awardees
     const awardees = await DatabaseService.query<any>(
-      `SELECT TOP 10 ub.awarded_at, u.display_name, u.email
-       FROM user_badges ub
-       JOIN users u ON ub.user_id = u.id
-       WHERE ub.badge_id = @badgeId
-       ORDER BY ub.awarded_at DESC`,
+      IS_PG
+        ? `SELECT ub.awarded_at, u.display_name, u.email
+           FROM user_badges ub
+           JOIN users u ON ub.user_id = u.id
+           WHERE ub.badge_id = @badgeId
+           ORDER BY ub.awarded_at DESC
+           LIMIT 10`
+        : `SELECT TOP 10 ub.awarded_at, u.display_name, u.email
+           FROM user_badges ub
+           JOIN users u ON ub.user_id = u.id
+           WHERE ub.badge_id = @badgeId
+           ORDER BY ub.awarded_at DESC`,
       { badgeId }
     );
 
@@ -97,9 +105,13 @@ router.post(
       validate(req);
 
       const result = await DatabaseService.query<{ id: number }>(
-        `INSERT INTO badges (tenant_id, code, name, description, icon_file_id, criteria)
-         OUTPUT INSERTED.id
-         VALUES (@tenantId, @code, @name, @description, @iconFileId, @criteria)`,
+        IS_PG
+          ? `INSERT INTO badges (tenant_id, code, name, description, icon_file_id, criteria)
+             VALUES (@tenantId, @code, @name, @description, @iconFileId, @criteria)
+             RETURNING id`
+          : `INSERT INTO badges (tenant_id, code, name, description, icon_file_id, criteria)
+             OUTPUT INSERTED.id
+             VALUES (@tenantId, @code, @name, @description, @iconFileId, @criteria)`,
         {
           tenantId: req.user!.tenantId,
           code: req.body.code,
@@ -267,14 +279,24 @@ router.delete(
 router.get('/stats/leaderboard', authenticate, async (req: AuthRequest, res, next) => {
   try {
     const leaderboard = await DatabaseService.query<any>(
-      `SELECT TOP 50 u.id, u.display_name, u.email,
-              COUNT(ub.badge_id) as badge_count,
-              (SELECT COUNT(*) FROM certificates WHERE user_id = u.id) as certificate_count
-       FROM users u
-       LEFT JOIN user_badges ub ON u.id = ub.user_id
-       WHERE u.tenant_id = @tenantId AND u.deleted_at IS NULL
-       GROUP BY u.id, u.display_name, u.email
-       ORDER BY badge_count DESC, certificate_count DESC`,
+      IS_PG
+        ? `SELECT u.id, u.display_name, u.email,
+                  COUNT(ub.badge_id) as badge_count,
+                  (SELECT COUNT(*) FROM certificates WHERE user_id = u.id) as certificate_count
+           FROM users u
+           LEFT JOIN user_badges ub ON u.id = ub.user_id
+           WHERE u.tenant_id = @tenantId AND u.deleted_at IS NULL
+           GROUP BY u.id, u.display_name, u.email
+           ORDER BY badge_count DESC, certificate_count DESC
+           LIMIT 50`
+        : `SELECT TOP 50 u.id, u.display_name, u.email,
+                  COUNT(ub.badge_id) as badge_count,
+                  (SELECT COUNT(*) FROM certificates WHERE user_id = u.id) as certificate_count
+           FROM users u
+           LEFT JOIN user_badges ub ON u.id = ub.user_id
+           WHERE u.tenant_id = @tenantId AND u.deleted_at IS NULL
+           GROUP BY u.id, u.display_name, u.email
+           ORDER BY badge_count DESC, certificate_count DESC`,
       { tenantId: req.user!.tenantId }
     );
 
@@ -345,7 +367,7 @@ router.post('/award-quiz', authenticate, async (req: AuthRequest, res, next) => 
         if (existing.length === 0) {
           await DatabaseService.execute(
             `INSERT INTO user_badges (tenant_id, user_id, badge_id, quiz_id, score, awarded_at)
-             VALUES (@tenantId, @userId, @badgeId, @quizId, @score, GETDATE())`,
+             VALUES (@tenantId, @userId, @badgeId, @quizId, @score, ${db.now()})`,
             { tenantId, userId, badgeId: quizCompletedBadge[0].id, quizId, score }
           );
           awardedBadges.push({ code: 'QUIZ_COMPLETED', name: 'Quiz Réussi', type: 'badge' });
@@ -369,7 +391,7 @@ router.post('/award-quiz', authenticate, async (req: AuthRequest, res, next) => 
         if (existing.length === 0) {
           await DatabaseService.execute(
             `INSERT INTO user_badges (tenant_id, user_id, badge_id, quiz_id, score, awarded_at)
-             VALUES (@tenantId, @userId, @badgeId, @quizId, @score, GETDATE())`,
+             VALUES (@tenantId, @userId, @badgeId, @quizId, @score, ${db.now()})`,
             { tenantId, userId, badgeId: perfectScoreBadge[0].id, quizId, score }
           );
           awardedBadges.push({ code: 'PERFECT_SCORE', name: 'Score Parfait', type: 'badge' });
@@ -391,7 +413,7 @@ router.post('/award-quiz', authenticate, async (req: AuthRequest, res, next) => 
         if (existing.length === 0) {
           await DatabaseService.execute(
             `INSERT INTO user_badges (tenant_id, user_id, badge_id, quiz_id, score, awarded_at)
-             VALUES (@tenantId, @userId, @badgeId, @quizId, @score, GETDATE())`,
+             VALUES (@tenantId, @userId, @badgeId, @quizId, @score, ${db.now()})`,
             { tenantId, userId, badgeId: trophyGold[0].id, quizId, score }
           );
           awardedBadges.push({ code: 'TROPHY_GOLD', name: 'Trophée Or 🏆', type: 'trophy' });
@@ -440,7 +462,7 @@ router.post('/award-course', authenticate, async (req: AuthRequest, res, next) =
         if (existing.length === 0) {
           await DatabaseService.execute(
             `INSERT INTO user_badges (tenant_id, user_id, badge_id, course_id, awarded_at)
-             VALUES (@tenantId, @userId, @badgeId, @courseId, GETDATE())`,
+             VALUES (@tenantId, @userId, @badgeId, @courseId, ${db.now()})`,
             { tenantId, userId, badgeId: badge[0].id, courseId }
           );
           awardedBadges.push({ code: 'COURSE_STARTED', name: 'Explorateur', type: 'badge' });
@@ -463,7 +485,7 @@ router.post('/award-course', authenticate, async (req: AuthRequest, res, next) =
         if (existing.length === 0) {
           await DatabaseService.execute(
             `INSERT INTO user_badges (tenant_id, user_id, badge_id, course_id, awarded_at)
-             VALUES (@tenantId, @userId, @badgeId, @courseId, GETDATE())`,
+             VALUES (@tenantId, @userId, @badgeId, @courseId, ${db.now()})`,
             { tenantId, userId, badgeId: badge[0].id, courseId }
           );
           awardedBadges.push({ code: 'COURSE_COMPLETED', name: 'Diplômé', type: 'badge' });

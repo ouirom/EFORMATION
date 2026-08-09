@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { body, validationResult } from 'express-validator';
 import { authenticate, AuthRequest } from '../middleware/auth.middleware';
 import { DatabaseService } from '../services/database.service';
+import { db, IS_PG } from '../database/db-helpers';
 import { BadRequestError, NotFoundError, ForbiddenError } from '../middleware/error.middleware';
 
 const router = Router();
@@ -22,14 +23,23 @@ const validate = (req: any) => {
 router.get('/conversations', authenticate, async (req: AuthRequest, res, next) => {
   try {
     const conversations = await DatabaseService.query<any>(
-      `SELECT c.*, 
-              (SELECT TOP 1 cm.body FROM chat_messages cm WHERE cm.conversation_id = c.id ORDER BY cm.created_at DESC) as last_message,
-              (SELECT TOP 1 cm.created_at FROM chat_messages cm WHERE cm.conversation_id = c.id ORDER BY cm.created_at DESC) as last_message_at,
-              (SELECT COUNT(*) FROM chat_participants WHERE conversation_id = c.id) as participant_count
-       FROM chat_conversations c
-       JOIN chat_participants cp ON c.id = cp.conversation_id
-       WHERE cp.user_id = @userId AND c.tenant_id = @tenantId
-       ORDER BY last_message_at DESC`,
+      IS_PG
+        ? `SELECT c.*,
+                  (SELECT cm.body FROM chat_messages cm WHERE cm.conversation_id = c.id ORDER BY cm.created_at DESC LIMIT 1) as last_message,
+                  (SELECT cm.created_at FROM chat_messages cm WHERE cm.conversation_id = c.id ORDER BY cm.created_at DESC LIMIT 1) as last_message_at,
+                  (SELECT COUNT(*) FROM chat_participants WHERE conversation_id = c.id) as participant_count
+           FROM chat_conversations c
+           JOIN chat_participants cp ON c.id = cp.conversation_id
+           WHERE cp.user_id = @userId AND c.tenant_id = @tenantId
+           ORDER BY last_message_at DESC`
+        : `SELECT c.*,
+                  (SELECT TOP 1 cm.body FROM chat_messages cm WHERE cm.conversation_id = c.id ORDER BY cm.created_at DESC) as last_message,
+                  (SELECT TOP 1 cm.created_at FROM chat_messages cm WHERE cm.conversation_id = c.id ORDER BY cm.created_at DESC) as last_message_at,
+                  (SELECT COUNT(*) FROM chat_participants WHERE conversation_id = c.id) as participant_count
+           FROM chat_conversations c
+           JOIN chat_participants cp ON c.id = cp.conversation_id
+           WHERE cp.user_id = @userId AND c.tenant_id = @tenantId
+           ORDER BY last_message_at DESC`,
       { userId: req.user!.id, tenantId: req.user!.tenantId }
     );
 
@@ -97,9 +107,13 @@ router.post(
 
       // Create conversation
       const result = await DatabaseService.query<{ id: number }>(
-        `INSERT INTO chat_conversations (tenant_id, scope, title, created_by)
-         OUTPUT INSERTED.id
-         VALUES (@tenantId, @scope, @title, @createdBy)`,
+        IS_PG
+          ? `INSERT INTO chat_conversations (tenant_id, scope, title, created_by)
+             VALUES (@tenantId, @scope, @title, @createdBy)
+             RETURNING id`
+          : `INSERT INTO chat_conversations (tenant_id, scope, title, created_by)
+             OUTPUT INSERTED.id
+             VALUES (@tenantId, @scope, @title, @createdBy)`,
         {
           tenantId: req.user!.tenantId,
           scope,
@@ -287,9 +301,13 @@ router.post(
 
       // Create message
       const result = await DatabaseService.query<{ id: number }>(
-        `INSERT INTO chat_messages (tenant_id, conversation_id, sender_id, body)
-         OUTPUT INSERTED.id
-         VALUES (@tenantId, @conversationId, @senderId, @body)`,
+        IS_PG
+          ? `INSERT INTO chat_messages (tenant_id, conversation_id, sender_id, body)
+             VALUES (@tenantId, @conversationId, @senderId, @body)
+             RETURNING id`
+          : `INSERT INTO chat_messages (tenant_id, conversation_id, sender_id, body)
+             OUTPUT INSERTED.id
+             VALUES (@tenantId, @conversationId, @senderId, @body)`,
         {
           tenantId: req.user!.tenantId,
           conversationId,
@@ -357,7 +375,7 @@ router.delete('/messages/:id', authenticate, async (req: AuthRequest, res, next)
     }
 
     await DatabaseService.execute(
-      'UPDATE chat_messages SET deleted_at = SYSUTCDATETIME() WHERE id = @messageId',
+      `UPDATE chat_messages SET deleted_at = ${db.now()} WHERE id = @messageId`,
       { messageId }
     );
 

@@ -149,21 +149,21 @@ export class AuthService {
 
     if (data.serviceId) {
       approvers = await DatabaseService.query<{ id: number }>(
-        `SELECT id FROM users WHERE tenant_id = @tenantId AND is_active = 1 AND deleted_at IS NULL
+        `SELECT id FROM users WHERE tenant_id = @tenantId AND is_active = ${db.bool(true)} AND deleted_at IS NULL
          AND service_id = @serviceId AND role IN ('supervisor', 'manager')`,
         { tenantId: data.tenantId, serviceId: data.serviceId }
       );
     }
     if (approvers.length === 0 && data.directionId) {
       approvers = await DatabaseService.query<{ id: number }>(
-        `SELECT id FROM users WHERE tenant_id = @tenantId AND is_active = 1 AND deleted_at IS NULL
+        `SELECT id FROM users WHERE tenant_id = @tenantId AND is_active = ${db.bool(true)} AND deleted_at IS NULL
          AND direction_id = @directionId AND role = 'director'`,
         { tenantId: data.tenantId, directionId: data.directionId }
       );
     }
     if (approvers.length === 0) {
       approvers = await DatabaseService.query<{ id: number }>(
-        `SELECT id FROM users WHERE tenant_id = @tenantId AND is_active = 1 AND deleted_at IS NULL AND role = 'admin'`,
+        `SELECT id FROM users WHERE tenant_id = @tenantId AND is_active = ${db.bool(true)} AND deleted_at IS NULL AND role = 'admin'`,
         { tenantId: data.tenantId }
       );
     }

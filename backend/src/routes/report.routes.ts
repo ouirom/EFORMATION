@@ -5,6 +5,7 @@ import ExcelJS from 'exceljs';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.middleware';
 import { DatabaseService } from '../services/database.service';
 import { BadRequestError } from '../middleware/error.middleware';
+import { db, IS_PG } from '../database/db-helpers';
 import { config } from '../config';
 import fs from 'fs';
 import path from 'path';
@@ -105,7 +106,7 @@ router.post(
 router.get('/scheduled', authenticate, authorize('admin', 'director'), async (req: AuthRequest, res, next) => {
   try {
     const reports = await DatabaseService.query<any>(
-      `SELECT * FROM scheduled_reports WHERE tenant_id = @tenantId AND is_active = 1 ORDER BY created_at DESC`,
+      `SELECT * FROM scheduled_reports WHERE tenant_id = @tenantId AND is_active = ${db.bool(true)} ORDER BY created_at DESC`,
       { tenantId: req.user!.tenantId }
     );
     res.json({ success: true, data: reports });
@@ -134,9 +135,13 @@ router.post(
       const { reportType, frequency, format, recipients, filters } = req.body;
 
       const result = await DatabaseService.query<{ id: number }>(
-        `INSERT INTO scheduled_reports (tenant_id, report_type, frequency, format, recipients, filters, created_by)
-         OUTPUT INSERTED.id
-         VALUES (@tenantId, @reportType, @frequency, @format, @recipients, @filters, @createdBy)`,
+        IS_PG
+          ? `INSERT INTO scheduled_reports (tenant_id, report_type, frequency, format, recipients, filters, created_by)
+             VALUES (@tenantId, @reportType, @frequency, @format, @recipients, @filters, @createdBy)
+             RETURNING id`
+          : `INSERT INTO scheduled_reports (tenant_id, report_type, frequency, format, recipients, filters, created_by)
+             OUTPUT INSERTED.id
+             VALUES (@tenantId, @reportType, @frequency, @format, @recipients, @filters, @createdBy)`,
         {
           tenantId: req.user!.tenantId,
           reportType,
@@ -168,7 +173,7 @@ router.delete('/scheduled/:id', authenticate, authorize('admin'), async (req: Au
   try {
     const reportId = parseInt(req.params.id, 10);
     await DatabaseService.execute(
-      'UPDATE scheduled_reports SET is_active = 0 WHERE id = @reportId AND tenant_id = @tenantId',
+      `UPDATE scheduled_reports SET is_active = ${db.bool(false)} WHERE id = @reportId AND tenant_id = @tenantId`,
       { reportId, tenantId: req.user!.tenantId }
     );
     res.json({ success: true, message: 'Scheduled report deleted' });
@@ -214,7 +219,7 @@ async function generateReportData(
                 COUNT(e.id) as total_enrollments,
                 SUM(CASE WHEN e.progress >= 100 THEN 1 ELSE 0 END) as completions,
                 AVG(e.progress) as avg_progress,
-                AVG(DATEDIFF(day, e.started_at, e.completed_at)) as avg_days_to_complete
+                AVG(${db.diffDays('e.started_at', 'e.completed_at')}) as avg_days_to_complete
          FROM courses c
          LEFT JOIN enrollments e ON c.id = e.course_id
          WHERE c.tenant_id = @tenantId ${courseId ? 'AND c.id = @courseId' : ''} ${dateFilter}
@@ -230,7 +235,7 @@ async function generateReportData(
                 AVG(qa.score) as avg_score,
                 MIN(qa.score) as min_score,
                 MAX(qa.score) as max_score,
-                SUM(CASE WHEN qa.passed = 1 THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(qa.id), 0) as pass_rate
+                SUM(CASE WHEN qa.passed = ${db.bool(true)} THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(qa.id), 0) as pass_rate
          FROM quizzes q
          LEFT JOIN courses c ON q.course_id = c.id
          LEFT JOIN quiz_attempts qa ON q.id = qa.quiz_id
@@ -281,12 +286,20 @@ async function generateReportData(
 
     case 'activity_log':
       return DatabaseService.query<any>(
-        `SELECT TOP 1000 al.action, al.resource_type, al.resource_id,
-                u.display_name as user_name, al.ip_address, al.created_at
-         FROM audit_logs al
-         LEFT JOIN users u ON al.user_id = u.id
-         WHERE al.tenant_id = @tenantId ${dateFilter.replace('created_at', 'al.created_at')}
-         ORDER BY al.created_at DESC`,
+        IS_PG
+          ? `SELECT al.action, al.resource_type, al.resource_id,
+                    u.display_name as user_name, al.ip_address, al.created_at
+             FROM audit_logs al
+             LEFT JOIN users u ON al.user_id = u.id
+             WHERE al.tenant_id = @tenantId ${dateFilter.replace('created_at', 'al.created_at')}
+             ORDER BY al.created_at DESC
+             LIMIT 1000`
+          : `SELECT TOP 1000 al.action, al.resource_type, al.resource_id,
+                    u.display_name as user_name, al.ip_address, al.created_at
+             FROM audit_logs al
+             LEFT JOIN users u ON al.user_id = u.id
+             WHERE al.tenant_id = @tenantId ${dateFilter.replace('created_at', 'al.created_at')}
+             ORDER BY al.created_at DESC`,
         { tenantId, startDate, endDate }
       );
 

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { body, validationResult } from 'express-validator';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.middleware';
 import { DatabaseService } from '../services/database.service';
+import { db } from '../database/db-helpers';
 import { BadRequestError } from '../middleware/error.middleware';
 import { NotificationService } from '../services/notification.service';
 import { InactivityPolicyService, INACTIVITY_POLICY_ROLES } from '../services/inactivity.service';
@@ -121,7 +122,7 @@ router.put(
           `UPDATE email_settings SET
              enabled = @enabled, smtp_host = @smtpHost, smtp_port = @smtpPort,
              smtp_secure = @smtpSecure, smtp_user = @smtpUser, smtp_password = @smtpPassword,
-             from_email = @fromEmail, from_name = @fromName, updated_at = SYSUTCDATETIME()
+             from_email = @fromEmail, from_name = @fromName, updated_at = ${db.now()}
            WHERE tenant_id = @tenantId`,
           params
         );

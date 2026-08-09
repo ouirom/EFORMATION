@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { body, validationResult } from 'express-validator';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.middleware';
 import { DatabaseService } from '../services/database.service';
+import { db, IS_PG } from '../database/db-helpers';
 import { BadRequestError, NotFoundError } from '../middleware/error.middleware';
 
 const router = Router();
@@ -65,7 +66,7 @@ router.get('/current', authenticate, async (req: AuthRequest, res, next) => {
         { tenantId }
       ),
       DatabaseService.query<{ activeUsers: number }>(
-        'SELECT COUNT(*) as activeUsers FROM users WHERE tenant_id = @tenantId AND deleted_at IS NULL AND is_active = 1',
+        `SELECT COUNT(*) as activeUsers FROM users WHERE tenant_id = @tenantId AND deleted_at IS NULL AND is_active = ${db.bool(true)}`,
         { tenantId }
       ),
     ]);
@@ -159,7 +160,7 @@ router.put(
              description = @description, logo_url = @logoUrl,
              primary_color = @primaryColor, secondary_color = @secondaryColor,
              contact_email = @contactEmail, contact_phone = @contactPhone,
-             address = @address, website = @website, updated_at = SYSUTCDATETIME()
+             address = @address, website = @website, updated_at = ${db.now()}
            WHERE tenant_id = @tenantId`,
           params
         );
@@ -232,7 +233,7 @@ router.put(
              enable_live_sessions = @enableLiveSessions,
              max_users_per_group = @maxUsersPerGroup,
              certificate_validity = @certificateValidity,
-             updated_at = SYSUTCDATETIME()
+             updated_at = ${db.now()}
            WHERE tenant_id = @tenantId`,
           params
         );
@@ -279,8 +280,12 @@ router.post(
     try {
       validate(req);
       const result = await DatabaseService.query<{ id: number }>(
-        `INSERT INTO enterprises (tenant_id, name, code)
-         OUTPUT INSERTED.id VALUES (@tenantId, @name, @code)`,
+        IS_PG
+          ? `INSERT INTO enterprises (tenant_id, name, code)
+             VALUES (@tenantId, @name, @code)
+             RETURNING id`
+          : `INSERT INTO enterprises (tenant_id, name, code)
+             OUTPUT INSERTED.id VALUES (@tenantId, @name, @code)`,
         { tenantId: req.user!.tenantId, name: req.body.name, code: req.body.code || null }
       );
       const enterprise = await DatabaseService.query<any>(
@@ -374,8 +379,12 @@ router.post(
     try {
       validate(req);
       const result = await DatabaseService.query<{ id: number }>(
-        `INSERT INTO directions (tenant_id, enterprise_id, name, code)
-         OUTPUT INSERTED.id VALUES (@tenantId, @enterpriseId, @name, @code)`,
+        IS_PG
+          ? `INSERT INTO directions (tenant_id, enterprise_id, name, code)
+             VALUES (@tenantId, @enterpriseId, @name, @code)
+             RETURNING id`
+          : `INSERT INTO directions (tenant_id, enterprise_id, name, code)
+             OUTPUT INSERTED.id VALUES (@tenantId, @enterpriseId, @name, @code)`,
         {
           tenantId: req.user!.tenantId,
           enterpriseId: req.body.enterpriseId,
@@ -478,8 +487,12 @@ router.post(
     try {
       validate(req);
       const result = await DatabaseService.query<{ id: number }>(
-        `INSERT INTO services (tenant_id, direction_id, name, code)
-         OUTPUT INSERTED.id VALUES (@tenantId, @directionId, @name, @code)`,
+        IS_PG
+          ? `INSERT INTO services (tenant_id, direction_id, name, code)
+             VALUES (@tenantId, @directionId, @name, @code)
+             RETURNING id`
+          : `INSERT INTO services (tenant_id, direction_id, name, code)
+             OUTPUT INSERTED.id VALUES (@tenantId, @directionId, @name, @code)`,
         {
           tenantId: req.user!.tenantId,
           directionId: req.body.directionId,

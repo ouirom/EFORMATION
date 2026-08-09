@@ -5,6 +5,7 @@ import { authenticate, authorize, AuthRequest } from '../middleware/auth.middlew
 import { DatabaseService } from '../services/database.service';
 import { BadRequestError, NotFoundError } from '../middleware/error.middleware';
 import { logger } from '../utils/logger';
+import { db, IS_PG } from '../database/db-helpers';
 
 const router = Router();
 
@@ -50,7 +51,7 @@ router.get('/', authenticate, authorize('admin'), async (req: AuthRequest, res, 
     // Parse events JSON
     const webhooksWithParsedEvents = webhooks.map((w: any) => ({
       ...w,
-      events: JSON.parse(w.events || '[]'),
+      events: db.parseJsonColumn(w.events) || [],
     }));
 
     res.json({ success: true, data: webhooksWithParsedEvents });
@@ -90,14 +91,19 @@ router.get('/:id', authenticate, authorize('admin'), async (req: AuthRequest, re
 
     const webhook = {
       ...webhooks[0],
-      events: JSON.parse(webhooks[0].events || '[]'),
+      events: db.parseJsonColumn(webhooks[0].events) || [],
     };
 
     // Get recent deliveries
     const deliveries = await DatabaseService.query<any>(
-      `SELECT TOP 10 * FROM webhook_deliveries 
-       WHERE webhook_id = @webhookId 
-       ORDER BY created_at DESC`,
+      IS_PG
+        ? `SELECT * FROM webhook_deliveries
+           WHERE webhook_id = @webhookId
+           ORDER BY created_at DESC
+           LIMIT 10`
+        : `SELECT TOP 10 * FROM webhook_deliveries
+           WHERE webhook_id = @webhookId
+           ORDER BY created_at DESC`,
       { webhookId }
     );
 
@@ -137,9 +143,13 @@ router.post(
       const webhookSecret = secret || crypto.randomBytes(32).toString('hex');
 
       const result = await DatabaseService.query<{ id: number }>(
-        `INSERT INTO webhooks (tenant_id, name, url, events, secret, headers, created_by)
-         OUTPUT INSERTED.id
-         VALUES (@tenantId, @name, @url, @events, @secret, @headers, @createdBy)`,
+        IS_PG
+          ? `INSERT INTO webhooks (tenant_id, name, url, events, secret, headers, created_by)
+             VALUES (@tenantId, @name, @url, @events, @secret, @headers, @createdBy)
+             RETURNING id`
+          : `INSERT INTO webhooks (tenant_id, name, url, events, secret, headers, created_by)
+             OUTPUT INSERTED.id
+             VALUES (@tenantId, @name, @url, @events, @secret, @headers, @createdBy)`,
         {
           tenantId: req.user!.tenantId,
           name,
@@ -160,7 +170,7 @@ router.post(
         success: true,
         data: {
           ...webhook[0],
-          events: JSON.parse(webhook[0].events),
+          events: db.parseJsonColumn(webhook[0].events),
           secret: webhookSecret, // Only return secret on creation
         },
       });
@@ -204,7 +214,7 @@ router.put('/:id', authenticate, authorize('admin'), async (req: AuthRequest, re
     }
 
     if (updateFields.length > 0) {
-      updateFields.push('updated_at = SYSUTCDATETIME()');
+      updateFields.push(`updated_at = ${db.now()}`);
       await DatabaseService.execute(
         `UPDATE webhooks SET ${updateFields.join(', ')} WHERE id = @webhookId AND tenant_id = @tenantId`,
         params
@@ -220,7 +230,7 @@ router.put('/:id', authenticate, authorize('admin'), async (req: AuthRequest, re
       success: true,
       data: {
         ...webhook[0],
-        events: JSON.parse(webhook[0].events || '[]'),
+        events: db.parseJsonColumn(webhook[0].events) || [],
       },
     });
   } catch (error) {
@@ -300,7 +310,7 @@ router.post('/:id/regenerate-secret', authenticate, authorize('admin'), async (r
     const newSecret = crypto.randomBytes(32).toString('hex');
 
     await DatabaseService.execute(
-      'UPDATE webhooks SET secret = @secret, updated_at = SYSUTCDATETIME() WHERE id = @webhookId AND tenant_id = @tenantId',
+      `UPDATE webhooks SET secret = @secret, updated_at = ${db.now()} WHERE id = @webhookId AND tenant_id = @tenantId`,
       { webhookId, tenantId: req.user!.tenantId, secret: newSecret }
     );
 
@@ -376,7 +386,7 @@ router.post('/:id/deliveries/:deliveryId/retry', authenticate, authorize('admin'
 
     const webhook = webhooks[0];
     const delivery = deliveries[0];
-    const payload = JSON.parse(delivery.payload);
+    const payload = db.parseJsonColumn(delivery.payload);
 
     const result = await deliverWebhook(webhook, payload);
 
@@ -412,7 +422,7 @@ async function deliverWebhook(
     'X-Webhook-Signature': `sha256=${signature}`,
     'X-Webhook-Id': webhook.id.toString(),
     'X-Webhook-Timestamp': new Date().toISOString(),
-    ...(webhook.headers ? JSON.parse(webhook.headers) : {}),
+    ...(webhook.headers ? db.parseJsonColumn(webhook.headers) : {}),
   };
 
   try {
@@ -443,7 +453,7 @@ async function deliverWebhook(
 
     // Update last triggered
     await DatabaseService.execute(
-      'UPDATE webhooks SET last_triggered_at = SYSUTCDATETIME() WHERE id = @id',
+      `UPDATE webhooks SET last_triggered_at = ${db.now()} WHERE id = @id`,
       { id: webhook.id }
     );
 
@@ -457,7 +467,7 @@ async function deliverWebhook(
 
     await DatabaseService.execute(
       `INSERT INTO webhook_deliveries (webhook_id, event, payload, response_time_ms, success, error_message)
-       VALUES (@webhookId, @event, @payload, @responseTime, 0, @error)`,
+       VALUES (@webhookId, @event, @payload, @responseTime, ${db.bool(false)}, @error)`,
       {
         webhookId: webhook.id,
         event: payload.event,
@@ -479,12 +489,12 @@ async function deliverWebhook(
 export async function triggerWebhook(tenantId: number, event: string, data: any): Promise<void> {
   try {
     const webhooks = await DatabaseService.query<any>(
-      `SELECT * FROM webhooks WHERE tenant_id = @tenantId AND is_active = 1`,
+      `SELECT * FROM webhooks WHERE tenant_id = @tenantId AND is_active = ${db.bool(true)}`,
       { tenantId }
     );
 
     const matchingWebhooks = webhooks.filter((w: any) => {
-      const events = JSON.parse(w.events || '[]');
+      const events = db.parseJsonColumn(w.events) || [];
       return events.includes(event) || events.includes('*');
     });
 

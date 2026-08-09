@@ -4,6 +4,7 @@ import { authenticate, AuthRequest } from '../middleware/auth.middleware';
 import { DatabaseService } from '../services/database.service';
 import { AuditService } from '../services/audit.service';
 import { BadRequestError, NotFoundError } from '../middleware/error.middleware';
+import { db, IS_PG } from '../database/db-helpers';
 
 const router = Router();
 
@@ -51,7 +52,7 @@ router.post(
       const tenantId = req.user!.tenantId;
 
       const course = await DatabaseService.query<{ id: number }>(
-        `SELECT id FROM courses WHERE id = @courseId AND tenant_id = @tenantId AND is_published = 1`,
+        `SELECT id FROM courses WHERE id = @courseId AND tenant_id = @tenantId AND is_published = ${db.bool(true)}`,
         { courseId, tenantId }
       );
       if (course.length === 0) {
@@ -70,9 +71,13 @@ router.post(
       }
 
       const result = await DatabaseService.query<{ id: number }>(
-        `INSERT INTO enrollments (tenant_id, user_id, course_id, progress_percent, enrolled_at)
-         OUTPUT INSERTED.id
-         VALUES (@tenantId, @userId, @courseId, 0, SYSUTCDATETIME())`,
+        IS_PG
+          ? `INSERT INTO enrollments (tenant_id, user_id, course_id, progress_percent, enrolled_at)
+             VALUES (@tenantId, @userId, @courseId, 0, ${db.now()})
+             RETURNING id`
+          : `INSERT INTO enrollments (tenant_id, user_id, course_id, progress_percent, enrolled_at)
+             OUTPUT INSERTED.id
+             VALUES (@tenantId, @userId, @courseId, 0, ${db.now()})`,
         { tenantId, userId, courseId }
       );
 

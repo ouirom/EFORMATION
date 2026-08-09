@@ -75,7 +75,7 @@ export class InactivitySuspensionService {
       const staleUsers = await DatabaseService.query<{ id: number; tenant_id: number; display_name: string; email: string }>(
         `SELECT id, tenant_id, display_name, email FROM users
          WHERE tenant_id = @tenantId AND role = @role AND status = 'active' AND deleted_at IS NULL
-           AND ISNULL(last_login_at, created_at) < ${db.dateAdd('day', '-@maxDays', db.now())}`,
+           AND COALESCE(last_login_at, created_at) < ${db.dateAdd('day', '-@maxDays', db.now())}`,
         { tenantId: policy.tenant_id, role: policy.role, maxDays: policy.max_inactive_days }
       );
 

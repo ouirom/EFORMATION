@@ -4,6 +4,7 @@ import { authenticate, authorize, AuthRequest } from '../middleware/auth.middlew
 import { DatabaseService } from '../services/database.service';
 import { BadRequestError, NotFoundError } from '../middleware/error.middleware';
 import { AIService } from '../services/ai.service';
+import { db, IS_PG } from '../database/db-helpers';
 
 const router = Router();
 
@@ -220,25 +221,42 @@ router.get('/recommendations/next-steps', authenticate, async (req: AuthRequest,
   try {
     // Get current enrollments
     const currentEnrollments = await DatabaseService.query<any>(
-      `SELECT e.*, c.title as course_title, e.progress_percent as progress,
-              (SELECT TOP 1 l.title FROM lessons l
-               JOIN modules m ON l.module_id = m.id
-               LEFT JOIN lesson_progress lp ON lp.lesson_id = l.id AND lp.user_id = @userId AND lp.tenant_id = @tenantId
-               WHERE m.course_id = c.id AND (lp.status IS NULL OR lp.status <> 'completed')
-               ORDER BY m.position, l.position) as next_lesson
-       FROM enrollments e
-       JOIN courses c ON e.course_id = c.id
-       WHERE e.user_id = @userId AND e.progress_percent < 100`,
+      IS_PG
+        ? `SELECT e.*, c.title as course_title, e.progress_percent as progress,
+                  (SELECT l.title FROM lessons l
+                   JOIN modules m ON l.module_id = m.id
+                   LEFT JOIN lesson_progress lp ON lp.lesson_id = l.id AND lp.user_id = @userId AND lp.tenant_id = @tenantId
+                   WHERE m.course_id = c.id AND (lp.status IS NULL OR lp.status <> 'completed')
+                   ORDER BY m.position, l.position LIMIT 1) as next_lesson
+           FROM enrollments e
+           JOIN courses c ON e.course_id = c.id
+           WHERE e.user_id = @userId AND e.progress_percent < 100`
+        : `SELECT e.*, c.title as course_title, e.progress_percent as progress,
+                  (SELECT TOP 1 l.title FROM lessons l
+                   JOIN modules m ON l.module_id = m.id
+                   LEFT JOIN lesson_progress lp ON lp.lesson_id = l.id AND lp.user_id = @userId AND lp.tenant_id = @tenantId
+                   WHERE m.course_id = c.id AND (lp.status IS NULL OR lp.status <> 'completed')
+                   ORDER BY m.position, l.position) as next_lesson
+           FROM enrollments e
+           JOIN courses c ON e.course_id = c.id
+           WHERE e.user_id = @userId AND e.progress_percent < 100`,
       { userId: req.user!.id, tenantId: req.user!.tenantId }
     );
 
     // Get user's quiz results
     const recentQuizResults = await DatabaseService.query<any>(
-      `SELECT TOP 5 q.title, qa.score, qa.passed
-       FROM quiz_attempts qa
-       JOIN quizzes q ON qa.quiz_id = q.id
-       WHERE qa.user_id = @userId
-       ORDER BY qa.completed_at DESC`,
+      IS_PG
+        ? `SELECT q.title, qa.score, qa.passed
+           FROM quiz_attempts qa
+           JOIN quizzes q ON qa.quiz_id = q.id
+           WHERE qa.user_id = @userId
+           ORDER BY qa.completed_at DESC
+           LIMIT 5`
+        : `SELECT TOP 5 q.title, qa.score, qa.passed
+           FROM quiz_attempts qa
+           JOIN quizzes q ON qa.quiz_id = q.id
+           WHERE qa.user_id = @userId
+           ORDER BY qa.completed_at DESC`,
       { userId: req.user!.id }
     );
 
@@ -342,9 +360,14 @@ router.get('/tutor/history', authenticate, async (req: AuthRequest, res, next) =
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
 
     const history = await DatabaseService.query<any>(
-      `SELECT TOP (@limit) * FROM ai_chat_history 
-       WHERE user_id = @userId AND tenant_id = @tenantId
-       ORDER BY created_at DESC`,
+      IS_PG
+        ? `SELECT * FROM ai_chat_history
+           WHERE user_id = @userId AND tenant_id = @tenantId
+           ORDER BY created_at DESC
+           LIMIT @limit`
+        : `SELECT TOP (@limit) * FROM ai_chat_history
+           WHERE user_id = @userId AND tenant_id = @tenantId
+           ORDER BY created_at DESC`,
       { limit, userId: req.user!.id, tenantId: req.user!.tenantId }
     );
 
@@ -380,9 +403,12 @@ router.get('/insights/learning-patterns', authenticate, async (req: AuthRequest,
       { userId }
     );
 
+    const daysElapsedExpr = IS_PG
+      ? `EXTRACT(DAY FROM (COALESCE(e.completed_at, ${db.now()}) - e.started_at))`
+      : `DATEDIFF(day, e.started_at, COALESCE(e.completed_at, ${db.now()}))`;
     const progressData = await DatabaseService.query<any>(
       `SELECT e.course_id, c.title, e.progress_percent as progress, e.started_at, e.completed_at,
-              DATEDIFF(day, e.started_at, COALESCE(e.completed_at, GETUTCDATE())) as days_elapsed
+              ${daysElapsedExpr} as days_elapsed
        FROM enrollments e
        JOIN courses c ON e.course_id = c.id
        WHERE e.user_id = @userId`,
@@ -425,8 +451,8 @@ router.get(
 
       // Get quiz performance
       const quizData = await DatabaseService.query<any>(
-        `SELECT q.title, AVG(qa.score) as avg_score, 
-                SUM(CASE WHEN qa.passed = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as pass_rate
+        `SELECT q.title, AVG(qa.score) as avg_score,
+                SUM(CASE WHEN qa.passed = ${db.bool(true)} THEN 1 ELSE 0 END) * 100.0 / COUNT(*) as pass_rate
          FROM quiz_attempts qa
          JOIN quizzes q ON qa.quiz_id = q.id
          WHERE q.course_id = @courseId

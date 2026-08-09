@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { body, validationResult } from 'express-validator';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.middleware';
 import { DatabaseService } from '../services/database.service';
+import { db, IS_PG } from '../database/db-helpers';
 import { BadRequestError, NotFoundError } from '../middleware/error.middleware';
 
 const router = Router();
@@ -165,10 +166,15 @@ router.post(
         .replace(/(^-|-$)/g, '');
 
       const result = await DatabaseService.query<{ id: number }>(
-        `INSERT INTO blog_posts (tenant_id, title, slug, body, author_id, category_id, status, featured_image_id, published_at)
-         OUTPUT INSERTED.id
-         VALUES (@tenantId, @title, @slug, @body, @authorId, @categoryId, @status, @featuredImageId, 
-                 CASE WHEN @status = 'published' THEN SYSUTCDATETIME() ELSE NULL END)`,
+        IS_PG
+          ? `INSERT INTO blog_posts (tenant_id, title, slug, body, author_id, category_id, status, featured_image_id, published_at)
+             VALUES (@tenantId, @title, @slug, @body, @authorId, @categoryId, @status, @featuredImageId,
+                     CASE WHEN @status = 'published' THEN ${db.now()} ELSE NULL END)
+             RETURNING id`
+          : `INSERT INTO blog_posts (tenant_id, title, slug, body, author_id, category_id, status, featured_image_id, published_at)
+             OUTPUT INSERTED.id
+             VALUES (@tenantId, @title, @slug, @body, @authorId, @categoryId, @status, @featuredImageId,
+                     CASE WHEN @status = 'published' THEN SYSUTCDATETIME() ELSE NULL END)`,
         {
           tenantId: req.user!.tenantId,
           title,
@@ -242,7 +248,7 @@ router.put(
         updateFields.push('status = @status');
         params.status = status;
         if (status === 'published') {
-          updateFields.push('published_at = COALESCE(published_at, SYSUTCDATETIME())');
+          updateFields.push(`published_at = COALESCE(published_at, ${db.now()})`);
         }
       }
       if (featuredImageId !== undefined) {
@@ -251,7 +257,7 @@ router.put(
       }
 
       if (updateFields.length > 0) {
-        updateFields.push('updated_at = SYSUTCDATETIME()');
+        updateFields.push(`updated_at = ${db.now()}`);
         await DatabaseService.execute(
           `UPDATE blog_posts SET ${updateFields.join(', ')} WHERE id = @postId AND tenant_id = @tenantId`,
           params
@@ -338,9 +344,13 @@ router.post(
         .replace(/(^-|-$)/g, '');
 
       const result = await DatabaseService.query<{ id: number }>(
-        `INSERT INTO blog_categories (tenant_id, name, slug)
-         OUTPUT INSERTED.id
-         VALUES (@tenantId, @name, @slug)`,
+        IS_PG
+          ? `INSERT INTO blog_categories (tenant_id, name, slug)
+             VALUES (@tenantId, @name, @slug)
+             RETURNING id`
+          : `INSERT INTO blog_categories (tenant_id, name, slug)
+             OUTPUT INSERTED.id
+             VALUES (@tenantId, @name, @slug)`,
         { tenantId: req.user!.tenantId, name: req.body.name, slug }
       );
 
@@ -396,9 +406,13 @@ router.post(
         .replace(/(^-|-$)/g, '');
 
       const result = await DatabaseService.query<{ id: number }>(
-        `INSERT INTO blog_tags (tenant_id, name, slug)
-         OUTPUT INSERTED.id
-         VALUES (@tenantId, @name, @slug)`,
+        IS_PG
+          ? `INSERT INTO blog_tags (tenant_id, name, slug)
+             VALUES (@tenantId, @name, @slug)
+             RETURNING id`
+          : `INSERT INTO blog_tags (tenant_id, name, slug)
+             OUTPUT INSERTED.id
+             VALUES (@tenantId, @name, @slug)`,
         { tenantId: req.user!.tenantId, name: req.body.name, slug }
       );
 
@@ -476,9 +490,13 @@ router.post(
       const postId = parseInt(req.params.id, 10);
 
       const result = await DatabaseService.query<{ id: number }>(
-        `INSERT INTO blog_comments (tenant_id, post_id, user_id, body, parent_id)
-         OUTPUT INSERTED.id
-         VALUES (@tenantId, @postId, @userId, @body, @parentId)`,
+        IS_PG
+          ? `INSERT INTO blog_comments (tenant_id, post_id, user_id, body, parent_id)
+             VALUES (@tenantId, @postId, @userId, @body, @parentId)
+             RETURNING id`
+          : `INSERT INTO blog_comments (tenant_id, post_id, user_id, body, parent_id)
+             OUTPUT INSERTED.id
+             VALUES (@tenantId, @postId, @userId, @body, @parentId)`,
         {
           tenantId: req.user!.tenantId,
           postId,
@@ -526,7 +544,7 @@ router.delete('/comments/:id', authenticate, async (req: AuthRequest, res, next)
     }
 
     await DatabaseService.execute(
-      'UPDATE blog_comments SET deleted_at = SYSUTCDATETIME() WHERE id = @commentId',
+      `UPDATE blog_comments SET deleted_at = ${db.now()} WHERE id = @commentId`,
       { commentId }
     );
 

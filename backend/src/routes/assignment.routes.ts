@@ -5,6 +5,7 @@ import { authenticate, authorize, AuthRequest } from '../middleware/auth.middlew
 import { BadRequestError, NotFoundError } from '../middleware/error.middleware';
 import { AuditService } from '../services/audit.service';
 import { ReminderService } from '../services/reminder.service';
+import { db, IS_PG } from '../database/db-helpers';
 
 const router = Router();
 
@@ -51,9 +52,13 @@ router.post(
       validate(req);
 
       const result = await DatabaseService.query<{ id: number }>(
-        `INSERT INTO categories (tenant_id, name)
-         OUTPUT INSERTED.id
-         VALUES (@tenantId, @name)`,
+        IS_PG
+          ? `INSERT INTO categories (tenant_id, name)
+             VALUES (@tenantId, @name)
+             RETURNING id`
+          : `INSERT INTO categories (tenant_id, name)
+             OUTPUT INSERTED.id
+             VALUES (@tenantId, @name)`,
         {
           tenantId: req.user!.tenantId,
           name: req.body.name,
@@ -244,9 +249,13 @@ router.post(
 
         if (existing.length === 0) {
           const result = await DatabaseService.query<{ id: number }>(
-            `INSERT INTO course_assignments (tenant_id, course_id, assignment_type, target_id, target_role, is_mandatory, due_date, assigned_by)
-             OUTPUT INSERTED.id
-             VALUES (@tenantId, @courseId, @assignmentType, @targetId, @targetRole, @isMandatory, @dueDate, @assignedBy)`,
+            IS_PG
+              ? `INSERT INTO course_assignments (tenant_id, course_id, assignment_type, target_id, target_role, is_mandatory, due_date, assigned_by)
+                 VALUES (@tenantId, @courseId, @assignmentType, @targetId, @targetRole, @isMandatory, @dueDate, @assignedBy)
+                 RETURNING id`
+              : `INSERT INTO course_assignments (tenant_id, course_id, assignment_type, target_id, target_role, is_mandatory, due_date, assigned_by)
+                 OUTPUT INSERTED.id
+                 VALUES (@tenantId, @courseId, @assignmentType, @targetId, @targetRole, @isMandatory, @dueDate, @assignedBy)`,
             {
               tenantId: req.user!.tenantId,
               courseId,
@@ -328,7 +337,7 @@ router.get('/users', authenticate, authorize('admin', 'director', 'manager'), as
   try {
     const search = req.query.search as string;
     
-    let whereClause = 'WHERE tenant_id = @tenantId AND is_active = 1 AND deleted_at IS NULL';
+    let whereClause = `WHERE tenant_id = @tenantId AND is_active = ${db.bool(true)} AND deleted_at IS NULL`;
     const params: any = { tenantId: req.user!.tenantId };
 
     if (search) {
@@ -378,7 +387,7 @@ router.get('/my-courses', authenticate, async (req: AuthRequest, res, next) => {
        FROM courses c
        INNER JOIN course_assignments ca ON c.id = ca.course_id AND ca.tenant_id = c.tenant_id
        WHERE c.tenant_id = @tenantId
-         AND c.is_published = 1
+         AND c.is_published = ${db.bool(true)}
          AND (
            (ca.assignment_type = 'user' AND ca.target_id = @userId)
            OR (ca.assignment_type = 'enterprise' AND ca.target_id = @enterpriseId)

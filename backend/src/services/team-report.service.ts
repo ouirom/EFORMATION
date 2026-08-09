@@ -3,6 +3,7 @@ import { NotificationService } from './notification.service';
 import { TeamService } from './team.service';
 import { config } from '../config';
 import { logger } from '../utils/logger';
+import { db } from '../database/db-helpers';
 
 interface SubscriptionRow {
   id: number;
@@ -35,7 +36,7 @@ export class TeamReportService {
               u.role, u.direction_id, u.service_id, u.display_name
        FROM team_report_subscriptions trs
        JOIN users u ON u.id = trs.user_id AND u.tenant_id = trs.tenant_id
-       WHERE trs.is_enabled = 1 AND u.is_active = 1 AND u.deleted_at IS NULL
+       WHERE trs.is_enabled = ${db.bool(true)} AND u.is_active = ${db.bool(true)} AND u.deleted_at IS NULL
          AND (trs.frequency = 'daily' OR (trs.frequency = 'weekly' AND trs.weekday = @weekday))`,
       { weekday }
     );
@@ -86,7 +87,7 @@ export class TeamReportService {
       }
 
       await DatabaseService.execute(
-        `UPDATE team_report_subscriptions SET last_sent_at = SYSUTCDATETIME() WHERE id = @id`,
+        `UPDATE team_report_subscriptions SET last_sent_at = ${db.now()} WHERE id = @id`,
         { id: sub.id }
       );
       sent++;

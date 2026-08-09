@@ -65,12 +65,12 @@ export class TeamService {
       `SELECT u.id, u.display_name, u.email, u.role, u.avatar_url,
               e.enrolled_count, e.completed_count, e.avg_progress,
               lp.last_activity,
-              ISNULL(overdue.overdue_count, 0) as overdue_count
+              COALESCE(overdue.overdue_count, 0) as overdue_count
        FROM users u
        LEFT JOIN (
          SELECT user_id, COUNT(*) as enrolled_count,
                 SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) as completed_count,
-                AVG(ISNULL(progress_percent, 0)) as avg_progress
+                AVG(COALESCE(progress_percent, 0)) as avg_progress
          FROM enrollments GROUP BY user_id
        ) e ON e.user_id = u.id
        LEFT JOIN (
