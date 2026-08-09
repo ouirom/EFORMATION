@@ -10,10 +10,7 @@ import {
   Bell,
   CheckCheck,
   Trash2,
-  BookOpen,
-  Award,
   MessageSquare,
-  Calendar,
   AlertCircle,
   Info,
   Settings,
@@ -22,14 +19,17 @@ import { api } from '@/services/api'
 import { formatDate } from '@/lib/utils'
 import { Link } from 'react-router-dom'
 
+// Matches the actual API shape (backend/src/routes/notification.routes.ts, the flat
+// notifications columns from migration 010) -- not a generic {type,title,isRead,data}
+// shape some other part of the app might assume.
 interface Notification {
   id: number
-  type: string
-  title: string
+  channel: 'email' | 'whatsapp' | 'sms' | 'push_web' | 'push_mobile' | 'in_app'
+  subject: string | null
   body: string
-  data: any
-  isRead: boolean
-  createdAt: string
+  action_url: string | null
+  read_at: string | null
+  created_at: string
 }
 
 export default function NotificationsPage() {
@@ -75,38 +75,32 @@ export default function NotificationsPage() {
   })
 
   const filteredNotifications = notifications.filter((n: Notification) =>
-    filter === 'all' ? true : !n.isRead
+    filter === 'all' ? true : !n.read_at
   )
 
-  const unreadCount = notifications.filter((n: Notification) => !n.isRead).length
+  const unreadCount = notifications.filter((n: Notification) => !n.read_at).length
 
-  const getNotificationIcon = (type: string) => {
-    switch (type) {
-      case 'course_assigned':
-      case 'course_completed':
-        return <BookOpen className="h-5 w-5 text-blue-500" />
-      case 'badge_earned':
-        return <Award className="h-5 w-5 text-yellow-500" />
-      case 'message_received':
-        return <MessageSquare className="h-5 w-5 text-green-500" />
-      case 'live_session_reminder':
-        return <Calendar className="h-5 w-5 text-purple-500" />
-      case 'alert':
-        return <AlertCircle className="h-5 w-5 text-red-500" />
+  const getNotificationIcon = (channel: string) => {
+    switch (channel) {
+      case 'email':
+        return <MessageSquare className="h-5 w-5 text-blue-500" />
+      case 'sms':
+      case 'whatsapp':
+        return <AlertCircle className="h-5 w-5 text-green-500" />
+      case 'push_web':
+      case 'push_mobile':
+        return <Bell className="h-5 w-5 text-purple-500" />
       default:
         return <Info className="h-5 w-5 text-gray-500" />
     }
   }
 
+  // action_url can be a full external URL (e.g. a password-reset email link) -- only
+  // treat it as an in-app route to navigate to via React Router if it's a same-origin
+  // path, never send an external URL through <Link>.
   const getNotificationLink = (notification: Notification) => {
-    if (notification.data?.courseId) {
-      return `/courses/${notification.data.courseId}`
-    }
-    if (notification.data?.conversationId) {
-      return `/chat/${notification.data.conversationId}`
-    }
-    if (notification.data?.sessionId) {
-      return `/live/${notification.data.sessionId}`
+    if (notification.action_url && notification.action_url.startsWith('/')) {
+      return notification.action_url
     }
     return null
   }
@@ -176,10 +170,10 @@ export default function NotificationsPage() {
                 const content = (
                   <Card
                     className={`transition-colors cursor-pointer hover:bg-muted/50 ${
-                      !notification.isRead ? 'border-l-4 border-l-primary bg-primary/5' : ''
+                      !notification.read_at ? 'border-l-4 border-l-primary bg-primary/5' : ''
                     }`}
                     onClick={() => {
-                      if (!notification.isRead) {
+                      if (!notification.read_at) {
                         markReadMutation.mutate(notification.id)
                       }
                     }}
@@ -187,18 +181,18 @@ export default function NotificationsPage() {
                     <CardContent className="p-4">
                       <div className="flex items-start gap-4">
                         <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center shrink-0">
-                          {getNotificationIcon(notification.type)}
+                          {getNotificationIcon(notification.channel)}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-start justify-between gap-2">
                             <div>
-                              <h4 className="font-medium">{notification.title}</h4>
+                              <h4 className="font-medium">{notification.subject || 'Notification'}</h4>
                               <p className="text-sm text-muted-foreground mt-1">
                                 {notification.body}
                               </p>
                             </div>
                             <div className="flex items-center gap-2 shrink-0">
-                              {!notification.isRead && (
+                              {!notification.read_at && (
                                 <Badge variant="default" className="bg-primary">
                                   Nouveau
                                 </Badge>
@@ -217,7 +211,7 @@ export default function NotificationsPage() {
                             </div>
                           </div>
                           <p className="text-xs text-muted-foreground mt-2">
-                            {formatDate(notification.createdAt)}
+                            {formatDate(notification.created_at)}
                           </p>
                         </div>
                       </div>

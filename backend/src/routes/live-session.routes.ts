@@ -326,6 +326,16 @@ router.post('/:id/end', authenticate, async (req: AuthRequest, res, next) => {
   try {
     const sessionId = parseInt(req.params.id, 10);
 
+    // Verify organizer (mirrors the /:id/start check)
+    const sessions = await DatabaseService.query<any>(
+      'SELECT id FROM live_sessions WHERE id = @sessionId AND organizer_id = @organizerId AND tenant_id = @tenantId',
+      { sessionId, organizerId: req.user!.id, tenantId: req.user!.tenantId }
+    );
+
+    if (sessions.length === 0) {
+      throw BadRequestError('Not authorized to end this session');
+    }
+
     await DatabaseService.execute(
       `UPDATE live_sessions SET status = 'ended', ended_at = ${db.now()} WHERE id = @sessionId`,
       { sessionId }
@@ -342,6 +352,30 @@ router.post('/:id/end', authenticate, async (req: AuthRequest, res, next) => {
     next(error);
   }
 });
+
+/**
+ * @route POST /api/v1/live-sessions/:id/cancel
+ * @desc Cancel a scheduled live session
+ */
+router.post(
+  '/:id/cancel',
+  authenticate,
+  authorize('admin', 'director', 'manager'),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const sessionId = parseInt(req.params.id, 10);
+
+      await DatabaseService.execute(
+        `UPDATE live_sessions SET status = 'canceled' WHERE id = @sessionId AND tenant_id = @tenantId`,
+        { sessionId, tenantId: req.user!.tenantId }
+      );
+
+      res.json({ success: true, message: 'Session canceled' });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 /**
  * @route POST /api/v1/live-sessions/:id/join

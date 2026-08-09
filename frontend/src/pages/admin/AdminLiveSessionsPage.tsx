@@ -38,7 +38,7 @@ interface LiveSession {
   meetingUrl: string
   maxParticipants: number
   currentParticipants: number
-  status: 'scheduled' | 'live' | 'completed' | 'cancelled'
+  status: 'scheduled' | 'live' | 'ended' | 'canceled'
   recordingUrl: string | null
   courseId?: number
   courseName?: string
@@ -59,7 +59,7 @@ export default function AdminLiveSessionsPage() {
     duration: 60,
     meetingUrl: '',
     maxParticipants: 100,
-    courseId: '',
+    courseId: 'none',
   })
 
   const { data: sessions = [], isLoading } = useQuery<LiveSession[]>({
@@ -131,11 +131,37 @@ export default function AdminLiveSessionsPage() {
 
   const cancelMutation = useMutation({
     mutationFn: async (id: number) => {
-      await api.put(`/live-sessions/${id}/cancel`)
+      await api.post(`/live-sessions/${id}/cancel`)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-live-sessions'] })
       toast({ title: 'Succès', description: 'Session annulée' })
+    },
+  })
+
+  const startMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await api.post(`/live-sessions/${id}/start`)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-live-sessions'] })
+      toast({ title: 'Succès', description: 'Session démarrée' })
+    },
+    onError: () => {
+      toast({ title: 'Erreur', description: 'Impossible de démarrer la session', variant: 'destructive' })
+    },
+  })
+
+  const endMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await api.post(`/live-sessions/${id}/end`)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-live-sessions'] })
+      toast({ title: 'Succès', description: 'Session terminée' })
+    },
+    onError: () => {
+      toast({ title: 'Erreur', description: 'Impossible de terminer la session', variant: 'destructive' })
     },
   })
 
@@ -148,7 +174,7 @@ export default function AdminLiveSessionsPage() {
       duration: 60,
       meetingUrl: '',
       maxParticipants: 100,
-      courseId: '',
+      courseId: 'none',
     })
   }
 
@@ -162,7 +188,7 @@ export default function AdminLiveSessionsPage() {
       duration: session.duration,
       meetingUrl: session.meetingUrl,
       maxParticipants: session.maxParticipants,
-      courseId: session.courseId?.toString() || '',
+      courseId: session.courseId?.toString() || 'none',
     })
   }
 
@@ -170,7 +196,7 @@ export default function AdminLiveSessionsPage() {
     const data = {
       ...formData,
       instructorId: parseInt(formData.instructorId),
-      courseId: formData.courseId ? parseInt(formData.courseId) : null,
+      courseId: formData.courseId && formData.courseId !== 'none' ? parseInt(formData.courseId) : null,
     }
     if (editingSession) {
       updateMutation.mutate({ id: editingSession.id, data })
@@ -195,8 +221,8 @@ export default function AdminLiveSessionsPage() {
     const styles: Record<string, { variant: 'default' | 'secondary' | 'destructive' | 'outline'; label: string }> = {
       scheduled: { variant: 'secondary', label: 'Planifiée' },
       live: { variant: 'default', label: 'En cours' },
-      completed: { variant: 'outline', label: 'Terminée' },
-      cancelled: { variant: 'destructive', label: 'Annulée' },
+      ended: { variant: 'outline', label: 'Terminée' },
+      canceled: { variant: 'destructive', label: 'Annulée' },
     }
     const style = styles[status] || { variant: 'outline', label: status }
     return <Badge variant={style.variant}>{style.label}</Badge>
@@ -208,7 +234,7 @@ export default function AdminLiveSessionsPage() {
 
   const scheduledCount = sessions.filter((s) => s.status === 'scheduled').length
   const liveCount = sessions.filter((s) => s.status === 'live').length
-  const completedCount = sessions.filter((s) => s.status === 'completed').length
+  const completedCount = sessions.filter((s) => s.status === 'ended').length
 
   const SessionForm = () => (
     <div className="space-y-4">
@@ -253,7 +279,7 @@ export default function AdminLiveSessionsPage() {
               <SelectValue placeholder="Aucun cours" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Aucun</SelectItem>
+              <SelectItem value="none">Aucun</SelectItem>
               {courses.map((course: any) => (
                 <SelectItem key={course.id} value={course.id.toString()}>
                   {course.title}
@@ -416,8 +442,8 @@ export default function AdminLiveSessionsPage() {
             <SelectItem value="all">Tous les statuts</SelectItem>
             <SelectItem value="scheduled">Planifiées</SelectItem>
             <SelectItem value="live">En cours</SelectItem>
-            <SelectItem value="completed">Terminées</SelectItem>
-            <SelectItem value="cancelled">Annulées</SelectItem>
+            <SelectItem value="ended">Terminées</SelectItem>
+            <SelectItem value="canceled">Annulées</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -496,12 +522,33 @@ export default function AdminLiveSessionsPage() {
                       <Edit className="h-4 w-4" />
                     </Button>
                     {session.status === 'scheduled' && (
+                      <>
+                        <Button
+                          variant="default"
+                          size="sm"
+                          onClick={() => startMutation.mutate(session.id)}
+                          disabled={startMutation.isPending}
+                        >
+                          <Play className="h-4 w-4 mr-1" />
+                          Démarrer
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => cancelMutation.mutate(session.id)}
+                        >
+                          Annuler
+                        </Button>
+                      </>
+                    )}
+                    {session.status === 'live' && (
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => cancelMutation.mutate(session.id)}
+                        onClick={() => endMutation.mutate(session.id)}
+                        disabled={endMutation.isPending}
                       >
-                        Annuler
+                        Terminer
                       </Button>
                     )}
                     <Button

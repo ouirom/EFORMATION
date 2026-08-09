@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { api } from '@/services/api'
+import { downloadCsv } from '@/lib/csv'
 
 export default function AdminAnalyticsPage() {
   const { data, isLoading } = useQuery({
@@ -70,6 +71,25 @@ export default function AdminAnalyticsPage() {
     },
   }
 
+  const handleExport = () => {
+    downloadCsv(
+      `analytics-${Date.now()}.csv`,
+      [
+        { key: 'metric', label: 'Indicateur' },
+        { key: 'value', label: 'Valeur' },
+      ],
+      [
+        { metric: 'Utilisateurs totaux', value: stats.totalUsers },
+        { metric: 'Utilisateurs actifs', value: stats.activeUsers },
+        { metric: 'Nouveaux utilisateurs (ce mois)', value: stats.newUsersThisMonth },
+        { metric: 'Cours totaux', value: stats.totalCourses },
+        { metric: 'Nouveaux cours (ce mois)', value: stats.coursesThisMonth },
+        { metric: 'Cours complétés', value: stats.completedCourses },
+        { metric: 'Progression moyenne (%)', value: stats.avgCompletionRate },
+      ]
+    )
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -93,7 +113,7 @@ export default function AdminAnalyticsPage() {
               <SelectItem value="365">Cette année</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline">
+          <Button variant="outline" onClick={handleExport}>
             <Download className="h-4 w-4 mr-2" />
             Exporter
           </Button>

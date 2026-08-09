@@ -1,5 +1,17 @@
 import Knex from 'knex';
+import { types as pgTypes } from 'pg';
 import { config } from '../config';
+
+// node-pg returns BIGINT/int8 columns (every id, tenant_id, and COUNT(*) result in
+// this schema) as JS strings by default, to avoid silently losing precision above
+// Number.MAX_SAFE_INTEGER. mssql's driver returns the equivalent columns as native
+// numbers, and the whole app (frontend arithmetic like `total.reduce((a,b) => a+b)`,
+// `===` comparisons, etc.) was written assuming that -- e.g. summing per-course
+// enrollment counts silently string-concatenated ("1"+"0"+"1" -> "101") instead of
+// adding. This app's ids/counts never approach that precision ceiling, so parsing
+// bigint as a number is the correct, global fix (OID 20 = int8/bigint) rather than
+// hunting down every call site that does arithmetic on a query result.
+pgTypes.setTypeParser(20, (value: string) => parseInt(value, 10));
 
 /**
  * Builds the Knex connection config for whichever client is active

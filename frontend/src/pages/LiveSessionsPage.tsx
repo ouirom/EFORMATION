@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { PageLoading } from '@/components/ui/loading'
 import { getInitials, formatDate } from '@/lib/utils'
@@ -19,8 +19,12 @@ import {
 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { api } from '@/services/api'
+import { useAuth } from '@/contexts/AuthContext'
+
+const CAN_CREATE_SESSION_ROLES = ['super_admin', 'admin', 'director', 'manager']
 
 export default function LiveSessionsPage() {
+  const { user } = useAuth()
   const [search, setSearch] = useState('')
 
   const { data: sessions, isLoading } = useQuery({
@@ -32,54 +36,7 @@ export default function LiveSessionsPage() {
     return <PageLoading />
   }
 
-  const sessionsList = sessions || [
-    {
-      id: '1',
-      title: 'Introduction au Machine Learning',
-      description: 'Découvrez les bases du ML avec des exemples pratiques',
-      instructor: {
-        name: 'Dr. Marie Dupont',
-        avatar: '/avatars/1.jpg',
-      },
-      scheduledAt: new Date(Date.now() + 3600000),
-      duration: 90,
-      participantsCount: 45,
-      maxParticipants: 100,
-      status: 'scheduled',
-      tags: ['ML', 'Python', 'Data Science'],
-    },
-    {
-      id: '2',
-      title: 'Workshop React Avancé',
-      description: 'Patterns avancés et optimisation des performances',
-      instructor: {
-        name: 'Thomas Martin',
-        avatar: '/avatars/2.jpg',
-      },
-      scheduledAt: new Date(),
-      duration: 120,
-      participantsCount: 32,
-      maxParticipants: 50,
-      status: 'live',
-      tags: ['React', 'TypeScript', 'Frontend'],
-    },
-    {
-      id: '3',
-      title: 'Gestion de projet Agile',
-      description: 'Méthodologies Scrum et Kanban en pratique',
-      instructor: {
-        name: 'Sophie Laurent',
-        avatar: '/avatars/3.jpg',
-      },
-      scheduledAt: new Date(Date.now() - 86400000),
-      duration: 60,
-      participantsCount: 78,
-      maxParticipants: 100,
-      status: 'ended',
-      recordingUrl: '/recordings/1',
-      tags: ['Agile', 'Scrum', 'Management'],
-    },
-  ]
+  const sessionsList = sessions || []
 
   const upcomingSessions = sessionsList.filter((s: any) => s.status === 'scheduled')
   const liveSessions = sessionsList.filter((s: any) => s.status === 'live')
@@ -95,10 +52,14 @@ export default function LiveSessionsPage() {
             Participez à des sessions interactives en direct
           </p>
         </div>
-        <Button>
-          <Plus className="h-4 w-4 mr-2" />
-          Créer une session
-        </Button>
+        {user && CAN_CREATE_SESSION_ROLES.includes(user.role) && (
+          <Link to="/admin/live-sessions">
+            <Button>
+              <Plus className="h-4 w-4 mr-2" />
+              Créer une session
+            </Button>
+          </Link>
+        )}
       </div>
 
       {/* Live Now Banner */}
@@ -113,7 +74,7 @@ export default function LiveSessionsPage() {
               <div>
                 <h3 className="font-semibold">{liveSessions[0].title}</h3>
                 <p className="text-sm text-muted-foreground">
-                  {liveSessions[0].participantsCount} participants
+                  {liveSessions[0].currentParticipants} participants
                 </p>
               </div>
               <Link to={`/live/${liveSessions[0].id}`}>
@@ -239,36 +200,30 @@ function SessionCard({ session }: { session: any }) {
       <CardContent className="pb-2">
         <div className="flex items-center gap-3 mb-3">
           <Avatar className="h-8 w-8">
-            <AvatarImage src={session.instructor.avatar} />
             <AvatarFallback>
-              {getInitials(session.instructor.name)}
+              {getInitials(session.instructorName || 'Formateur')}
             </AvatarFallback>
           </Avatar>
           <div>
-            <p className="text-sm font-medium">{session.instructor.name}</p>
+            <p className="text-sm font-medium">{session.instructorName || 'Formateur non assigné'}</p>
             <p className="text-xs text-muted-foreground">Formateur</p>
           </div>
         </div>
         <div className="flex items-center gap-4 text-sm text-muted-foreground">
           <span className="flex items-center gap-1">
             <Calendar className="h-4 w-4" />
-            {formatDate(session.scheduledAt)}
+            {session.scheduledAt ? formatDate(session.scheduledAt) : 'Non planifiée'}
           </span>
-          <span className="flex items-center gap-1">
-            <Clock className="h-4 w-4" />
-            {session.duration} min
-          </span>
+          {session.duration && (
+            <span className="flex items-center gap-1">
+              <Clock className="h-4 w-4" />
+              {session.duration} min
+            </span>
+          )}
           <span className="flex items-center gap-1">
             <Users className="h-4 w-4" />
-            {session.participantsCount}/{session.maxParticipants}
+            {session.currentParticipants}{session.maxParticipants ? `/${session.maxParticipants}` : ''}
           </span>
-        </div>
-        <div className="flex flex-wrap gap-1 mt-3">
-          {session.tags?.map((tag: string) => (
-            <Badge key={tag} variant="secondary" className="text-xs">
-              {tag}
-            </Badge>
-          ))}
         </div>
       </CardContent>
       <CardFooter className="pt-2">

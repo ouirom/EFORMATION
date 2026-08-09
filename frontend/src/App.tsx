@@ -23,6 +23,7 @@ import CourseDetailPage from '@/pages/CourseDetailPage';
 import BadgesPage from '@/pages/BadgesPage';
 import ChatPage from '@/pages/ChatPage';
 import LiveSessionsPage from '@/pages/LiveSessionsPage';
+import LiveSessionDetailPage from '@/pages/LiveSessionDetailPage';
 import BlogPage from '@/pages/BlogPage';
 import ProfilePage from '@/pages/ProfilePage';
 import AITutorPage from '@/pages/AITutorPage';
@@ -120,6 +121,7 @@ function App() {
             <Route path="/chat" element={<ChatPage />} />
             <Route path="/chat/:conversationId" element={<ChatPage />} />
             <Route path="/live" element={<LiveSessionsPage />} />
+            <Route path="/live/:id" element={<LiveSessionDetailPage />} />
             <Route path="/blog" element={<BlogPage />} />
             <Route path="/profile" element={<ProfilePage />} />
             <Route path="/ai-tutor" element={<AITutorPage />} />

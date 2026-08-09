@@ -25,6 +25,7 @@ import { Label } from '@/components/ui/label'
 import { PageLoading } from '@/components/ui/loading'
 import { useToast } from '@/components/ui/use-toast'
 import { getInitials, formatRelativeTime } from '@/lib/utils'
+import { downloadCsv } from '@/lib/csv'
 import {
   Search,
   Plus,
@@ -425,6 +426,29 @@ export default function AdminUsersPage() {
     deactivated: 'bg-red-100 text-red-800',
   }
 
+  // Exports exactly the currently filtered/loaded list (search/role/status), not a
+  // separate full dump -- matches what's visible in the table.
+  const handleExport = () => {
+    downloadCsv(
+      `utilisateurs-${Date.now()}.csv`,
+      [
+        { key: 'display_name', label: 'Nom' },
+        { key: 'email', label: 'Email' },
+        { key: 'enterprise_name', label: 'Entreprise' },
+        { key: 'direction_name', label: 'Direction' },
+        { key: 'service_name', label: 'Service' },
+        { key: 'supervisor_name', label: 'Superviseur' },
+        { key: 'role_label', label: 'Rôle' },
+        { key: 'status_label', label: 'Statut' },
+      ],
+      users.map((u: any) => ({
+        ...u,
+        role_label: roleLabels[u.role] || u.role,
+        status_label: statusLabels[u.status] || u.status,
+      }))
+    )
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -452,7 +476,7 @@ export default function AdminUsersPage() {
             <Upload className="h-4 w-4 mr-2" />
             Importer
           </Button>
-          <Button variant="outline">
+          <Button variant="outline" onClick={handleExport} disabled={users.length === 0}>
             <Download className="h-4 w-4 mr-2" />
             Exporter
           </Button>

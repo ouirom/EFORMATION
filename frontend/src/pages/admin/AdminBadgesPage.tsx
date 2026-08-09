@@ -26,33 +26,24 @@ import { api } from '@/services/api'
 
 interface BadgeType {
   id: number
+  code: string
   name: string
-  description: string
-  imageUrl: string
-  criteria: string
-  criteriaValue: number
-  category: string
-  points: number
-  isActive: boolean
-  earnedCount?: number
+  description: string | null
+  icon_url: string | null
+  criteria: Record<string, any>
+  badge_type: string | null
+  awarded_count?: number
 }
 
-const badgeCategories = [
-  { value: 'completion', label: 'Complétion', icon: Target },
-  { value: 'engagement', label: 'Engagement', icon: Flame },
-  { value: 'achievement', label: 'Accomplissement', icon: Trophy },
-  { value: 'social', label: 'Social', icon: Users },
-  { value: 'special', label: 'Spécial', icon: Star },
-]
-
-const badgeCriteria = [
-  { value: 'courses_completed', label: 'Cours terminés' },
-  { value: 'lessons_completed', label: 'Leçons terminées' },
-  { value: 'quizzes_passed', label: 'Quiz réussis' },
-  { value: 'login_streak', label: 'Jours de connexion consécutifs' },
-  { value: 'points_earned', label: 'Points gagnés' },
-  { value: 'time_spent', label: 'Heures de formation' },
-  { value: 'certificates_earned', label: 'Certificats obtenus' },
+// Matches badges.badge_type (backend/src/routes/badge.routes.ts) -- these are the
+// only values the automatic awarding logic (award-quiz/award-course) recognizes;
+// badges without one of these can still be awarded manually via POST /:id/award.
+const badgeTypes = [
+  { value: 'trophy', label: 'Trophée', icon: Trophy },
+  { value: 'quiz_completion', label: 'Quiz complété', icon: Target },
+  { value: 'perfect_score', label: 'Score parfait', icon: Star },
+  { value: 'course_start', label: 'Début de cours', icon: Flame },
+  { value: 'course_completion', label: 'Cours terminé', icon: Users },
 ]
 
 export default function AdminBadgesPage() {
@@ -61,14 +52,13 @@ export default function AdminBadgesPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [editingBadge, setEditingBadge] = useState<BadgeType | null>(null)
+  const [criteriaError, setCriteriaError] = useState<string | null>(null)
   const [formData, setFormData] = useState({
+    code: '',
     name: '',
     description: '',
-    imageUrl: '',
-    criteria: '',
-    criteriaValue: 1,
-    category: '',
-    points: 10,
+    badgeType: '',
+    criteria: '{}',
   })
 
   const { data: badges = [], isLoading } = useQuery<BadgeType[]>({
@@ -81,7 +71,13 @@ export default function AdminBadgesPage() {
 
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
-      await api.post('/badges', data)
+      await api.post('/badges', {
+        code: data.code,
+        name: data.name,
+        description: data.description,
+        badgeType: data.badgeType || undefined,
+        criteria: JSON.parse(data.criteria),
+      })
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-badges'] })
@@ -96,7 +92,12 @@ export default function AdminBadgesPage() {
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: typeof formData }) => {
-      await api.put(`/badges/${id}`, data)
+      await api.put(`/badges/${id}`, {
+        name: data.name,
+        description: data.description,
+        badgeType: data.badgeType || undefined,
+        criteria: JSON.parse(data.criteria),
+      })
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-badges'] })
@@ -123,31 +124,36 @@ export default function AdminBadgesPage() {
   })
 
   const resetForm = () => {
+    setCriteriaError(null)
     setFormData({
+      code: '',
       name: '',
       description: '',
-      imageUrl: '',
-      criteria: '',
-      criteriaValue: 1,
-      category: '',
-      points: 10,
+      badgeType: '',
+      criteria: '{}',
     })
   }
 
   const handleEdit = (badge: BadgeType) => {
+    setCriteriaError(null)
     setEditingBadge(badge)
     setFormData({
+      code: badge.code,
       name: badge.name,
-      description: badge.description,
-      imageUrl: badge.imageUrl,
-      criteria: badge.criteria,
-      criteriaValue: badge.criteriaValue,
-      category: badge.category,
-      points: badge.points,
+      description: badge.description || '',
+      badgeType: badge.badge_type || '',
+      criteria: JSON.stringify(badge.criteria || {}, null, 2),
     })
   }
 
   const handleSubmit = () => {
+    try {
+      JSON.parse(formData.criteria)
+    } catch {
+      setCriteriaError('Le critère doit être un JSON valide, ex: {"type": "quiz_pass"}')
+      return
+    }
+    setCriteriaError(null)
     if (editingBadge) {
       updateMutation.mutate({ id: editingBadge.id, data: formData })
     } else {
@@ -157,12 +163,12 @@ export default function AdminBadgesPage() {
 
   const filteredBadges = badges.filter((badge) =>
     badge.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    badge.description.toLowerCase().includes(searchTerm.toLowerCase())
+    (badge.description || '').toLowerCase().includes(searchTerm.toLowerCase())
   )
 
-  const getCategoryIcon = (category: string) => {
-    const cat = badgeCategories.find((c) => c.value === category)
-    return cat ? <cat.icon className="h-4 w-4" /> : <Award className="h-4 w-4" />
+  const getBadgeTypeIcon = (badgeType: string | null) => {
+    const t = badgeTypes.find((b) => b.value === badgeType)
+    return t ? <t.icon className="h-4 w-4" /> : <Award className="h-4 w-4" />
   }
 
   if (isLoading) {
@@ -173,6 +179,15 @@ export default function AdminBadgesPage() {
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
+          <Label>Code (identifiant unique)</Label>
+          <Input
+            value={formData.code}
+            onChange={(e) => setFormData({ ...formData, code: e.target.value })}
+            placeholder="Ex: EXPERT_REACT"
+            disabled={!!editingBadge}
+          />
+        </div>
+        <div className="space-y-2">
           <Label>Nom du badge</Label>
           <Input
             value={formData.name}
@@ -180,24 +195,25 @@ export default function AdminBadgesPage() {
             placeholder="Ex: Expert React"
           />
         </div>
-        <div className="space-y-2">
-          <Label>Catégorie</Label>
-          <Select value={formData.category} onValueChange={(v) => setFormData({ ...formData, category: v })}>
-            <SelectTrigger>
-              <SelectValue placeholder="Sélectionner une catégorie" />
-            </SelectTrigger>
-            <SelectContent>
-              {badgeCategories.map((cat) => (
-                <SelectItem key={cat.value} value={cat.value}>
-                  <div className="flex items-center gap-2">
-                    <cat.icon className="h-4 w-4" />
-                    {cat.label}
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label>Type</Label>
+        <Select value={formData.badgeType} onValueChange={(v) => setFormData({ ...formData, badgeType: v })}>
+          <SelectTrigger>
+            <SelectValue placeholder="Sélectionner un type (optionnel)" />
+          </SelectTrigger>
+          <SelectContent>
+            {badgeTypes.map((t) => (
+              <SelectItem key={t.value} value={t.value}>
+                <div className="flex items-center gap-2">
+                  <t.icon className="h-4 w-4" />
+                  {t.label}
+                </div>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="space-y-2">
@@ -210,49 +226,15 @@ export default function AdminBadgesPage() {
       </div>
 
       <div className="space-y-2">
-        <Label>URL de l'image</Label>
-        <Input
-          value={formData.imageUrl}
-          onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
-          placeholder="https://example.com/badge.png"
+        <Label>Critère d'obtention (JSON)</Label>
+        <Textarea
+          value={formData.criteria}
+          onChange={(e) => setFormData({ ...formData, criteria: e.target.value })}
+          placeholder='{"type": "quiz_pass"}'
+          className="font-mono text-sm"
+          rows={4}
         />
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label>Critère d'obtention</Label>
-          <Select value={formData.criteria} onValueChange={(v) => setFormData({ ...formData, criteria: v })}>
-            <SelectTrigger>
-              <SelectValue placeholder="Sélectionner un critère" />
-            </SelectTrigger>
-            <SelectContent>
-              {badgeCriteria.map((crit) => (
-                <SelectItem key={crit.value} value={crit.value}>
-                  {crit.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <Label>Valeur requise</Label>
-          <Input
-            type="number"
-            min={1}
-            value={formData.criteriaValue}
-            onChange={(e) => setFormData({ ...formData, criteriaValue: parseInt(e.target.value) })}
-          />
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <Label>Points attribués</Label>
-        <Input
-          type="number"
-          min={0}
-          value={formData.points}
-          onChange={(e) => setFormData({ ...formData, points: parseInt(e.target.value) })}
-        />
+        {criteriaError && <p className="text-sm text-red-500">{criteriaError}</p>}
       </div>
     </div>
   )
@@ -314,8 +296,8 @@ export default function AdminBadgesPage() {
                 <Target className="h-5 w-5 text-green-600" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{badges.filter((b) => b.isActive).length}</p>
-                <p className="text-sm text-muted-foreground">Badges actifs</p>
+                <p className="text-2xl font-bold">{badges.filter((b) => b.badge_type === 'trophy').length}</p>
+                <p className="text-sm text-muted-foreground">Trophées</p>
               </div>
             </div>
           </CardContent>
@@ -327,7 +309,7 @@ export default function AdminBadgesPage() {
                 <Users className="h-5 w-5 text-yellow-600" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{badges.reduce((sum, b) => sum + (b.earnedCount || 0), 0)}</p>
+                <p className="text-2xl font-bold">{badges.reduce((sum, b) => sum + (b.awarded_count || 0), 0)}</p>
                 <p className="text-sm text-muted-foreground">Badges attribués</p>
               </div>
             </div>
@@ -340,8 +322,8 @@ export default function AdminBadgesPage() {
                 <Star className="h-5 w-5 text-purple-600" />
               </div>
               <div>
-                <p className="text-2xl font-bold">{badgeCategories.length}</p>
-                <p className="text-sm text-muted-foreground">Catégories</p>
+                <p className="text-2xl font-bold">{new Set(badges.map((b) => b.badge_type).filter(Boolean)).size}</p>
+                <p className="text-sm text-muted-foreground">Types</p>
               </div>
             </div>
           </CardContent>
@@ -377,8 +359,8 @@ export default function AdminBadgesPage() {
               <CardContent className="p-4">
                 <div className="flex items-start gap-4">
                   <div className="h-16 w-16 rounded-lg bg-muted flex items-center justify-center shrink-0">
-                    {badge.imageUrl ? (
-                      <img src={badge.imageUrl} alt={badge.name} className="h-12 w-12 object-contain" />
+                    {badge.icon_url ? (
+                      <img src={badge.icon_url} alt={badge.name} className="h-12 w-12 object-contain" />
                     ) : (
                       <Award className="h-8 w-8 text-muted-foreground" />
                     )}
@@ -389,13 +371,10 @@ export default function AdminBadgesPage() {
                         <h3 className="font-medium truncate">{badge.name}</h3>
                         <div className="flex items-center gap-2 mt-1">
                           <Badge variant="outline" className="text-xs">
-                            {getCategoryIcon(badge.category)}
+                            {getBadgeTypeIcon(badge.badge_type)}
                             <span className="ml-1">
-                              {badgeCategories.find((c) => c.value === badge.category)?.label || badge.category}
+                              {badgeTypes.find((t) => t.value === badge.badge_type)?.label || badge.code}
                             </span>
-                          </Badge>
-                          <Badge variant="secondary" className="text-xs">
-                            {badge.points} pts
                           </Badge>
                         </div>
                       </div>
@@ -416,8 +395,8 @@ export default function AdminBadgesPage() {
                       {badge.description}
                     </p>
                     <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
-                      <span>{badgeCriteria.find((c) => c.value === badge.criteria)?.label}: {badge.criteriaValue}</span>
-                      <span>{badge.earnedCount || 0} attribués</span>
+                      <span className="truncate">{JSON.stringify(badge.criteria)}</span>
+                      <span className="shrink-0">{badge.awarded_count || 0} attribués</span>
                     </div>
                   </div>
                 </div>

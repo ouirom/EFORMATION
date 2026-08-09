@@ -99,6 +99,7 @@ router.post(
     body('description').optional().trim(),
     body('iconFileId').optional().isInt(),
     body('criteria').isObject(),
+    body('badgeType').optional().trim(),
   ],
   async (req: AuthRequest, res, next) => {
     try {
@@ -106,12 +107,12 @@ router.post(
 
       const result = await DatabaseService.query<{ id: number }>(
         IS_PG
-          ? `INSERT INTO badges (tenant_id, code, name, description, icon_file_id, criteria)
-             VALUES (@tenantId, @code, @name, @description, @iconFileId, @criteria)
+          ? `INSERT INTO badges (tenant_id, code, name, description, icon_file_id, criteria, badge_type)
+             VALUES (@tenantId, @code, @name, @description, @iconFileId, @criteria, @badgeType)
              RETURNING id`
-          : `INSERT INTO badges (tenant_id, code, name, description, icon_file_id, criteria)
+          : `INSERT INTO badges (tenant_id, code, name, description, icon_file_id, criteria, badge_type)
              OUTPUT INSERTED.id
-             VALUES (@tenantId, @code, @name, @description, @iconFileId, @criteria)`,
+             VALUES (@tenantId, @code, @name, @description, @iconFileId, @criteria, @badgeType)`,
         {
           tenantId: req.user!.tenantId,
           code: req.body.code,
@@ -119,6 +120,7 @@ router.post(
           description: req.body.description || null,
           iconFileId: req.body.iconFileId || null,
           criteria: JSON.stringify(req.body.criteria),
+          badgeType: req.body.badgeType || null,
         }
       );
 
@@ -147,6 +149,7 @@ router.put(
     body('description').optional().trim(),
     body('iconFileId').optional().isInt(),
     body('criteria').optional().isObject(),
+    body('badgeType').optional().trim(),
   ],
   async (req: AuthRequest, res, next) => {
     try {
@@ -171,6 +174,10 @@ router.put(
       if (req.body.criteria) {
         updateFields.push('criteria = @criteria');
         params.criteria = JSON.stringify(req.body.criteria);
+      }
+      if (req.body.badgeType !== undefined) {
+        updateFields.push('badge_type = @badgeType');
+        params.badgeType = req.body.badgeType || null;
       }
 
       if (updateFields.length > 0) {
