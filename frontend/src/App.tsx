@@ -85,9 +85,11 @@ function App() {
       <SocketProvider>
       <SessionTimeoutProvider>
         <Routes>
+          {/* Login has its own full-page two-column layout, not the shared AuthLayout */}
+          <Route path="/login" element={<LoginPage />} />
+
           {/* Auth Routes */}
           <Route element={<AuthLayout />}>
-            <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />

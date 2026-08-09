@@ -138,44 +138,79 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="space-y-4">
-      {timedOut && (
-        <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-          <AlarmClock className="h-4 w-4 shrink-0" />
-          Vous avez été déconnecté(e) automatiquement par inactivité.
-        </div>
-      )}
+    <div className="min-h-screen grid lg:grid-cols-2">
+      {/* Bloc gauche — bienvenue, description, logo, copyright */}
+      <div className="hidden lg:flex flex-col justify-between bg-gradient-to-br from-primary to-primary/70 text-primary-foreground p-12">
+        <Link to="/" className="flex items-center gap-2 w-fit">
+          <div className="h-12 w-12 rounded-xl bg-white/15 flex items-center justify-center backdrop-blur">
+            <span className="text-2xl font-bold">E</span>
+          </div>
+          <span className="text-2xl font-bold">E-Formation</span>
+        </Link>
 
-      {/* Connexion rapide — comptes de démo */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <Zap className="h-4 w-4 text-blue-600" />
-          <h3 className="font-semibold text-blue-900 text-sm">Connexion rapide — comptes de démo</h3>
+        <div className="max-w-md">
+          <h1 className="text-4xl font-bold mb-4">Bienvenue sur E-Formation</h1>
+          <p className="text-lg text-primary-foreground/90 leading-relaxed">
+            La plateforme d'apprentissage en ligne de votre entreprise : formations, quiz et certificats,
+            sessions en direct, chat et suivi de progression, réunis en un seul endroit.
+          </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {TEST_ACCOUNTS.map((account) => (
-            <button
-              key={account.email}
-              type="button"
-              disabled={busy}
-              onClick={() => handleQuickLogin(account.email, account.password, account.label)}
-              title={`${account.email} — ${account.password}`}
-              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 cursor-pointer ${account.color}`}
-            >
-              {quickLoading === account.label ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : null}
-              {account.label}
-            </button>
-          ))}
-        </div>
-        <p className="mt-2 text-xs text-blue-600">
-          🔑 Mot de passe commun :{' '}
-          <code className="bg-blue-100 rounded px-1 font-mono">Admin123!</code>
+
+        <p className="text-sm text-primary-foreground/70">
+          © {new Date().getFullYear()} KDCrépin. Tous droits réservés.
         </p>
       </div>
 
-      <Card className="shadow-lg">
+      {/* Bloc droite — formulaire de connexion */}
+      <div className="flex flex-col items-center justify-center p-4 py-10 sm:p-8">
+        {/* Logo compact, visible uniquement quand le bloc gauche est masqué (mobile) */}
+        <Link to="/" className="lg:hidden flex items-center gap-2 mb-8">
+          <div className="h-10 w-10 rounded-xl bg-primary flex items-center justify-center">
+            <span className="text-xl font-bold text-primary-foreground">E</span>
+          </div>
+          <span className="text-2xl font-bold bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
+            E-Formation
+          </span>
+        </Link>
+
+        <div className="w-full max-w-md space-y-4">
+          {timedOut && (
+            <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              <AlarmClock className="h-4 w-4 shrink-0" />
+              Vous avez été déconnecté(e) automatiquement par inactivité.
+            </div>
+          )}
+
+          {/* Connexion rapide — comptes de démo */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Zap className="h-4 w-4 text-blue-600" />
+              <h3 className="font-semibold text-blue-900 text-sm">Connexion rapide — comptes de démo</h3>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {TEST_ACCOUNTS.map((account) => (
+                <button
+                  key={account.email}
+                  type="button"
+                  disabled={busy}
+                  onClick={() => handleQuickLogin(account.email, account.password, account.label)}
+                  title={`${account.email} — ${account.password}`}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 cursor-pointer ${account.color}`}
+                >
+                  {quickLoading === account.label ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : null}
+                  {account.label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-blue-600">
+              🔑 Mot de passe commun :{' '}
+              <code className="bg-blue-100 rounded px-1 font-mono">Admin123!</code>
+            </p>
+          </div>
+
+          <Card className="shadow-lg">
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl text-center">Connexion</CardTitle>
           <CardDescription className="text-center">
@@ -331,6 +366,12 @@ export default function LoginPage() {
           </p>
         </CardFooter>
       </Card>
+        </div>
+
+        <p className="lg:hidden mt-8 text-center text-sm text-muted-foreground">
+          © {new Date().getFullYear()} KDCrépin. Tous droits réservés.
+        </p>
+      </div>
     </div>
   )
 }
