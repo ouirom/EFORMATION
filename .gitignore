@@ -16,3 +16,6 @@ backend/uploads
 # Database exports (may contain real data)
 db/exportation.bacpac
 db/*.bacpac
+
+# Live-schema introspection dumps (regenerate via db/scripts/dump_mssql_schema.js)
+db/scripts/.tmp
