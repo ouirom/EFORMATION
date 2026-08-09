@@ -495,7 +495,7 @@ router.get('/', authenticate, authorize('admin', 'director', 'manager'), async (
  */
 router.get('/:id', authenticate, async (req: AuthRequest, res, next) => {
   try {
-    const userId = parseInt(req.params.id, 10);
+    const userId = req.params.id === 'me' ? req.user!.id : parseInt(req.params.id, 10);
     const requester = req.user!;
 
     const users = await DatabaseService.query<any>(
@@ -556,7 +556,7 @@ router.put(
   async (req: AuthRequest, res, next) => {
     try {
       validate(req);
-      const userId = parseInt(req.params.id, 10);
+      const userId = req.params.id === 'me' ? req.user!.id : parseInt(req.params.id, 10);
       const isAdminLike = req.user!.role === 'admin' || req.user!.role === 'super_admin';
 
       // Check permissions
@@ -781,7 +781,7 @@ router.delete('/:id', authenticate, authorize('admin'), async (req: AuthRequest,
  */
 router.get('/:id/badges', authenticate, async (req: AuthRequest, res, next) => {
   try {
-    const userId = parseInt(req.params.id, 10);
+    const userId = req.params.id === 'me' ? req.user!.id : parseInt(req.params.id, 10);
 
     const badges = await DatabaseService.query<any>(
       `SELECT b.id, b.code, b.name, b.description, ub.awarded_at,
@@ -809,7 +809,7 @@ router.get('/:id/badges', authenticate, async (req: AuthRequest, res, next) => {
  */
 router.get('/:id/certificates', authenticate, async (req: AuthRequest, res, next) => {
   try {
-    const userId = parseInt(req.params.id, 10);
+    const userId = req.params.id === 'me' ? req.user!.id : parseInt(req.params.id, 10);
 
     const certificates = await DatabaseService.query<any>(
       `SELECT c.id, c.serial, c.issued_at, co.title as course_title,
@@ -837,7 +837,7 @@ router.get('/:id/certificates', authenticate, async (req: AuthRequest, res, next
  */
 router.get('/:id/progress', authenticate, async (req: AuthRequest, res, next) => {
   try {
-    const userId = parseInt(req.params.id, 10);
+    const userId = req.params.id === 'me' ? req.user!.id : parseInt(req.params.id, 10);
 
     // Get course progress
     const progress = await DatabaseService.query<any>(

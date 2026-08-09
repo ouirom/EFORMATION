@@ -566,7 +566,7 @@ router.get('/:id', authenticate, async (req: AuthRequest, res, next) => {
  */
 router.get('/user/:userId', authenticate, async (req: AuthRequest, res, next) => {
   try {
-    const userId = parseInt(req.params.userId, 10);
+    const userId = req.params.userId === 'me' ? req.user!.id : parseInt(req.params.userId, 10);
 
     // Check permissions
     if (req.user!.id !== userId && req.user!.role !== 'admin' && req.user!.role !== 'manager') {
