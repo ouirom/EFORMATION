@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { body, validationResult } from 'express-validator';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.middleware';
 import { DatabaseService } from '../services/database.service';
-import { IS_PG } from '../database/db-helpers';
+import { db, IS_PG } from '../database/db-helpers';
 import { BadRequestError, NotFoundError } from '../middleware/error.middleware';
 
 const router = Router();
@@ -91,24 +91,46 @@ router.get('/:id', authenticate, async (req: AuthRequest, res, next) => {
 router.get('/:id/take', authenticate, async (req: AuthRequest, res, next) => {
   try {
     const quizId = parseInt(req.params.id, 10);
+    const attemptId = req.query.attemptId ? parseInt(req.query.attemptId as string, 10) : undefined;
 
     const quizzes = await DatabaseService.query<any>(
-      'SELECT id, title, passing_score, randomized FROM quizzes WHERE id = @quizId AND tenant_id = @tenantId',
+      'SELECT id, title, passing_score, randomized, shuffle_choices FROM quizzes WHERE id = @quizId AND tenant_id = @tenantId',
       { quizId, tenantId: req.user!.tenantId }
     );
 
     if (quizzes.length === 0) {
       throw NotFoundError('Quiz');
     }
+    const quiz = quizzes[0];
 
-    let questions = await DatabaseService.query<any>(
-      'SELECT id, type, prompt, position FROM questions WHERE quiz_id = @quizId ORDER BY position',
-      { quizId }
-    );
+    let questions: any[];
 
-    // Randomize if needed
-    if (quizzes[0].randomized) {
-      questions = questions.sort(() => Math.random() - 0.5);
+    if (attemptId) {
+      // A live attempt: the order was fixed by /attempts/begin (question_ids, drawn
+      // and stored once) so refetching mid-attempt returns the exact same set.
+      const attempts = await DatabaseService.query<{ question_ids: string | null }>(
+        `SELECT question_ids FROM quiz_attempts WHERE id = @attemptId AND quiz_id = @quizId AND user_id = @userId`,
+        { attemptId, quizId, userId: req.user!.id }
+      );
+      if (attempts.length === 0) {
+        throw NotFoundError('Attempt');
+      }
+      const questionIds: number[] = db.parseJsonColumn(attempts[0].question_ids) || [];
+      const allQuestions = await DatabaseService.query<any>(
+        'SELECT id, type, prompt, position, points FROM questions WHERE quiz_id = @quizId',
+        { quizId }
+      );
+      const byId = new Map(allQuestions.map((q: any) => [q.id, q]));
+      questions = questionIds.map((id) => byId.get(id)).filter(Boolean);
+    } else {
+      // No attempt started yet (instructions/preview screen) — live-randomize per fetch.
+      questions = await DatabaseService.query<any>(
+        'SELECT id, type, prompt, position, points FROM questions WHERE quiz_id = @quizId ORDER BY position',
+        { quizId }
+      );
+      if (quiz.randomized) {
+        questions = questions.sort(() => Math.random() - 0.5);
+      }
     }
 
     const questionsWithChoices = await Promise.all(
@@ -118,7 +140,7 @@ router.get('/:id/take', authenticate, async (req: AuthRequest, res, next) => {
             'SELECT id, label, position FROM choices WHERE question_id = @questionId ORDER BY position',
             { questionId: q.id }
           );
-          if (quizzes[0].randomized) {
+          if (quiz.shuffle_choices) {
             choices = choices.sort(() => Math.random() - 0.5);
           }
           return { ...q, choices };
@@ -130,7 +152,7 @@ router.get('/:id/take', authenticate, async (req: AuthRequest, res, next) => {
     res.json({
       success: true,
       data: {
-        ...quizzes[0],
+        ...quiz,
         questions: questionsWithChoices,
       },
     });

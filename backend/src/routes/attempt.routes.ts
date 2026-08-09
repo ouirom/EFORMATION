@@ -15,8 +15,96 @@ const validate = (req: any) => {
 };
 
 /**
+ * @route POST /api/v1/attempts/begin
+ * @desc Start a new quiz attempt: enforces max_attempts, draws the question
+ * set (if the quiz uses questions_to_draw) and fixes it for this attempt so
+ * a later GET /quizzes/:id/take?attemptId=X always returns the same set —
+ * see quiz_attempts.question_ids.
+ */
+router.post(
+  '/begin',
+  authenticate,
+  [body('quizId').isInt()],
+  async (req: AuthRequest, res, next) => {
+    try {
+      validate(req);
+      const quizId = req.body.quizId;
+
+      const quizzes = await DatabaseService.query<any>(
+        'SELECT * FROM quizzes WHERE id = @quizId AND tenant_id = @tenantId',
+        { quizId, tenantId: req.user!.tenantId }
+      );
+      if (quizzes.length === 0) {
+        throw NotFoundError('Quiz');
+      }
+      const quiz = quizzes[0];
+
+      if (quiz.max_attempts) {
+        const countResult = await DatabaseService.query<{ total: number }>(
+          'SELECT COUNT(*) as total FROM quiz_attempts WHERE quiz_id = @quizId AND user_id = @userId',
+          { quizId, userId: req.user!.id }
+        );
+        if (Number(countResult[0].total) >= quiz.max_attempts) {
+          throw BadRequestError('Nombre maximum de tentatives atteint pour ce quiz', 'MAX_ATTEMPTS_REACHED');
+        }
+      }
+
+      const allQuestions = await DatabaseService.query<{ id: number }>(
+        'SELECT id FROM questions WHERE quiz_id = @quizId ORDER BY position',
+        { quizId }
+      );
+
+      let questionIds: number[];
+      if (quiz.questions_to_draw && quiz.questions_to_draw < allQuestions.length) {
+        // TOP is a SQL Server prefix, LIMIT is a Postgres suffix — needs the full
+        // query branched rather than a single substitutable fragment.
+        const drawn = await DatabaseService.query<{ id: number }>(
+          IS_PG
+            ? `SELECT id FROM questions WHERE quiz_id = @quizId ORDER BY ${db.randomOrder()} LIMIT @drawCount`
+            : `SELECT TOP (@drawCount) id FROM questions WHERE quiz_id = @quizId ORDER BY ${db.randomOrder()}`,
+          { quizId, drawCount: quiz.questions_to_draw }
+        );
+        questionIds = drawn.map((q) => q.id);
+      } else {
+        questionIds = allQuestions.map((q) => q.id);
+      }
+
+      const result = await DatabaseService.query<{ id: number }>(
+        IS_PG
+          ? `INSERT INTO quiz_attempts (tenant_id, quiz_id, user_id, started_at, time_spent, question_ids)
+             VALUES (@tenantId, @quizId, @userId, ${db.now()}, 0, @questionIds)
+             RETURNING id`
+          : `INSERT INTO quiz_attempts (tenant_id, quiz_id, user_id, started_at, time_spent, question_ids)
+             OUTPUT INSERTED.id
+             VALUES (@tenantId, @quizId, @userId, ${db.now()}, 0, @questionIds)`,
+        {
+          tenantId: req.user!.tenantId,
+          quizId,
+          userId: req.user!.id,
+          questionIds: JSON.stringify(questionIds),
+        }
+      );
+
+      res.status(201).json({
+        success: true,
+        data: {
+          attemptId: result[0].id,
+          timeLimitMinutes: quiz.time_limit_minutes || undefined,
+          maxAttempts: quiz.max_attempts || undefined,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
  * @route POST /api/v1/attempts
- * @desc Submit a complete quiz attempt with all answers at once
+ * @desc Submit a complete quiz attempt with all answers at once. If `attemptId`
+ * is given (the normal path, from POST /attempts/begin) reuses that attempt and
+ * enforces the quiz's time limit against its started_at; otherwise creates a
+ * fresh attempt on the spot (back-compat for callers that skip /begin).
  */
 router.post(
   '/',
@@ -25,11 +113,12 @@ router.post(
     body('quizId').isInt(),
     body('answers').isArray(),
     body('timeSpent').optional().isInt(),
+    body('attemptId').optional().isInt(),
   ],
   async (req: AuthRequest, res, next) => {
     try {
       validate(req);
-      const { quizId, answers, timeSpent } = req.body;
+      const { quizId, answers, timeSpent, attemptId: bodyAttemptId } = req.body;
 
       // Check if quiz exists
       const quizzes = await DatabaseService.query<any>(
@@ -43,24 +132,47 @@ router.post(
 
       const quiz = quizzes[0];
 
-      // Create attempt
-      const attemptResult = await DatabaseService.query<{ id: number }>(
-        IS_PG
-          ? `INSERT INTO quiz_attempts (tenant_id, quiz_id, user_id, started_at, time_spent)
-             VALUES (@tenantId, @quizId, @userId, ${db.now()}, @timeSpent)
-             RETURNING id`
-          : `INSERT INTO quiz_attempts (tenant_id, quiz_id, user_id, started_at, time_spent)
-             OUTPUT INSERTED.id
-             VALUES (@tenantId, @quizId, @userId, ${db.now()}, @timeSpent)`,
-        {
-          tenantId: req.user!.tenantId,
-          quizId,
-          userId: req.user!.id,
-          timeSpent: timeSpent || 0,
-        }
-      );
+      let attemptId: number;
 
-      const attemptId = attemptResult[0].id;
+      if (bodyAttemptId) {
+        const existing = await DatabaseService.query<{ id: number; started_at: string; completed_at: string | null }>(
+          `SELECT id, started_at, completed_at FROM quiz_attempts
+           WHERE id = @attemptId AND quiz_id = @quizId AND user_id = @userId`,
+          { attemptId: bodyAttemptId, quizId, userId: req.user!.id }
+        );
+        if (existing.length === 0) {
+          throw NotFoundError('Attempt');
+        }
+        if (existing[0].completed_at) {
+          throw BadRequestError('Cette tentative a déjà été soumise');
+        }
+        if (quiz.time_limit_minutes) {
+          const elapsedMinutes = (Date.now() - new Date(existing[0].started_at).getTime()) / 60000;
+          if (elapsedMinutes > quiz.time_limit_minutes + 1) {
+            throw BadRequestError('Le temps imparti pour ce quiz est dépassé', 'TIME_LIMIT_EXCEEDED');
+          }
+        }
+        attemptId = bodyAttemptId;
+      } else {
+        // Create attempt
+        const attemptResult = await DatabaseService.query<{ id: number }>(
+          IS_PG
+            ? `INSERT INTO quiz_attempts (tenant_id, quiz_id, user_id, started_at, time_spent)
+               VALUES (@tenantId, @quizId, @userId, ${db.now()}, @timeSpent)
+               RETURNING id`
+            : `INSERT INTO quiz_attempts (tenant_id, quiz_id, user_id, started_at, time_spent)
+               OUTPUT INSERTED.id
+               VALUES (@tenantId, @quizId, @userId, ${db.now()}, @timeSpent)`,
+          {
+            tenantId: req.user!.tenantId,
+            quizId,
+            userId: req.user!.id,
+            timeSpent: timeSpent || 0,
+          }
+        );
+
+        attemptId = attemptResult[0].id;
+      }
 
       // Get all questions with their correct choices
       const questions = await DatabaseService.query<any>(
@@ -108,9 +220,9 @@ router.post(
       // Update attempt with score
       await DatabaseService.execute(
         `UPDATE quiz_attempts
-         SET score = @score, passed = @passed, completed_at = ${db.now()}
+         SET score = @score, passed = @passed, completed_at = ${db.now()}, time_spent = @timeSpent
          WHERE id = @attemptId`,
-        { attemptId, score, passed }
+        { attemptId, score, passed, timeSpent: timeSpent || 0 }
       );
 
       // Get feedback for each question
