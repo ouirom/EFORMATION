@@ -20,42 +20,56 @@ import {
   Clock,
   CheckCircle,
   XCircle,
+  Mail,
   MessageSquare,
-  AlertTriangle,
-  Info,
+  Smartphone,
 } from 'lucide-react'
 import { api } from '@/services/api'
 import { formatDate } from '@/lib/utils'
 
+// Matches the real notifications table (backend/src/routes/notification.routes.ts) --
+// not a {type,title,isRead,data} shape invented independently of the schema.
 interface Notification {
   id: number
-  userId: number | null
-  type: string
-  title: string
+  user_id: number
+  channel: 'email' | 'sms' | 'whatsapp' | 'push' | 'in_app'
+  subject: string | null
   body: string
-  data: any
-  isRead: boolean
-  createdAt: string
-  userName?: string
+  action_url: string | null
+  read_at: string | null
+  created_at: string
+  user_name?: string
 }
 
-const notificationTypes = [
-  { value: 'info', label: 'Information', icon: Info, color: 'blue' },
-  { value: 'success', label: 'Succès', icon: CheckCircle, color: 'green' },
-  { value: 'warning', label: 'Avertissement', icon: AlertTriangle, color: 'yellow' },
-  { value: 'alert', label: 'Alerte', icon: XCircle, color: 'red' },
-  { value: 'course_assigned', label: 'Cours attribué', icon: MessageSquare, color: 'purple' },
+const channels = [
+  { value: 'in_app', label: 'Application', icon: Bell },
+  { value: 'email', label: 'Email', icon: Mail },
+  { value: 'sms', label: 'SMS', icon: MessageSquare },
+  { value: 'whatsapp', label: 'WhatsApp', icon: MessageSquare },
+  { value: 'push', label: 'Notification push', icon: Smartphone },
+]
+
+// Matches users.role's real CHECK constraint (backend/src/routes/user.routes.ts and
+// friends) -- not the fictional learner/instructor/admin set the form used to offer.
+const roles = [
+  { value: 'admin', label: 'Administrateur' },
+  { value: 'director', label: 'Directeur' },
+  { value: 'manager', label: 'Manager' },
+  { value: 'supervisor', label: 'Superviseur' },
+  { value: 'agent', label: 'Agent' },
+  { value: 'externe', label: 'Externe' },
+  { value: 'stagiaire', label: 'Stagiaire' },
 ]
 
 export default function AdminNotificationsPage() {
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const [searchTerm, setSearchTerm] = useState('')
-  const [typeFilter, setTypeFilter] = useState<string>('all')
+  const [channelFilter, setChannelFilter] = useState<string>('all')
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [formData, setFormData] = useState({
-    type: 'info',
-    title: '',
+    channel: 'in_app',
+    subject: '',
     body: '',
     targetType: 'all', // all, specific, role
     targetUserId: '',
@@ -80,7 +94,7 @@ export default function AdminNotificationsPage() {
 
   const sendMutation = useMutation({
     mutationFn: async (data: any) => {
-      await api.post('/notifications/send', data)
+      await api.post('/notifications/bulk', data)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-notifications'] })
@@ -105,8 +119,8 @@ export default function AdminNotificationsPage() {
 
   const resetForm = () => {
     setFormData({
-      type: 'info',
-      title: '',
+      channel: 'in_app',
+      subject: '',
       body: '',
       targetType: 'all',
       targetUserId: '',
@@ -116,13 +130,13 @@ export default function AdminNotificationsPage() {
 
   const handleSend = () => {
     const data: any = {
-      type: formData.type,
-      title: formData.title,
+      channel: formData.channel,
+      subject: formData.subject,
       body: formData.body,
     }
 
     if (formData.targetType === 'specific') {
-      data.userId = parseInt(formData.targetUserId)
+      data.userIds = [parseInt(formData.targetUserId)]
     } else if (formData.targetType === 'role') {
       data.role = formData.targetRole
     }
@@ -130,44 +144,44 @@ export default function AdminNotificationsPage() {
     sendMutation.mutate(data)
   }
 
-  const getTypeIcon = (type: string) => {
-    const notifType = notificationTypes.find((t) => t.value === type)
-    if (notifType) {
-      const Icon = notifType.icon
-      return <Icon className={`h-4 w-4 text-${notifType.color}-500`} />
+  const getChannelIcon = (channel: string) => {
+    const c = channels.find((c) => c.value === channel)
+    if (c) {
+      const Icon = c.icon
+      return <Icon className="h-4 w-4 text-primary" />
     }
     return <Bell className="h-4 w-4" />
   }
 
   const filteredNotifications = notifications
     .filter((notif) =>
-      notif.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (notif.subject || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       notif.body.toLowerCase().includes(searchTerm.toLowerCase())
     )
-    .filter((notif) => typeFilter === 'all' || notif.type === typeFilter)
+    .filter((notif) => channelFilter === 'all' || notif.channel === channelFilter)
 
   if (isLoading) {
     return <PageLoading />
   }
 
   const totalSent = notifications.length
-  const readCount = notifications.filter((n) => n.isRead).length
+  const readCount = notifications.filter((n) => n.read_at).length
   const unreadCount = totalSent - readCount
 
   const NotificationForm = () => (
     <div className="space-y-4">
       <div className="space-y-2">
-        <Label>Type de notification</Label>
-        <Select value={formData.type} onValueChange={(v) => setFormData({ ...formData, type: v })}>
+        <Label>Canal</Label>
+        <Select value={formData.channel} onValueChange={(v) => setFormData({ ...formData, channel: v })}>
           <SelectTrigger>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {notificationTypes.map((type) => (
-              <SelectItem key={type.value} value={type.value}>
+            {channels.map((c) => (
+              <SelectItem key={c.value} value={c.value}>
                 <div className="flex items-center gap-2">
-                  <type.icon className={`h-4 w-4 text-${type.color}-500`} />
-                  {type.label}
+                  <c.icon className="h-4 w-4" />
+                  {c.label}
                 </div>
               </SelectItem>
             ))}
@@ -176,11 +190,11 @@ export default function AdminNotificationsPage() {
       </div>
 
       <div className="space-y-2">
-        <Label>Titre</Label>
+        <Label>Sujet</Label>
         <Input
-          value={formData.title}
-          onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-          placeholder="Titre de la notification"
+          value={formData.subject}
+          onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
+          placeholder="Sujet de la notification"
         />
       </div>
 
@@ -233,7 +247,7 @@ export default function AdminNotificationsPage() {
             <SelectContent>
               {users.map((user: any) => (
                 <SelectItem key={user.id} value={user.id.toString()}>
-                  {user.firstName} {user.lastName} ({user.email})
+                  {user.display_name} ({user.email})
                 </SelectItem>
               ))}
             </SelectContent>
@@ -249,9 +263,9 @@ export default function AdminNotificationsPage() {
               <SelectValue placeholder="Choisir un rôle" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="learner">Apprenants</SelectItem>
-              <SelectItem value="instructor">Instructeurs</SelectItem>
-              <SelectItem value="admin">Administrateurs</SelectItem>
+              {roles.map((r) => (
+                <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
@@ -286,7 +300,7 @@ export default function AdminNotificationsPage() {
               <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
                 Annuler
               </Button>
-              <Button onClick={handleSend} disabled={sendMutation.isPending || !formData.title || !formData.body}>
+              <Button onClick={handleSend} disabled={sendMutation.isPending || !formData.body}>
                 {sendMutation.isPending ? 'Envoi...' : 'Envoyer'}
               </Button>
             </DialogFooter>
@@ -361,15 +375,15 @@ export default function AdminNotificationsPage() {
             className="pl-9"
           />
         </div>
-        <Select value={typeFilter} onValueChange={setTypeFilter}>
+        <Select value={channelFilter} onValueChange={setChannelFilter}>
           <SelectTrigger className="w-48">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Tous les types</SelectItem>
-            {notificationTypes.map((type) => (
-              <SelectItem key={type.value} value={type.value}>
-                {type.label}
+            <SelectItem value="all">Tous les canaux</SelectItem>
+            {channels.map((c) => (
+              <SelectItem key={c.value} value={c.value}>
+                {c.label}
               </SelectItem>
             ))}
           </SelectContent>
@@ -395,19 +409,19 @@ export default function AdminNotificationsPage() {
                 <div key={notif.id} className="p-4 hover:bg-muted/50 transition-colors">
                   <div className="flex items-start gap-4">
                     <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center shrink-0">
-                      {getTypeIcon(notif.type)}
+                      {getChannelIcon(notif.channel)}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <h4 className="font-medium">{notif.title}</h4>
+                          <h4 className="font-medium">{notif.subject || 'Notification'}</h4>
                           <p className="text-sm text-muted-foreground mt-1">
                             {notif.body}
                           </p>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
-                          <Badge variant={notif.isRead ? 'secondary' : 'default'}>
-                            {notif.isRead ? 'Lu' : 'Non lu'}
+                          <Badge variant={notif.read_at ? 'secondary' : 'default'}>
+                            {notif.read_at ? 'Lu' : 'Non lu'}
                           </Badge>
                           <Button
                             variant="ghost"
@@ -421,11 +435,11 @@ export default function AdminNotificationsPage() {
                       <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
                         <span className="flex items-center gap-1">
                           <User className="h-3 w-3" />
-                          {notif.userName || (notif.userId ? `User #${notif.userId}` : 'Tous les utilisateurs')}
+                          {notif.user_name || `User #${notif.user_id}`}
                         </span>
                         <span className="flex items-center gap-1">
                           <Clock className="h-3 w-3" />
-                          {formatDate(notif.createdAt)}
+                          {formatDate(notif.created_at)}
                         </span>
                       </div>
                     </div>

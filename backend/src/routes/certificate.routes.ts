@@ -598,8 +598,9 @@ router.delete('/:id', authenticate, authorize('admin'), async (req: AuthRequest,
   }
 });
 
-// Helper function to generate PDF certificate
-async function generateCertificatePDF(
+// Helper function to generate PDF certificate (exported for the one-off backfill
+// script -- see backend/src/scripts/backfill_certificate_pdfs.ts)
+export async function generateCertificatePDF(
   serial: string,
   userName: string,
   courseTitle: string,

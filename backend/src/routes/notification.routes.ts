@@ -116,14 +116,16 @@ router.post(
 
 /**
  * @route POST /api/v1/notifications/bulk
- * @desc Send bulk notifications (admin only)
+ * @desc Send bulk notifications (admin only) -- to an explicit list of user IDs, to every
+ * user with a given role, or to the whole tenant if neither is provided.
  */
 router.post(
   '/bulk',
   authenticate,
   authorize('admin', 'director'),
   [
-    body('userIds').isArray({ min: 1 }),
+    body('userIds').optional().isArray({ min: 1 }),
+    body('role').optional().isIn(['super_admin', 'admin', 'director', 'manager', 'supervisor', 'agent', 'externe', 'stagiaire']),
     body('channel').isIn(['email', 'sms', 'whatsapp', 'push', 'in_app']),
     body('subject').optional().trim(),
     body('body').notEmpty().trim(),
@@ -131,7 +133,22 @@ router.post(
   async (req: AuthRequest, res, next) => {
     try {
       validate(req);
-      const { userIds, channel, subject, body: notificationBody, actionUrl, metadata } = req.body;
+      const { userIds: explicitUserIds, role, channel, subject, body: notificationBody, actionUrl, metadata } = req.body;
+
+      let userIds: number[];
+      if (explicitUserIds) {
+        userIds = explicitUserIds;
+      } else {
+        const users = await DatabaseService.query<{ id: number }>(
+          `SELECT id FROM users WHERE tenant_id = @tenantId AND deleted_at IS NULL ${role ? 'AND role = @role' : ''}`,
+          { tenantId: req.user!.tenantId, role }
+        );
+        userIds = users.map((u) => u.id);
+      }
+
+      if (userIds.length === 0) {
+        throw BadRequestError('No matching recipients');
+      }
 
       const results = await Promise.allSettled(
         userIds.map((userId: number) =>
@@ -163,6 +180,48 @@ router.post(
     }
   }
 );
+
+/**
+ * @route GET /api/v1/notifications/all
+ * @desc List all notifications sent within the tenant (admin only) -- unlike GET /,
+ * which is scoped to the caller's own notifications.
+ */
+router.get('/all', authenticate, authorize('admin', 'director'), async (req: AuthRequest, res, next) => {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+    const offset = (page - 1) * limit;
+
+    const [countResult, notifications] = await Promise.all([
+      DatabaseService.query<{ total: number }>(
+        'SELECT COUNT(*) as total FROM notifications WHERE tenant_id = @tenantId',
+        { tenantId: req.user!.tenantId }
+      ),
+      DatabaseService.query<any>(
+        `SELECT n.*, u.display_name as user_name
+         FROM notifications n
+         JOIN users u ON n.user_id = u.id
+         WHERE n.tenant_id = @tenantId
+         ORDER BY n.created_at DESC
+         OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY`,
+        { tenantId: req.user!.tenantId, offset, limit }
+      ),
+    ]);
+
+    res.json({
+      success: true,
+      data: notifications,
+      meta: {
+        page,
+        limit,
+        total: countResult[0].total,
+        totalPages: Math.ceil(countResult[0].total / limit),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
 
 /**
  * @route PUT /api/v1/notifications/:id/read

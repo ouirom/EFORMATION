@@ -137,10 +137,12 @@ export class NotificationService {
           break;
       }
 
-      // Update status to sent
+      // Update status to sent -- externalId is undefined for in_app/push (no external
+      // provider involved), and Knex's raw query binding rejects undefined outright
+      // (must be null for SQL NULL), which was making every in_app/push send fail here.
       await DatabaseService.execute(
         `UPDATE notifications SET sent_at = ${db.now()}, external_id = @externalId WHERE id = @id`,
-        { id: notificationId, externalId }
+        { id: notificationId, externalId: externalId ?? null }
       );
 
       return { id: notificationId, status: 'sent', channel, externalId };
