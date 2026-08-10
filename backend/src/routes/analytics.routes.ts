@@ -641,11 +641,11 @@ router.get('/badges', authenticate, authorize('admin', 'director'), async (req: 
 
     // Badge distribution
     const badgeDistribution = await DatabaseService.query<any>(
-      `SELECT b.id, b.name, b.type, COUNT(ab.id) as awarded_count
+      `SELECT b.id, b.name, b.badge_type, COUNT(ab.id) as awarded_count
        FROM badges b
-       LEFT JOIN awarded_badges ab ON b.id = ab.badge_id
+       LEFT JOIN user_badges ab ON b.id = ab.badge_id
        WHERE b.tenant_id = @tenantId
-       GROUP BY b.id, b.name, b.type
+       GROUP BY b.id, b.name, b.badge_type
        ORDER BY awarded_count DESC`,
       { tenantId }
     );
@@ -653,7 +653,7 @@ router.get('/badges', authenticate, authorize('admin', 'director'), async (req: 
     // Badges awarded over time
     const badgesOverTime = await DatabaseService.query<any>(
       `SELECT CAST(awarded_at AS DATE) as date, COUNT(*) as count
-       FROM awarded_badges ab
+       FROM user_badges ab
        JOIN badges b ON ab.badge_id = b.id
        WHERE b.tenant_id = @tenantId AND awarded_at >= ${db.dateAdd('day', '-30', db.now())}
        GROUP BY CAST(awarded_at AS DATE)
@@ -666,14 +666,14 @@ router.get('/badges', authenticate, authorize('admin', 'director'), async (req: 
       IS_PG
         ? `SELECT u.id, u.display_name, COUNT(ab.id) as badge_count
            FROM users u
-           JOIN awarded_badges ab ON u.id = ab.user_id
+           JOIN user_badges ab ON u.id = ab.user_id
            WHERE u.tenant_id = @tenantId
            GROUP BY u.id, u.display_name
            ORDER BY badge_count DESC
            LIMIT 10`
         : `SELECT TOP 10 u.id, u.display_name, COUNT(ab.id) as badge_count
            FROM users u
-           JOIN awarded_badges ab ON u.id = ab.user_id
+           JOIN user_badges ab ON u.id = ab.user_id
            WHERE u.tenant_id = @tenantId
            GROUP BY u.id, u.display_name
            ORDER BY badge_count DESC`,
@@ -710,13 +710,13 @@ router.get('/user/:userId', authenticate, async (req: AuthRequest, res, next) =>
     const [enrollments, completions, quizResults, badges, activity] = await Promise.all([
       // Enrollment stats
       DatabaseService.query<any>(
-        `SELECT COUNT(*) as total, AVG(progress) as avg_progress
+        `SELECT COUNT(*) as total, AVG(progress_percent) as avg_progress
          FROM enrollments WHERE user_id = @userId`,
         { userId }
       ),
       // Completions
       DatabaseService.query<any>(
-        `SELECT COUNT(*) as total FROM enrollments WHERE user_id = @userId AND progress >= 100`,
+        `SELECT COUNT(*) as total FROM enrollments WHERE user_id = @userId AND progress_percent >= 100`,
         { userId }
       ),
       // Quiz results
@@ -728,18 +728,18 @@ router.get('/user/:userId', authenticate, async (req: AuthRequest, res, next) =>
       ),
       // Badges
       DatabaseService.query<any>(
-        `SELECT COUNT(*) as total FROM awarded_badges WHERE user_id = @userId`,
+        `SELECT COUNT(*) as total FROM user_badges WHERE user_id = @userId`,
         { userId }
       ),
       // Recent activity
       DatabaseService.query<any>(
         IS_PG
-          ? `SELECT action, resource_type, resource_id, created_at
+          ? `SELECT action, entity, entity_id, created_at
              FROM audit_logs
              WHERE user_id = @userId
              ORDER BY created_at DESC
              LIMIT 20`
-          : `SELECT TOP 20 action, resource_type, resource_id, created_at
+          : `SELECT TOP 20 action, entity, entity_id, created_at
              FROM audit_logs
              WHERE user_id = @userId
              ORDER BY created_at DESC`,

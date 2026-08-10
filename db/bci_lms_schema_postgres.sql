@@ -43,6 +43,17 @@ CREATE TABLE IF NOT EXISTS ai_recommendations (
   created_at           TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc')
 );
 
+CREATE TABLE IF NOT EXISTS ai_usage_logs (
+  id                   BIGSERIAL PRIMARY KEY,
+  tenant_id            BIGINT NOT NULL,
+  user_id              BIGINT NOT NULL,
+  feature              VARCHAR(50) NOT NULL,
+  prompt_tokens        INTEGER NOT NULL DEFAULT 0,
+  completion_tokens    INTEGER NOT NULL DEFAULT 0,
+  model                VARCHAR(50),
+  created_at           TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc')
+);
+
 CREATE TABLE IF NOT EXISTS answers (
   id                   BIGSERIAL PRIMARY KEY,
   tenant_id            BIGINT NOT NULL,
@@ -106,6 +117,30 @@ CREATE TABLE IF NOT EXISTS badges (
   badge_type           VARCHAR(50)
 );
 
+CREATE TABLE IF NOT EXISTS blog_categories (
+  id                   BIGSERIAL PRIMARY KEY,
+  tenant_id            BIGINT NOT NULL,
+  name                 VARCHAR(255) NOT NULL,
+  slug                 VARCHAR(255) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS blog_comments (
+  id                   BIGSERIAL PRIMARY KEY,
+  tenant_id            BIGINT NOT NULL,
+  post_id              BIGINT NOT NULL,
+  user_id              BIGINT NOT NULL,
+  body                 TEXT NOT NULL,
+  parent_id            BIGINT,
+  deleted_at           TIMESTAMP,
+  created_at           TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc')
+);
+
+CREATE TABLE IF NOT EXISTS blog_post_tags (
+  post_id              BIGINT NOT NULL,
+  tag_id               BIGINT NOT NULL,
+  PRIMARY KEY (post_id, tag_id)
+);
+
 CREATE TABLE IF NOT EXISTS blog_posts (
   id                   BIGSERIAL PRIMARY KEY,
   tenant_id            BIGINT NOT NULL,
@@ -114,7 +149,19 @@ CREATE TABLE IF NOT EXISTS blog_posts (
   body                 TEXT NOT NULL,
   status               VARCHAR(20) NOT NULL CHECK ((status='published' OR status='draft')),
   created_at           TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc'),
-  published_at         TIMESTAMP
+  published_at         TIMESTAMP,
+  category_id          BIGINT,
+  slug                 VARCHAR(255),
+  featured_image_id    BIGINT,
+  view_count           INTEGER NOT NULL DEFAULT 0,
+  updated_at           TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS blog_tags (
+  id                   BIGSERIAL PRIMARY KEY,
+  tenant_id            BIGINT NOT NULL,
+  name                 VARCHAR(255) NOT NULL,
+  slug                 VARCHAR(255) NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS breakout_rooms (
@@ -485,6 +532,17 @@ CREATE TABLE IF NOT EXISTS privacy_consents (
   consented_at         TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc')
 );
 
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id                   BIGSERIAL PRIMARY KEY,
+  tenant_id            BIGINT NOT NULL,
+  user_id              BIGINT NOT NULL,
+  endpoint             VARCHAR(1000) NOT NULL,
+  p256dh               VARCHAR(255) NOT NULL,
+  auth                 VARCHAR(255) NOT NULL,
+  created_at           TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc'),
+  updated_at           TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS questions (
   id                   BIGSERIAL PRIMARY KEY,
   tenant_id            BIGINT NOT NULL,
@@ -538,6 +596,28 @@ CREATE TABLE IF NOT EXISTS quizzes (
   description          VARCHAR(500),
   instructions         VARCHAR(1000),
   questions_to_draw    INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS scheduled_reports (
+  id                   BIGSERIAL PRIMARY KEY,
+  tenant_id            BIGINT NOT NULL,
+  report_type          VARCHAR(50) NOT NULL,
+  frequency            VARCHAR(20) NOT NULL CHECK ((frequency='monthly' OR frequency='weekly' OR frequency='daily')),
+  format               VARCHAR(20) NOT NULL CHECK ((format='pdf' OR format='excel' OR format='csv')),
+  recipients           TEXT NOT NULL,
+  filters              TEXT,
+  created_by           BIGINT NOT NULL,
+  is_active            BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at           TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc')
+);
+
+CREATE TABLE IF NOT EXISTS search_history (
+  id                   BIGSERIAL PRIMARY KEY,
+  tenant_id            BIGINT NOT NULL,
+  user_id              BIGINT NOT NULL,
+  query                VARCHAR(500) NOT NULL,
+  result_count         INTEGER NOT NULL DEFAULT 0,
+  searched_at          TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc')
 );
 
 CREATE TABLE IF NOT EXISTS search_index (
@@ -628,6 +708,20 @@ CREATE TABLE IF NOT EXISTS user_badges (
   score                INTEGER
 );
 
+CREATE TABLE IF NOT EXISTS user_devices (
+  id                   BIGSERIAL PRIMARY KEY,
+  user_id              BIGINT NOT NULL,
+  fcm_token            VARCHAR(500),
+  created_at           TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc')
+);
+
+CREATE TABLE IF NOT EXISTS user_profiles (
+  id                   BIGSERIAL PRIMARY KEY,
+  user_id              BIGINT NOT NULL,
+  interests            TEXT,
+  learning_goals       TEXT
+);
+
 CREATE TABLE IF NOT EXISTS users (
   id                   BIGSERIAL PRIMARY KEY,
   tenant_id            BIGINT NOT NULL,
@@ -650,6 +744,19 @@ CREATE TABLE IF NOT EXISTS users (
   phone                VARCHAR(50)
 );
 
+CREATE TABLE IF NOT EXISTS webhook_deliveries (
+  id                   BIGSERIAL PRIMARY KEY,
+  webhook_id           BIGINT NOT NULL,
+  event                VARCHAR(100) NOT NULL,
+  payload              TEXT NOT NULL,
+  response_status      INTEGER,
+  response_body        VARCHAR(1000),
+  response_time_ms     INTEGER,
+  success              BOOLEAN NOT NULL,
+  error_message        VARCHAR(1000),
+  created_at           TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc')
+);
+
 CREATE TABLE IF NOT EXISTS webhook_subscriptions (
   id                   BIGSERIAL PRIMARY KEY,
   tenant_id            BIGINT NOT NULL,
@@ -658,6 +765,21 @@ CREATE TABLE IF NOT EXISTS webhook_subscriptions (
   secret               VARCHAR(255),
   is_active            BOOLEAN NOT NULL DEFAULT TRUE,
   created_at           TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc')
+);
+
+CREATE TABLE IF NOT EXISTS webhooks (
+  id                   BIGSERIAL PRIMARY KEY,
+  tenant_id            BIGINT NOT NULL,
+  name                 VARCHAR(255) NOT NULL,
+  url                  VARCHAR(1000) NOT NULL,
+  events               TEXT NOT NULL,
+  secret               VARCHAR(255) NOT NULL,
+  headers              TEXT,
+  created_by           BIGINT NOT NULL,
+  is_active            BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at           TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc'),
+  updated_at           TIMESTAMP,
+  last_triggered_at    TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS whiteboards (
@@ -673,6 +795,8 @@ CREATE TABLE IF NOT EXISTS whiteboards (
 ALTER TABLE api_keys ADD CONSTRAINT uq_api_key UNIQUE (key);
 ALTER TABLE assignment_reminders ADD CONSTRAINT uq_assignment_reminder UNIQUE (course_assignment_id, user_id, reminder_type);
 ALTER TABLE badges ADD CONSTRAINT UQ__badges__357D4CF96D52398F UNIQUE (code);
+ALTER TABLE blog_categories ADD CONSTRAINT uq_blog_categories_tenant_slug UNIQUE (tenant_id, slug);
+ALTER TABLE blog_tags ADD CONSTRAINT uq_blog_tags_tenant_slug UNIQUE (tenant_id, slug);
 ALTER TABLE categories ADD CONSTRAINT uq_category_name UNIQUE (tenant_id, name);
 ALTER TABLE certificates ADD CONSTRAINT UQ__certific__61787229C0EA02EE UNIQUE (serial);
 ALTER TABLE course_evaluations ADD CONSTRAINT uq_course_eval UNIQUE (tenant_id, course_id, user_id);
@@ -693,6 +817,7 @@ ALTER TABLE tenants ADD CONSTRAINT UQ__tenants__72E12F1B2648929A UNIQUE (name);
 ALTER TABLE user_badges ADD CONSTRAINT UQ_user_badges_course UNIQUE (tenant_id, user_id, badge_id, course_id);
 ALTER TABLE user_badges ADD CONSTRAINT UQ_user_badges_quiz UNIQUE (tenant_id, user_id, badge_id, quiz_id);
 ALTER TABLE user_badges ADD CONSTRAINT uq_user_badge UNIQUE (tenant_id, user_id, badge_id);
+ALTER TABLE user_profiles ADD CONSTRAINT uq_user_profiles_user UNIQUE (user_id);
 ALTER TABLE users ADD CONSTRAINT UQ__users__AB6E616433F29DE1 UNIQUE (email);
 ALTER TABLE users ADD CONSTRAINT UQ__users__F3DBC572B3F5EB8D UNIQUE (username);
 
@@ -706,6 +831,8 @@ ALTER TABLE ai_generated_contents ADD CONSTRAINT fk_ai_gen_tenant FOREIGN KEY (t
 ALTER TABLE ai_generated_contents ADD CONSTRAINT fk_ai_gen_user FOREIGN KEY (created_by) REFERENCES users (id);
 ALTER TABLE ai_recommendations ADD CONSTRAINT fk_ai_rec_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
 ALTER TABLE ai_recommendations ADD CONSTRAINT fk_ai_rec_user FOREIGN KEY (user_id) REFERENCES users (id);
+ALTER TABLE ai_usage_logs ADD CONSTRAINT fk_ai_usage_logs_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
+ALTER TABLE ai_usage_logs ADD CONSTRAINT fk_ai_usage_logs_user FOREIGN KEY (user_id) REFERENCES users (id);
 ALTER TABLE learning_analytics ADD CONSTRAINT fk_analytics_course FOREIGN KEY (course_id) REFERENCES courses (id);
 ALTER TABLE learning_analytics ADD CONSTRAINT fk_analytics_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
 ALTER TABLE learning_analytics ADD CONSTRAINT fk_analytics_user FOREIGN KEY (user_id) REFERENCES users (id);
@@ -727,6 +854,16 @@ ALTER TABLE audit_logs ADD CONSTRAINT fk_audit_user FOREIGN KEY (user_id) REFERE
 ALTER TABLE badges ADD CONSTRAINT fk_badges_icon FOREIGN KEY (icon_file_id) REFERENCES file_assets (id);
 ALTER TABLE badges ADD CONSTRAINT fk_badges_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
 ALTER TABLE blog_posts ADD CONSTRAINT fk_blog_author FOREIGN KEY (author_id) REFERENCES users (id);
+ALTER TABLE blog_categories ADD CONSTRAINT fk_blog_categories_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
+ALTER TABLE blog_comments ADD CONSTRAINT fk_blog_comments_parent FOREIGN KEY (parent_id) REFERENCES blog_comments (id);
+ALTER TABLE blog_comments ADD CONSTRAINT fk_blog_comments_post FOREIGN KEY (post_id) REFERENCES blog_posts (id);
+ALTER TABLE blog_comments ADD CONSTRAINT fk_blog_comments_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
+ALTER TABLE blog_comments ADD CONSTRAINT fk_blog_comments_user FOREIGN KEY (user_id) REFERENCES users (id);
+ALTER TABLE blog_post_tags ADD CONSTRAINT fk_blog_post_tags_post FOREIGN KEY (post_id) REFERENCES blog_posts (id);
+ALTER TABLE blog_post_tags ADD CONSTRAINT fk_blog_post_tags_tag FOREIGN KEY (tag_id) REFERENCES blog_tags (id);
+ALTER TABLE blog_posts ADD CONSTRAINT fk_blog_posts_category FOREIGN KEY (category_id) REFERENCES blog_categories (id);
+ALTER TABLE blog_posts ADD CONSTRAINT fk_blog_posts_featured_image FOREIGN KEY (featured_image_id) REFERENCES file_assets (id);
+ALTER TABLE blog_tags ADD CONSTRAINT fk_blog_tags_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
 ALTER TABLE blog_posts ADD CONSTRAINT fk_blog_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
 ALTER TABLE breakout_rooms ADD CONSTRAINT fk_breakout_sess FOREIGN KEY (session_id) REFERENCES live_sessions (id);
 ALTER TABLE breakout_rooms ADD CONSTRAINT fk_breakout_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
@@ -792,11 +929,17 @@ ALTER TABLE post_tags ADD CONSTRAINT fk_post_tags_post FOREIGN KEY (post_id) REF
 ALTER TABLE post_tags ADD CONSTRAINT fk_post_tags_tag FOREIGN KEY (tag_id) REFERENCES tags (id);
 ALTER TABLE privacy_consents ADD CONSTRAINT fk_privacy_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
 ALTER TABLE privacy_consents ADD CONSTRAINT fk_privacy_user FOREIGN KEY (user_id) REFERENCES users (id);
+ALTER TABLE push_subscriptions ADD CONSTRAINT fk_push_subscriptions_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
+ALTER TABLE push_subscriptions ADD CONSTRAINT fk_push_subscriptions_user FOREIGN KEY (user_id) REFERENCES users (id);
 ALTER TABLE questions ADD CONSTRAINT fk_questions_quiz FOREIGN KEY (quiz_id) REFERENCES quizzes (id);
 ALTER TABLE questions ADD CONSTRAINT fk_questions_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
 ALTER TABLE quizzes ADD CONSTRAINT fk_quizzes_lesson FOREIGN KEY (lesson_id) REFERENCES lessons (id);
 ALTER TABLE quizzes ADD CONSTRAINT fk_quizzes_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
 ALTER TABLE data_retention_policies ADD CONSTRAINT fk_retention_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
+ALTER TABLE scheduled_reports ADD CONSTRAINT fk_scheduled_reports_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
+ALTER TABLE scheduled_reports ADD CONSTRAINT fk_scheduled_reports_user FOREIGN KEY (created_by) REFERENCES users (id);
+ALTER TABLE search_history ADD CONSTRAINT fk_search_history_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
+ALTER TABLE search_history ADD CONSTRAINT fk_search_history_user FOREIGN KEY (user_id) REFERENCES users (id);
 ALTER TABLE search_index ADD CONSTRAINT fk_search_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
 ALTER TABLE services ADD CONSTRAINT fk_services_direction FOREIGN KEY (direction_id) REFERENCES directions (id);
 ALTER TABLE services ADD CONSTRAINT fk_services_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
@@ -809,12 +952,17 @@ ALTER TABLE tenant_settings ADD CONSTRAINT fk_tenant_settings_tenant FOREIGN KEY
 ALTER TABLE user_badges ADD CONSTRAINT fk_user_badges_badge FOREIGN KEY (badge_id) REFERENCES badges (id);
 ALTER TABLE user_badges ADD CONSTRAINT fk_user_badges_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
 ALTER TABLE user_badges ADD CONSTRAINT fk_user_badges_user FOREIGN KEY (user_id) REFERENCES users (id);
+ALTER TABLE user_devices ADD CONSTRAINT fk_user_devices_user FOREIGN KEY (user_id) REFERENCES users (id);
+ALTER TABLE user_profiles ADD CONSTRAINT fk_user_profiles_user FOREIGN KEY (user_id) REFERENCES users (id);
 ALTER TABLE users ADD CONSTRAINT fk_users_direction FOREIGN KEY (direction_id) REFERENCES directions (id);
 ALTER TABLE users ADD CONSTRAINT fk_users_enterprise FOREIGN KEY (enterprise_id) REFERENCES enterprises (id);
 ALTER TABLE users ADD CONSTRAINT fk_users_service FOREIGN KEY (service_id) REFERENCES services (id);
 ALTER TABLE users ADD CONSTRAINT fk_users_supervisor FOREIGN KEY (supervisor_id) REFERENCES users (id);
 ALTER TABLE users ADD CONSTRAINT fk_users_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
+ALTER TABLE webhook_deliveries ADD CONSTRAINT fk_webhook_deliveries_webhook FOREIGN KEY (webhook_id) REFERENCES webhooks (id);
 ALTER TABLE webhook_subscriptions ADD CONSTRAINT fk_webhook_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
+ALTER TABLE webhooks ADD CONSTRAINT fk_webhooks_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
+ALTER TABLE webhooks ADD CONSTRAINT fk_webhooks_user FOREIGN KEY (created_by) REFERENCES users (id);
 ALTER TABLE whiteboards ADD CONSTRAINT fk_whiteboards_sess FOREIGN KEY (session_id) REFERENCES live_sessions (id);
 ALTER TABLE whiteboards ADD CONSTRAINT fk_whiteboards_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
 

@@ -261,13 +261,13 @@ async function generateReportData(
 
     case 'badge_awards':
       return DatabaseService.query<any>(
-        `SELECT b.name as badge_name, b.type,
+        `SELECT b.name as badge_name, b.badge_type,
                 COUNT(ab.id) as times_awarded,
                 COUNT(DISTINCT ab.user_id) as unique_recipients
          FROM badges b
-         LEFT JOIN awarded_badges ab ON b.id = ab.badge_id
+         LEFT JOIN user_badges ab ON b.id = ab.badge_id
          WHERE b.tenant_id = @tenantId ${dateFilter.replace('created_at', 'ab.awarded_at')}
-         GROUP BY b.id, b.name, b.type
+         GROUP BY b.id, b.name, b.badge_type
          ORDER BY times_awarded DESC`,
         { tenantId, startDate, endDate }
       );
