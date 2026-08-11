@@ -37,7 +37,7 @@ export default function ForgotPasswordPage() {
     } catch (error: any) {
       toast({
         title: 'Erreur',
-        description: error.message || "Une erreur s'est produite",
+        description: error.response?.data?.error?.message || "Une erreur s'est produite",
         variant: 'destructive',
       })
     } finally {

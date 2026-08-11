@@ -31,10 +31,17 @@ export default function ResetPasswordPage() {
       return
     }
 
-    if (password.length < 8) {
+    if (
+      password.length < 8 ||
+      !/[A-Z]/.test(password) ||
+      !/[a-z]/.test(password) ||
+      !/\d/.test(password) ||
+      !/[!@#$%^&*(),.?":{}|<>]/.test(password)
+    ) {
       toast({
         title: 'Erreur',
-        description: 'Le mot de passe doit contenir au moins 8 caractères',
+        description:
+          'Le mot de passe doit contenir au moins 8 caractères, une majuscule, une minuscule, un chiffre et un caractère spécial',
         variant: 'destructive',
       })
       return
@@ -48,7 +55,7 @@ export default function ResetPasswordPage() {
     } catch (error: any) {
       toast({
         title: 'Erreur',
-        description: error.response?.data?.message || 'Le lien est invalide ou a expiré',
+        description: error.response?.data?.error?.message || 'Le lien est invalide ou a expiré',
         variant: 'destructive',
       })
     } finally {
@@ -132,7 +139,7 @@ export default function ResetPasswordPage() {
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Minimum 8 caractères avec majuscules, minuscules et chiffres
+              Minimum 8 caractères avec majuscule, minuscule, chiffre et caractère spécial
             </p>
           </div>
           <div className="space-y-2">

@@ -73,7 +73,10 @@ export const config = {
   
   // Email
   smtp: {
-    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    // No fallback host: an empty value lets NotificationService.getEmailConfig
+    // detect "SMTP not configured" and fail fast/log, instead of silently
+    // attempting a real connection to Gmail with no credentials.
+    host: process.env.SMTP_HOST || '',
     port: parseInt(process.env.SMTP_PORT || '587', 10),
     user: process.env.SMTP_USER || '',
     password: process.env.SMTP_PASSWORD || '',

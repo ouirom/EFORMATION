@@ -49,10 +49,15 @@ export class AuthService {
    * PUT /users/:id/status.
    */
   static async register(data: RegisterDTO): Promise<{ user: Partial<User> }> {
-    // Check if email already exists
+    // users.email and users.username both carry a GLOBAL unique constraint (not
+    // scoped per tenant — matches how login() looks a user up by email alone),
+    // so the duplicate checks below must be global too, or a cross-tenant
+    // collision would sail past this check and hit the raw INSERT as an
+    // unhandled constraint violation (500) instead of a clean 409. Soft-deleted
+    // accounts are excluded so a freed-up email/username can be reused.
     const existingUsers = await DatabaseService.query<{ id: number }>(
-      'SELECT id FROM users WHERE email = @email AND tenant_id = @tenantId',
-      { email: data.email, tenantId: data.tenantId }
+      'SELECT id FROM users WHERE email = @email AND deleted_at IS NULL',
+      { email: data.email }
     );
 
     if (existingUsers.length > 0) {
@@ -63,8 +68,8 @@ export class AuthService {
     const generatedUsername = data.username || data.email.split('@')[0] + '_' + Date.now().toString(36);
 
     const existingUsername = await DatabaseService.query<{ id: number }>(
-      'SELECT id FROM users WHERE username = @username AND tenant_id = @tenantId',
-      { username: generatedUsername, tenantId: data.tenantId }
+      'SELECT id FROM users WHERE username = @username AND deleted_at IS NULL',
+      { username: generatedUsername }
     );
 
     if (existingUsername.length > 0) {
@@ -75,41 +80,51 @@ export class AuthService {
     const passwordHash = await bcrypt.hash(data.password, config.bcryptRounds);
 
     // Insert user — pending, not active, until an n+1 activates the account.
-    const result = await DatabaseService.query<{ id: number }>(
-      // Booleans are bound as params (not `0`/`1`/`TRUE` literals) so the driver's own
-      // type binding handles mssql BIT vs pg boolean without a dialect branch here.
-      IS_PG
-        ? `INSERT INTO users (
-            tenant_id, email, username, password_hash, display_name, role,
-            enterprise_id, direction_id, service_id, is_active, status
-          )
-          VALUES (
-            @tenantId, @email, @username, @passwordHash, @displayName, @role,
-            @enterpriseId, @directionId, @serviceId, @isActive, 'pending'
-          )
-          RETURNING id`
-        : `INSERT INTO users (
-            tenant_id, email, username, password_hash, display_name, role,
-            enterprise_id, direction_id, service_id, is_active, status
-          )
-          OUTPUT INSERTED.id
-          VALUES (
-            @tenantId, @email, @username, @passwordHash, @displayName, @role,
-            @enterpriseId, @directionId, @serviceId, @isActive, 'pending'
-          )`,
-      {
-        tenantId: data.tenantId,
-        email: data.email,
-        username: generatedUsername,
-        passwordHash,
-        displayName: data.displayName,
-        role: data.role || 'agent',
-        enterpriseId: data.enterpriseId || null,
-        directionId: data.directionId || null,
-        serviceId: data.serviceId || null,
-        isActive: false,
+    let result: { id: number }[];
+    try {
+      result = await DatabaseService.query<{ id: number }>(
+        // Booleans are bound as params (not `0`/`1`/`TRUE` literals) so the driver's own
+        // type binding handles mssql BIT vs pg boolean without a dialect branch here.
+        IS_PG
+          ? `INSERT INTO users (
+              tenant_id, email, username, password_hash, display_name, role,
+              enterprise_id, direction_id, service_id, is_active, status
+            )
+            VALUES (
+              @tenantId, @email, @username, @passwordHash, @displayName, @role,
+              @enterpriseId, @directionId, @serviceId, @isActive, 'pending'
+            )
+            RETURNING id`
+          : `INSERT INTO users (
+              tenant_id, email, username, password_hash, display_name, role,
+              enterprise_id, direction_id, service_id, is_active, status
+            )
+            OUTPUT INSERTED.id
+            VALUES (
+              @tenantId, @email, @username, @passwordHash, @displayName, @role,
+              @enterpriseId, @directionId, @serviceId, @isActive, 'pending'
+            )`,
+        {
+          tenantId: data.tenantId,
+          email: data.email,
+          username: generatedUsername,
+          passwordHash,
+          displayName: data.displayName,
+          role: data.role || 'agent',
+          enterpriseId: data.enterpriseId || null,
+          directionId: data.directionId || null,
+          serviceId: data.serviceId || null,
+          isActive: false,
+        }
+      );
+    } catch (error: any) {
+      // Belt-and-suspenders for a race between two concurrent registrations
+      // with the same email/username slipping past the checks above.
+      if (error?.code === '23505' || error?.number === 2627 || error?.number === 2601) {
+        throw ConflictError('Email already registered');
       }
-    );
+      throw error;
+    }
 
     const userId = result[0].id;
 
@@ -676,6 +691,17 @@ export class AuthService {
 
     const resetUrl = `${config.frontendUrl}/reset-password?token=${resetToken}`;
 
+    // Outside production there's usually no real SMTP configured, so the email
+    // below silently fails to send — log the link so the flow stays testable
+    // without standing up a mail server. Never do this in production: it would
+    // put a live, replayable reset link in plaintext logs.
+    if (config.nodeEnv !== 'production') {
+      logger.info('Password reset link generated (dev-only log, not shown in production)', {
+        userId: user.id,
+        resetUrl,
+      });
+    }
+
     // Best-effort: a failed email must never reveal whether the account exists
     // (the caller always gets the same generic message either way).
     NotificationService.send({
@@ -686,7 +712,11 @@ export class AuthService {
       body: `Vous avez demandé la réinitialisation de votre mot de passe. Cliquez sur le lien ci-dessous pour choisir un nouveau mot de passe (valable 1 heure) :\n\n${resetUrl}\n\nSi vous n'êtes pas à l'origine de cette demande, ignorez cet email.`,
       actionUrl: resetUrl,
     }).catch((error) => {
-      logger.error('Failed to send password reset email', { error, userId: user.id });
+      logger.error('Failed to send password reset email', {
+        error,
+        userId: user.id,
+        resetUrl: config.nodeEnv !== 'production' ? resetUrl : undefined,
+      });
     });
 
     return 'If the email exists, a reset link will be sent';

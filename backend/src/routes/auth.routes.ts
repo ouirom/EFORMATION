@@ -32,6 +32,15 @@ const validate = (req: any) => {
   }
 };
 
+// Mirrors the complexity rules the frontend already displays/enforces
+// (RegisterPage.tsx's passwordRequirements) -- without this, those rules were
+// purely cosmetic and any client hitting the API directly could set a
+// password as weak as "aaaaaaaa".
+const isComplexPassword = (value: string) =>
+  /[A-Z]/.test(value) && /[a-z]/.test(value) && /\d/.test(value) && /[!@#$%^&*(),.?":{}|<>]/.test(value);
+const passwordComplexityMessage =
+  'Password must contain an uppercase letter, a lowercase letter, a digit, and a special character';
+
 /**
  * @route POST /api/v1/auth/register
  * @desc Register a new user
@@ -41,7 +50,12 @@ router.post(
   authLimiter,
   [
     body('email').isEmail().normalizeEmail(),
-    body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
+    body('password')
+      .isLength({ min: 8 })
+      .withMessage('Password must be at least 8 characters')
+      .bail()
+      .custom(isComplexPassword)
+      .withMessage(passwordComplexityMessage),
     body('displayName').notEmpty().trim(),
     body('username').optional().trim(),
   ],
@@ -290,9 +304,15 @@ router.post(
  */
 router.post(
   '/reset-password',
+  authLimiter,
   [
     body('token').notEmpty(),
-    body('newPassword').isLength({ min: 8 }),
+    body('newPassword')
+      .isLength({ min: 8 })
+      .withMessage('Password must be at least 8 characters')
+      .bail()
+      .custom(isComplexPassword)
+      .withMessage(passwordComplexityMessage),
   ],
   async (req, res, next) => {
     try {

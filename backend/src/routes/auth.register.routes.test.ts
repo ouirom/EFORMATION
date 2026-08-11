@@ -41,7 +41,7 @@ describe('POST /auth/register', () => {
     const response = await request(makeApp())
       .post('/auth/register')
       .set('X-Tenant-Id', '10')
-      .send({ email: 'new@test.com', password: 'password123', displayName: 'New User' });
+      .send({ email: 'new@test.com', password: 'Password123!', displayName: 'New User' });
 
     expect(response.status).toBe(201);
     expect(response.body.data.pending).toBe(true);
@@ -69,7 +69,7 @@ describe('POST /auth/register', () => {
     await request(makeApp())
       .post('/auth/register')
       .set('X-Tenant-Id', '10')
-      .send({ email: 'new2@test.com', password: 'password123', displayName: 'New User 2' });
+      .send({ email: 'new2@test.com', password: 'Password123!', displayName: 'New User 2' });
 
     // notifyApproversOfPendingRegistration is fire-and-forget; give its microtasks a tick.
     await new Promise((resolve) => setImmediate(resolve));
@@ -87,9 +87,40 @@ describe('POST /auth/register', () => {
     const response = await request(makeApp())
       .post('/auth/register')
       .set('X-Tenant-Id', '10')
-      .send({ email: 'existing@test.com', password: 'password123', displayName: 'Dup' });
+      .send({ email: 'existing@test.com', password: 'Password123!', displayName: 'Dup' });
 
     expect(response.status).toBe(409);
+  });
+
+  it('rejects an email already used in a different tenant (users.email is globally unique)', async () => {
+    // Simulates an email registered under tenant 20 colliding with a new signup
+    // against tenant 10 -- the duplicate check must not be tenant-scoped, since
+    // the DB's UNIQUE constraint on users.email isn't either.
+    mockedQuery.mockImplementation((query: string) => {
+      if (query.includes('SELECT id FROM users WHERE email')) return Promise.resolve([{ id: 1 }]);
+      return Promise.resolve([]);
+    });
+
+    const response = await request(makeApp())
+      .post('/auth/register')
+      .set('X-Tenant-Id', '10')
+      .send({ email: 'cross-tenant@test.com', password: 'Password123!', displayName: 'Cross Tenant' });
+
+    expect(response.status).toBe(409);
+    const emailCheckCall = mockedQuery.mock.calls.find(([q]: [string]) =>
+      q.includes('SELECT id FROM users WHERE email')
+    );
+    expect(emailCheckCall[0]).not.toContain('tenant_id');
+  });
+
+  it('rejects a weak password before checking the database', async () => {
+    const response = await request(makeApp())
+      .post('/auth/register')
+      .set('X-Tenant-Id', '10')
+      .send({ email: 'weak@test.com', password: 'password123', displayName: 'Weak' });
+
+    expect(response.status).toBe(400);
+    expect(mockedQuery).not.toHaveBeenCalled();
   });
 });
 
