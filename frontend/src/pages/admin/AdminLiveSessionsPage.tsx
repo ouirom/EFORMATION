@@ -56,6 +56,135 @@ interface LiveSession {
   courseName?: string
 }
 
+interface SessionFormData {
+  title: string
+  description: string
+  instructorId: string
+  scheduledAt: string
+  duration: number
+  meetingUrl: string
+  maxParticipants: number
+  courseId: string
+}
+
+// Hoisted out of AdminLiveSessionsPage: defining this inline in the parent's render
+// body gave it a new function identity on every render, so React treated it as a
+// brand-new component type each time and remounted the whole form -- every keystroke
+// in any field (title, date, description...) lost focus immediately after landing,
+// making the form effectively impossible to type into. Keeping this as a stable,
+// top-level component (state lives in the parent, passed down as props) fixes that.
+function SessionForm({
+  formData,
+  setFormData,
+  users,
+  courses,
+  isEditing,
+}: {
+  formData: SessionFormData
+  setFormData: (data: SessionFormData) => void
+  users: any[]
+  courses: any[]
+  isEditing: boolean
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <Label>Titre de la session</Label>
+        <Input
+          value={formData.title}
+          onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+          placeholder="Ex: Introduction à React - Session Live"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label>Description</Label>
+        <Textarea
+          value={formData.description}
+          onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+          placeholder="Description de la session..."
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label>Instructeur</Label>
+          <Select value={formData.instructorId} onValueChange={(v) => setFormData({ ...formData, instructorId: v })}>
+            <SelectTrigger>
+              <SelectValue placeholder="Sélectionner un instructeur" />
+            </SelectTrigger>
+            <SelectContent>
+              {users
+                .filter((u: any) => ['super_admin', 'admin', 'director', 'manager'].includes(u.role))
+                .map((user: any) => (
+                  <SelectItem key={user.id} value={user.id.toString()}>
+                    {user.display_name}
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label>Cours associé (optionnel)</Label>
+          <Select value={formData.courseId} onValueChange={(v) => setFormData({ ...formData, courseId: v })}>
+            <SelectTrigger>
+              <SelectValue placeholder="Aucun cours" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Aucun</SelectItem>
+              {courses.map((course: any) => (
+                <SelectItem key={course.id} value={course.id.toString()}>
+                  {course.title}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label>Date et heure {!isEditing && <span className="text-destructive">*</span>}</Label>
+          <Input
+            type="datetime-local"
+            value={formData.scheduledAt}
+            onChange={(e) => setFormData({ ...formData, scheduledAt: e.target.value })}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Durée (minutes)</Label>
+          <Input
+            type="number"
+            min={15}
+            value={formData.duration}
+            onChange={(e) => setFormData({ ...formData, duration: parseInt(e.target.value) })}
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label>URL de la réunion</Label>
+          <Input
+            value={formData.meetingUrl}
+            onChange={(e) => setFormData({ ...formData, meetingUrl: e.target.value })}
+            placeholder="https://meet.google.com/..."
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Participants max</Label>
+          <Input
+            type="number"
+            min={1}
+            value={formData.maxParticipants}
+            onChange={(e) => setFormData({ ...formData, maxParticipants: parseInt(e.target.value) })}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function AdminLiveSessionsPage() {
   const { toast } = useToast()
   const queryClient = useQueryClient()
@@ -252,104 +381,6 @@ export default function AdminLiveSessionsPage() {
   const liveCount = sessions.filter((s) => s.status === 'live').length
   const completedCount = sessions.filter((s) => s.status === 'ended').length
 
-  const SessionForm = () => (
-    <div className="space-y-4">
-      <div className="space-y-2">
-        <Label>Titre de la session</Label>
-        <Input
-          value={formData.title}
-          onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-          placeholder="Ex: Introduction à React - Session Live"
-        />
-      </div>
-
-      <div className="space-y-2">
-        <Label>Description</Label>
-        <Textarea
-          value={formData.description}
-          onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-          placeholder="Description de la session..."
-        />
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label>Instructeur</Label>
-          <Select value={formData.instructorId} onValueChange={(v) => setFormData({ ...formData, instructorId: v })}>
-            <SelectTrigger>
-              <SelectValue placeholder="Sélectionner un instructeur" />
-            </SelectTrigger>
-            <SelectContent>
-              {users
-                .filter((u: any) => ['super_admin', 'admin', 'director', 'manager'].includes(u.role))
-                .map((user: any) => (
-                  <SelectItem key={user.id} value={user.id.toString()}>
-                    {user.display_name}
-                  </SelectItem>
-                ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <Label>Cours associé (optionnel)</Label>
-          <Select value={formData.courseId} onValueChange={(v) => setFormData({ ...formData, courseId: v })}>
-            <SelectTrigger>
-              <SelectValue placeholder="Aucun cours" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">Aucun</SelectItem>
-              {courses.map((course: any) => (
-                <SelectItem key={course.id} value={course.id.toString()}>
-                  {course.title}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label>Date et heure {!editingSession && <span className="text-destructive">*</span>}</Label>
-          <Input
-            type="datetime-local"
-            value={formData.scheduledAt}
-            onChange={(e) => setFormData({ ...formData, scheduledAt: e.target.value })}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label>Durée (minutes)</Label>
-          <Input
-            type="number"
-            min={15}
-            value={formData.duration}
-            onChange={(e) => setFormData({ ...formData, duration: parseInt(e.target.value) })}
-          />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label>URL de la réunion</Label>
-          <Input
-            value={formData.meetingUrl}
-            onChange={(e) => setFormData({ ...formData, meetingUrl: e.target.value })}
-            placeholder="https://meet.google.com/..."
-          />
-        </div>
-        <div className="space-y-2">
-          <Label>Participants max</Label>
-          <Input
-            type="number"
-            min={1}
-            value={formData.maxParticipants}
-            onChange={(e) => setFormData({ ...formData, maxParticipants: parseInt(e.target.value) })}
-          />
-        </div>
-      </div>
-    </div>
-  )
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -372,7 +403,7 @@ export default function AdminLiveSessionsPage() {
                 Planifiez une nouvelle session de formation en direct
               </DialogDescription>
             </DialogHeader>
-            <SessionForm />
+            <SessionForm formData={formData} setFormData={setFormData} users={users} courses={courses} isEditing={false} />
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
                 Annuler
@@ -590,7 +621,7 @@ export default function AdminLiveSessionsPage() {
           <DialogHeader>
             <DialogTitle>Modifier la session</DialogTitle>
           </DialogHeader>
-          <SessionForm />
+          <SessionForm formData={formData} setFormData={setFormData} users={users} courses={courses} isEditing={true} />
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingSession(null)}>
               Annuler
