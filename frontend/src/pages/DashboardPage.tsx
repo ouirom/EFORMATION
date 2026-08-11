@@ -75,9 +75,11 @@ export default function DashboardPage() {
               
               return {
                 ...course,
-                // Assurer que les propriétés obligatoires existent
-                required: course.required || false,
-                recommended: course.recommended || false,
+                // /assignments/my-courses only reports isMandatory (no separate
+                // "recommended" flag exists in the data model) — an assigned course
+                // is either mandatory or, by elimination, recommended.
+                required: course.isMandatory === true,
+                recommended: course.isMandatory !== true,
                 category: course.category || 'Formation',
                 // Progression
                 progress: progressPercent,
@@ -96,9 +98,8 @@ export default function DashboardPage() {
         
         return coursesList.map((course: any) => ({
           ...course,
-          // Assurer que les propriétés obligatoires existent
-          required: course.required || false,
-          recommended: course.recommended || false,
+          required: course.isMandatory === true,
+          recommended: course.isMandatory !== true,
           category: course.category || 'Formation',
           progress: 0,
           completedLessons: 0,

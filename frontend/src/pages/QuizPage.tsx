@@ -73,12 +73,45 @@ interface Quiz {
   description?: string
   passing_score: number // API returns 'passing_score' not 'passingScore'
   time_limit_minutes?: number
+  max_attempts?: number
   questions: Question[]
 }
 
 interface Answer {
   questionId: number
   answer: string | string[]
+}
+
+interface StoredProgress {
+  attemptId: number
+  answers: Answer[]
+  currentQuestion: number
+  quizStartAt: number
+  deadlineAt: number | null
+}
+
+function progressKey(quizId: string | undefined) {
+  return `quiz-progress-${quizId}`
+}
+
+function loadProgress(quizId: string | undefined): StoredProgress | null {
+  if (!quizId) return null
+  try {
+    const raw = localStorage.getItem(progressKey(quizId))
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+function saveProgress(quizId: string | undefined, progress: StoredProgress) {
+  if (!quizId) return
+  localStorage.setItem(progressKey(quizId), JSON.stringify(progress))
+}
+
+function clearProgress(quizId: string | undefined) {
+  if (!quizId) return
+  localStorage.removeItem(progressKey(quizId))
 }
 
 export default function QuizPage() {
@@ -105,16 +138,42 @@ export default function QuizPage() {
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null)
   const [timerActive, setTimerActive] = useState(false)
   const [result, setResult] = useState<any>(null)
+  const [attemptId, setAttemptId] = useState<number | null>(null)
+  const [quizStartAt, setQuizStartAt] = useState<number | null>(null)
+  const [deadlineAt, setDeadlineAt] = useState<number | null>(null)
 
-  // Reset state when quizId changes to avoid leaking result/answers between quizzes
+  // Reset state when quizId changes, restoring any in-progress attempt saved locally
+  // (survives a page reload or a session-timeout logout/login) instead of just discarding it.
   React.useEffect(() => {
-    setQuizStarted(false);
     setQuizSubmitted(false);
     setResult(null);
-    setAnswers([]);
-    setCurrentQuestion(0);
-    setTimeRemaining(null);
-    setTimerActive(false);
+
+    const saved = loadProgress(quizId);
+    if (saved) {
+      setAttemptId(saved.attemptId);
+      setAnswers(saved.answers);
+      setCurrentQuestion(saved.currentQuestion);
+      setQuizStartAt(saved.quizStartAt);
+      setDeadlineAt(saved.deadlineAt);
+      if (saved.deadlineAt) {
+        const remaining = Math.max(0, Math.floor((saved.deadlineAt - Date.now()) / 1000));
+        setTimeRemaining(remaining);
+        setTimerActive(true);
+      } else {
+        setTimeRemaining(null);
+        setTimerActive(false);
+      }
+      setQuizStarted(true);
+    } else {
+      setQuizStarted(false);
+      setAnswers([]);
+      setCurrentQuestion(0);
+      setAttemptId(null);
+      setQuizStartAt(null);
+      setDeadlineAt(null);
+      setTimeRemaining(null);
+      setTimerActive(false);
+    }
   }, [quizId]);
 
   // Confirmation avant de quitter la page si le quiz est en cours
@@ -141,61 +200,95 @@ export default function QuizPage() {
       return () => unblock();
     }
   }, [quizStarted, quizSubmitted, blocker]);
-// Bloc de mock data supprimé, à replacer dans un objet ou hook valide si besoin
-  // Chargement du quiz depuis l'API réelle selon quizId
+  // Chargement du quiz depuis l'API réelle selon quizId. Une fois l'attempt démarré
+  // (attemptId défini), on refetch avec l'attemptId pour recevoir exactement le jeu de
+  // questions tiré et enregistré côté serveur pour cette tentative.
   const { data: quiz, isLoading } = useQuery<Quiz>({
-    queryKey: ['quiz', quizId],
+    queryKey: ['quiz-take', quizId, attemptId],
     queryFn: async () => {
-      const response = await api.get(`/quizzes/${quizId}`);
+      const url = attemptId
+        ? `/quizzes/${quizId}/take?attemptId=${attemptId}`
+        : `/quizzes/${quizId}/take`;
+      const response = await api.get(url);
       return response.data.data;
     },
     enabled: !!quizId
+  });
+
+  const beginMutation = useMutation({
+    mutationFn: async () => {
+      const response = await api.post('/attempts/begin', { quizId: parseInt(quizId || '0') });
+      return response.data.data as { attemptId: number; timeLimitMinutes?: number; maxAttempts?: number };
+    },
+    onSuccess: (data) => {
+      const startAt = Date.now();
+      const deadline = data.timeLimitMinutes ? startAt + data.timeLimitMinutes * 60 * 1000 : null;
+
+      setAttemptId(data.attemptId);
+      setQuizStarted(true);
+      setQuizSubmitted(false);
+      setResult(null);
+      setAnswers([]);
+      setCurrentQuestion(0);
+      setQuizStartAt(startAt);
+      setDeadlineAt(deadline);
+      setTimeRemaining(deadline ? data.timeLimitMinutes! * 60 : null);
+      setTimerActive(!!deadline);
+
+      saveProgress(quizId, {
+        attemptId: data.attemptId,
+        answers: [],
+        currentQuestion: 0,
+        quizStartAt: startAt,
+        deadlineAt: deadline,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Erreur',
+        description: error.response?.data?.error?.message || 'Impossible de démarrer le quiz',
+        variant: 'destructive',
+      });
+    },
   });
 
   const submitMutation = useMutation({
     mutationFn: async (submissionData: { answers: Answer[], timeSpent: number }) => {
       const response = await api.post(`/attempts`, {
         quizId: parseInt(quizId || '0'),
+        attemptId,
         answers: submissionData.answers,
         timeSpent: submissionData.timeSpent,
       });
-      // Accepte les deux structures de réponse (data.data ou data)
-      if (response.data?.data) return response.data.data;
-      if (response.data) return response.data;
-
-      // Calcul mock côté frontend si pas de backend
-      if (!quiz) return null;
-      let correctCount = 0;
-      const feedback = quiz.questions.map((q) => {
-        const userAnswer = submissionData.answers.find((a) => a.questionId === q.id)?.answer;
-        let isCorrect = false;
-        let correctAnswer = '';
-        if (q.type === 'mcq') {
-          const right = q.choices[0]; // On suppose le premier est la bonne réponse dans le mock
-          correctAnswer = right.label;
-          isCorrect = String(userAnswer) === String(right.id);
-        } else if (q.type === 'true_false') {
-          const right = q.choices[0];
-          correctAnswer = right.label;
-          isCorrect = String(userAnswer) === String(right.id);
-        }
-        if (isCorrect) correctCount++;
-        return {
-          questionId: q.id,
-          correct: isCorrect,
-          correctAnswer,
-        };
+      return response.data.data;
+    },
+    onError: (error: any) => {
+      const code = error.response?.data?.error?.code;
+      toast({
+        title: 'Erreur',
+        description:
+          code === 'MAX_ATTEMPTS_REACHED' || code === 'TIME_LIMIT_EXCEEDED'
+            ? error.response.data.error.message
+            : "Impossible de soumettre le quiz",
+        variant: 'destructive',
       });
-      const score = Math.round((correctCount / quiz.questions.length) * 100);
-      return {
-        score,
-        passed: score >= quiz.passing_score,
-        totalQuestions: quiz.questions.length,
-        correctAnswers: correctCount,
-        feedback,
-      };
+      if (code === 'TIME_LIMIT_EXCEEDED' || code === 'MAX_ATTEMPTS_REACHED') {
+        // The attempt this was tied to is no longer valid server-side — reset to the
+        // intro screen (in place) rather than relying on browser history via navigate(-1),
+        // which may not land back on this quiz at all.
+        clearProgress(quizId);
+        setQuizStarted(false);
+        setAnswers([]);
+        setCurrentQuestion(0);
+        setAttemptId(null);
+        setQuizStartAt(null);
+        setDeadlineAt(null);
+        setTimeRemaining(null);
+        setTimerActive(false);
+      }
     },
     onSuccess: async (data) => {
+      clearProgress(quizId);
       // Award badges based on quiz performance
       try {
         const badgeResponse = await api.post('/badges/award-quiz', {
@@ -227,42 +320,33 @@ export default function QuizPage() {
     },
   })
 
-  // Timer effect - removed since we don't have timeLimit from API
-  // Users can take their time
-
   const handleStartQuiz = () => {
-    setQuizStarted(true)
-    setQuizSubmitted(false)
-    setResult(null)
-    setAnswers([])
-    setCurrentQuestion(0)
-    if (quiz && quiz.time_limit_minutes) {
-      setTimeRemaining(quiz.time_limit_minutes * 60)
-      setTimerActive(true)
-    } else {
-      setTimeRemaining(null)
-      setTimerActive(false)
-    }
+    beginMutation.mutate()
   }
 
   const handleAnswer = (questionId: number, answer: string | string[]) => {
     setAnswers((prev) => {
       const existing = prev.findIndex((a) => a.questionId === questionId)
-      if (existing >= 0) {
-        const updated = [...prev]
-        updated[existing] = { questionId, answer }
-        return updated
-      }
-      return [...prev, { questionId, answer }]
+      return existing >= 0
+        ? prev.map((a, i) => (i === existing ? { questionId, answer } : a))
+        : [...prev, { questionId, answer }]
     })
   }
 
+  // Persist progress (answers, position, deadline) on every change — so a reload,
+  // a session timeout, or the browser closing doesn't lose an in-progress attempt.
+  React.useEffect(() => {
+    if (!attemptId || !quizStartAt || quizSubmitted) return
+    saveProgress(quizId, { attemptId, answers, currentQuestion, quizStartAt, deadlineAt })
+  }, [quizId, attemptId, quizStartAt, deadlineAt, answers, currentQuestion, quizSubmitted])
+
   const handleSubmit = () => {
-    const timeSpent = 0 // No time tracking
+    const timeSpent = quizStartAt ? Math.round((Date.now() - quizStartAt) / 1000) : 0
     submitMutation.mutate({ answers, timeSpent })
   }
 
   const handleRetry = () => {
+    clearProgress(quizId)
     setQuizStarted(false)
     setQuizSubmitted(false)
     setResult(null)
@@ -270,6 +354,9 @@ export default function QuizPage() {
     setCurrentQuestion(0)
     setTimeRemaining(null)
     setTimerActive(false)
+    setAttemptId(null)
+    setQuizStartAt(null)
+    setDeadlineAt(null)
   }
   // Timer effect : auto-soumission si durée existe
   React.useEffect(() => {

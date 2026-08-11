@@ -3,6 +3,7 @@ import { body, param, query, validationResult } from 'express-validator';
 import { CourseService, ModuleService, LessonService, ContentService } from '../services/course.service';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.middleware';
 import { BadRequestError } from '../middleware/error.middleware';
+import { AuditService } from '../services/audit.service';
 
 const router = Router();
 
@@ -85,6 +86,10 @@ router.post(
         audienceScope: req.body.audienceScope,
         prerequisites: req.body.prerequisites,
         createdBy: req.user!.id,
+      });
+
+      await AuditService.log(req.user!.tenantId, req.user!.id, 'COURSE_CREATED', 'courses', course.id, {
+        title: course.title,
       });
 
       res.status(201).json({
@@ -181,6 +186,10 @@ router.put(
         req.user!.role
       );
 
+      await AuditService.log(req.user!.tenantId, req.user!.id, 'COURSE_UPDATED', 'courses', courseId, {
+        fields: Object.keys(req.body),
+      });
+
       res.json({
         success: true,
         data: course,
@@ -209,6 +218,8 @@ router.delete(
         req.user!.role
       );
 
+      await AuditService.log(req.user!.tenantId, req.user!.id, 'COURSE_DELETED', 'courses', courseId);
+
       res.json({
         success: true,
         message: 'Course deleted successfully',
@@ -232,6 +243,10 @@ router.post(
       const courseId = parseInt(req.params.id, 10);
       const course = await CourseService.publish(req.user!.tenantId, courseId);
 
+      await AuditService.log(req.user!.tenantId, req.user!.id, 'COURSE_PUBLISHED', 'courses', courseId, {
+        title: course.title,
+      });
+
       res.json({
         success: true,
         data: course,
@@ -254,6 +269,10 @@ router.post(
     try {
       const courseId = parseInt(req.params.id, 10);
       const course = await CourseService.unpublish(req.user!.tenantId, courseId);
+
+      await AuditService.log(req.user!.tenantId, req.user!.id, 'COURSE_UNPUBLISHED', 'courses', courseId, {
+        title: course.title,
+      });
 
       res.json({
         success: true,
@@ -283,6 +302,11 @@ router.post(
         req.body.title,
         req.user!.id
       );
+
+      await AuditService.log(req.user!.tenantId, req.user!.id, 'COURSE_CLONED', 'courses', course.id, {
+        sourceCourseId: courseId,
+        title: course.title,
+      });
 
       res.status(201).json({
         success: true,

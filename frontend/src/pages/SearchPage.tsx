@@ -45,45 +45,7 @@ export default function SearchPage() {
       const response = await api.get('/search', {
         params: { q: query, type: type === 'all' ? undefined : type },
       })
-      return response.data.data || [
-        // Mock data for demo
-        {
-          id: 1,
-          type: 'course',
-          title: 'Introduction à React',
-          description: 'Apprenez les fondamentaux de React et créez des applications modernes.',
-          url: '/courses/1',
-          metadata: { instructor: 'John Doe', duration: 10, level: 'Débutant' },
-          score: 0.95,
-        },
-        {
-          id: 2,
-          type: 'course',
-          title: 'Node.js Avancé',
-          description: 'Maîtrisez Node.js avec des patterns avancés et des bonnes pratiques.',
-          url: '/courses/2',
-          metadata: { instructor: 'Jane Smith', duration: 15, level: 'Avancé' },
-          score: 0.85,
-        },
-        {
-          id: 3,
-          type: 'blog',
-          title: 'Les meilleures pratiques TypeScript',
-          description: 'Découvrez comment tirer le meilleur parti de TypeScript dans vos projets.',
-          url: '/blog/1',
-          metadata: { author: 'Dev Team', date: '2024-01-15' },
-          score: 0.75,
-        },
-        {
-          id: 4,
-          type: 'user',
-          title: 'Marie Dupont',
-          description: 'Développeur Full Stack • 15 cours complétés',
-          url: '/users/4',
-          metadata: { role: 'learner', department: 'IT' },
-          score: 0.65,
-        },
-      ]
+      return response.data.data || []
     },
     enabled: query.length > 0,
   })

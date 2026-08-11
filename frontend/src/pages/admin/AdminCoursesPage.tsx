@@ -33,6 +33,7 @@ import {
   Users,
   Star,
   Eye,
+  EyeOff,
   Copy,
   Settings,
 } from 'lucide-react'
@@ -68,11 +69,15 @@ export default function AdminCoursesPage() {
     category: '',
     duration: '',
     level: 'beginner',
+    isPublished: false,
   })
 
   const { data, isLoading } = useQuery({
-    queryKey: ['admin-courses', { search, status: statusFilter, category: categoryFilter }],
-    queryFn: () => api.courses.list({ search }),
+    queryKey: ['admin-courses', { search, status: statusFilter }],
+    queryFn: () => api.courses.list({
+      search,
+      status: statusFilter !== 'all' ? statusFilter : undefined,
+    }),
   })
 
   // Mutations
@@ -132,10 +137,44 @@ export default function AdminCoursesPage() {
       toast({ title: 'Succès', description: 'Formation supprimée avec succès' })
     },
     onError: (error: any) => {
-      toast({ 
-        title: 'Erreur', 
+      toast({
+        title: 'Erreur',
         description: error.response?.data?.error?.message || 'Impossible de supprimer la formation',
         variant: 'destructive'
+      })
+    },
+  })
+
+  const togglePublishMutation = useMutation({
+    mutationFn: (course: any) =>
+      course.isPublished ? api.courses.unpublish(course.id) : api.courses.publish(course.id),
+    onSuccess: (_result, course) => {
+      queryClient.invalidateQueries({ queryKey: ['admin-courses'] })
+      toast({
+        title: 'Succès',
+        description: course.isPublished ? 'Formation dépubliée' : 'Formation publiée avec succès',
+      })
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Erreur',
+        description: error.response?.data?.error?.message || 'Impossible de changer le statut de publication',
+        variant: 'destructive',
+      })
+    },
+  })
+
+  const cloneMutation = useMutation({
+    mutationFn: (id: number) => api.courses.clone(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-courses'] })
+      toast({ title: 'Succès', description: 'Formation dupliquée avec succès' })
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Erreur',
+        description: error.response?.data?.error?.message || 'Impossible de dupliquer la formation',
+        variant: 'destructive',
       })
     },
   })
@@ -166,6 +205,7 @@ export default function AdminCoursesPage() {
       category: course.category || '',
       duration: course.duration || '',
       level: course.level || 'beginner',
+      isPublished: !!course.isPublished,
     })
     setIsEditDialogOpen(true)
   }
@@ -178,6 +218,7 @@ export default function AdminCoursesPage() {
       description: editCourse.description || undefined,
       category: editCourse.category || undefined,
       level: editCourse.level || undefined,
+      isPublished: editCourse.isPublished,
     }
     if (editCourse.duration && String(editCourse.duration).trim() !== '') {
       courseData.duration = parseInt(String(editCourse.duration), 10)
@@ -263,7 +304,7 @@ export default function AdminCoursesPage() {
               </div>
               <div>
                 <p className="text-2xl font-bold">
-                  {courses.filter((c: any) => c.status === 'published').length}
+                  {courses.filter((c: any) => c.isPublished).length}
                 </p>
                 <p className="text-sm text-muted-foreground">Publiés</p>
               </div>
@@ -278,7 +319,7 @@ export default function AdminCoursesPage() {
               </div>
               <div>
                 <p className="text-2xl font-bold">
-                  {courses.filter((c: any) => c.status === 'draft').length}
+                  {courses.filter((c: any) => !c.isPublished).length}
                 </p>
                 <p className="text-sm text-muted-foreground">Brouillons</p>
               </div>
@@ -293,7 +334,7 @@ export default function AdminCoursesPage() {
               </div>
               <div>
                 <p className="text-2xl font-bold">
-                  {courses.reduce((acc: number, c: any) => acc + c.enrolledCount, 0)}
+                  {courses.reduce((acc: number, c: any) => acc + (c.enrolledCount || 0), 0)}
                 </p>
                 <p className="text-sm text-muted-foreground">Total inscrits</p>
               </div>
@@ -427,12 +468,31 @@ export default function AdminCoursesPage() {
                             <Edit className="h-4 w-4 mr-2" />
                             Modifier les infos
                           </DropdownMenuItem>
-                          <DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => togglePublishMutation.mutate(course)}
+                            disabled={togglePublishMutation.isPending}
+                          >
+                            {course.isPublished ? (
+                              <>
+                                <EyeOff className="h-4 w-4 mr-2" />
+                                Dépublier
+                              </>
+                            ) : (
+                              <>
+                                <Eye className="h-4 w-4 mr-2" />
+                                Publier
+                              </>
+                            )}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => cloneMutation.mutate(course.id)}
+                            disabled={cloneMutation.isPending}
+                          >
                             <Copy className="h-4 w-4 mr-2" />
                             Dupliquer
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
-                          <DropdownMenuItem 
+                          <DropdownMenuItem
                             className="text-destructive"
                             onClick={() => handleDeleteCourse(course)}
                           >
@@ -609,13 +669,30 @@ export default function AdminCoursesPage() {
                 </Select>
               </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="editDuration">Durée estimée</Label>
-              <Input
-                id="editDuration"
-                value={editCourse.duration}
-                onChange={(e) => setEditCourse({ ...editCourse, duration: e.target.value })}
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="editDuration">Durée estimée</Label>
+                <Input
+                  id="editDuration"
+                  value={editCourse.duration}
+                  onChange={(e) => setEditCourse({ ...editCourse, duration: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="editStatus">Statut</Label>
+                <Select
+                  value={editCourse.isPublished ? 'published' : 'draft'}
+                  onValueChange={(value) => setEditCourse({ ...editCourse, isPublished: value === 'published' })}
+                >
+                  <SelectTrigger id="editStatus">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="draft">Brouillon</SelectItem>
+                    <SelectItem value="published">Publié</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
           <DialogFooter>

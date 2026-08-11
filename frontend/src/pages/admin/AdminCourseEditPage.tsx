@@ -65,6 +65,7 @@ interface Quiz {
   question_count: number
   time_limit_minutes?: number
   max_attempts?: number
+  questions_to_draw?: number | null
   expires_at?: string
   badge_id?: number
   certificate_enabled?: boolean
@@ -120,6 +121,7 @@ export default function AdminCourseEditPage() {
     instructions: '',
     passing_score: 70,
     randomized: false,
+    questions_to_draw: null as number | null,
     time_limit_minutes: null as number | null,
     max_attempts: 3,
     expires_at: '',
@@ -508,6 +510,7 @@ export default function AdminCourseEditPage() {
       instructions: '',
       passing_score: 70,
       randomized: false,
+      questions_to_draw: null,
       time_limit_minutes: null,
       max_attempts: 3,
       expires_at: '',
@@ -534,6 +537,7 @@ export default function AdminCourseEditPage() {
       instructions: quiz.instructions || '',
       passing_score: quiz.passing_score,
       randomized: quiz.randomized || false,
+      questions_to_draw: quiz.questions_to_draw ?? null,
       time_limit_minutes: quiz.time_limit_minutes || null,
       max_attempts: quiz.max_attempts || 3,
       expires_at: quiz.expires_at ? quiz.expires_at.split('T')[0] : '',
@@ -711,6 +715,7 @@ export default function AdminCourseEditPage() {
       showCorrectAnswers: quizForm.show_correct_answers,
       shuffleChoices: quizForm.shuffle_choices,
       maxAttempts: quizForm.max_attempts || 3,
+      questionsToDraw: quizForm.questions_to_draw || null,
     };
     if (quizForm.time_limit_minutes !== null && quizForm.time_limit_minutes !== undefined) {
       quizData.timeLimitMinutes = quizForm.time_limit_minutes;
@@ -1243,6 +1248,20 @@ export default function AdminCourseEditPage() {
                   placeholder="Ex: 3"
                 />
               </div>
+            </div>
+            <div>
+              <Label htmlFor="quiz-questions-to-draw">Questions tirées au hasard (sur la banque de questions)</Label>
+              <Input
+                id="quiz-questions-to-draw"
+                type="number"
+                min="1"
+                value={quizForm.questions_to_draw ?? ''}
+                onChange={(e) => setQuizForm({ ...quizForm, questions_to_draw: e.target.value ? parseInt(e.target.value) : null })}
+                placeholder="Laisser vide pour utiliser toutes les questions"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Chaque tentative tirera aléatoirement ce nombre de questions parmi celles du quiz.
+              </p>
             </div>
             <div>
               <Label htmlFor="quiz-expires-at">Date d'expiration</Label>
