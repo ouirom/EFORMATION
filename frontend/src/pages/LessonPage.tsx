@@ -386,6 +386,16 @@ export default function LessonPage() {
   const hasLinkContent = lesson.type === 'link' && !!mainContent?.url
   const hasImageContent = !!imageContent
 
+  // Quiz unlock requires both lesson completion AND having spent at least the
+  // lesson's estimated duration on it -- otherwise a learner could mark a lesson
+  // complete instantly (see "Marquer comme terminé" below) and skip straight to
+  // the quiz. Lessons with no duration_min set have no time requirement.
+  const requiredLessonSeconds = (lesson.duration_min || 0) * 60
+  const timeSpentSeconds = lessonProgress?.time_spent_seconds || 0
+  const lessonDurationReached = requiredLessonSeconds === 0 || timeSpentSeconds >= requiredLessonSeconds
+  const quizUnlocked = lessonProgress?.status === 'completed' && lessonDurationReached
+  const remainingLessonMinutes = Math.max(0, Math.ceil((requiredLessonSeconds - timeSpentSeconds) / 60))
+
   // Format time spent
   const formatTimeSpent = (seconds: number) => {
     if (!seconds) return '0 min'
@@ -757,31 +767,33 @@ export default function LessonPage() {
 
             {/* Quiz Section - Shows when lesson has quizzes */}
             {lesson.quizzes && lesson.quizzes.length > 0 && (
-              <Card className={lessonProgress?.status === 'completed' ? 'border-primary' : 'border-muted'}>
+              <Card className={quizUnlocked ? 'border-primary' : 'border-muted'}>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <ClipboardCheck className="h-5 w-5" />
                     Quiz d'évaluation
                   </CardTitle>
                   <CardDescription>
-                    {lessonProgress?.status === 'completed' 
+                    {quizUnlocked
                       ? 'Testez vos connaissances avec le quiz de cette leçon'
-                      : 'Terminez la leçon pour débloquer le quiz'
+                      : lessonProgress?.status !== 'completed'
+                        ? 'Terminez la leçon pour débloquer le quiz'
+                        : `Passez encore environ ${remainingLessonMinutes} minute(s) sur la leçon pour débloquer le quiz`
                     }
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {lesson.quizzes.map((quiz: any) => (
-                    <div 
-                      key={quiz.id} 
+                    <div
+                      key={quiz.id}
                       className={`flex items-center justify-between p-4 border rounded-lg ${
-                        lessonProgress?.status === 'completed' 
-                          ? 'bg-primary/5 hover:bg-primary/10 transition-colors' 
+                        quizUnlocked
+                          ? 'bg-primary/5 hover:bg-primary/10 transition-colors'
                           : 'bg-muted/50 opacity-60'
                       }`}
                     >
                       <div className="flex items-center gap-3">
-                        {lessonProgress?.status === 'completed' ? (
+                        {quizUnlocked ? (
                           <Trophy className="h-5 w-5 text-primary" />
                         ) : (
                           <Lock className="h-5 w-5 text-muted-foreground" />
@@ -793,7 +805,7 @@ export default function LessonPage() {
                           </p>
                         </div>
                       </div>
-                      {lessonProgress?.status === 'completed' ? (
+                      {quizUnlocked ? (
                         <Link to={`/quizzes/${quiz.id}`}>
                           <Button>
                             Commencer le quiz

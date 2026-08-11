@@ -18,6 +18,7 @@ export const QuizCreatePage: React.FC = () => {
     passingScore: 70,
     randomized: false,
     timeLimitMinutes: 0,
+    questionsToDraw: 0,
   });
   const [createdQuizId, setCreatedQuizId] = useState<number | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -63,6 +64,7 @@ export const QuizCreatePage: React.FC = () => {
       lessonId: parseInt(lessonId, 10),
       // FIX: 0 n'est pas une limite de temps valide → envoyer null
       timeLimitMinutes: formData.timeLimitMinutes > 0 ? formData.timeLimitMinutes : null,
+      questionsToDraw: formData.questionsToDraw > 0 ? formData.questionsToDraw : null,
     } as any);
   };
 
@@ -160,6 +162,22 @@ export const QuizCreatePage: React.FC = () => {
                 onChange={handleChange}
               />
             </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">
+              Nombre de questions par tentative (vide = toutes les questions)
+            </label>
+            <Input
+              name="questionsToDraw"
+              type="number"
+              min="0"
+              value={formData.questionsToDraw}
+              onChange={handleChange}
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Chaque tentative tirera aléatoirement ce nombre de questions parmi celles du quiz.
+            </p>
           </div>
 
           <div className="flex items-center gap-2">

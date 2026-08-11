@@ -49,6 +49,28 @@ router.post(
         }
       }
 
+      const lessons = await DatabaseService.query<{ duration_min: number | null }>(
+        'SELECT duration_min FROM lessons WHERE id = @lessonId',
+        { lessonId: quiz.lesson_id }
+      );
+      const requiredMinutes = lessons[0]?.duration_min || 0;
+      if (requiredMinutes > 0) {
+        const progress = await DatabaseService.query<{ time_spent_seconds: number }>(
+          'SELECT time_spent_seconds FROM lesson_progress WHERE lesson_id = @lessonId AND user_id = @userId',
+          { lessonId: quiz.lesson_id, userId: req.user!.id }
+        );
+        const spentSeconds = progress[0]?.time_spent_seconds || 0;
+        const requiredSeconds = requiredMinutes * 60;
+        if (spentSeconds < requiredSeconds) {
+          const remainingMinutes = Math.ceil((requiredSeconds - spentSeconds) / 60);
+          throw BadRequestError(
+            `Vous devez encore passer environ ${remainingMinutes} minute(s) sur la leçon avant d'accéder au quiz`,
+            'LESSON_DURATION_NOT_REACHED',
+            { requiredSeconds, spentSeconds }
+          );
+        }
+      }
+
       const allQuestions = await DatabaseService.query<{ id: number }>(
         'SELECT id FROM questions WHERE quiz_id = @quizId ORDER BY position',
         { quizId }

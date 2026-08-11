@@ -395,6 +395,7 @@ router.post(
     body('title').notEmpty().trim(),
     body('passingScore').optional().isInt({ min: 0, max: 100 }),
     body('randomized').optional().isBoolean(),
+    body('questionsToDraw').optional({ nullable: true }).isInt({ min: 1 }),
   ],
   async (req: AuthRequest, res, next) => {
     try {
@@ -402,18 +403,19 @@ router.post(
 
       const result = await DatabaseService.query<{ id: number }>(
         IS_PG
-          ? `INSERT INTO quizzes (tenant_id, lesson_id, title, passing_score, randomized)
-             VALUES (@tenantId, @lessonId, @title, @passingScore, @randomized)
+          ? `INSERT INTO quizzes (tenant_id, lesson_id, title, passing_score, randomized, questions_to_draw)
+             VALUES (@tenantId, @lessonId, @title, @passingScore, @randomized, @questionsToDraw)
              RETURNING id`
-          : `INSERT INTO quizzes (tenant_id, lesson_id, title, passing_score, randomized)
+          : `INSERT INTO quizzes (tenant_id, lesson_id, title, passing_score, randomized, questions_to_draw)
              OUTPUT INSERTED.id
-             VALUES (@tenantId, @lessonId, @title, @passingScore, @randomized)`,
+             VALUES (@tenantId, @lessonId, @title, @passingScore, @randomized, @questionsToDraw)`,
         {
           tenantId: req.user!.tenantId,
           lessonId: req.body.lessonId,
           title: req.body.title,
           passingScore: req.body.passingScore || 70,
           randomized: req.body.randomized || false,
+          questionsToDraw: req.body.questionsToDraw || null,
         }
       );
 
@@ -446,6 +448,7 @@ router.put(
     body('certificateEnabled').optional().isBoolean(),
     body('showCorrectAnswers').optional().isBoolean(),
     body('shuffleChoices').optional().isBoolean(),
+    body('questionsToDraw').optional({ nullable: true }).isInt({ min: 1 }),
   ],
   async (req: AuthRequest, res, next) => {
     try {
@@ -503,6 +506,10 @@ router.put(
       if (req.body.shuffleChoices !== undefined) {
         updateFields.push('shuffle_choices = @shuffleChoices');
         params.shuffleChoices = req.body.shuffleChoices;
+      }
+      if (req.body.questionsToDraw !== undefined) {
+        updateFields.push('questions_to_draw = @questionsToDraw');
+        params.questionsToDraw = req.body.questionsToDraw || null;
       }
 
       if (updateFields.length > 0) {
