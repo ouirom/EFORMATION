@@ -182,12 +182,12 @@ export default function AdminLiveSessionsPage() {
     setEditingSession(session)
     setFormData({
       title: session.title,
-      description: session.description,
+      description: session.description || '',
       instructorId: session.instructorId.toString(),
       scheduledAt: new Date(session.scheduledAt).toISOString().slice(0, 16),
-      duration: session.duration,
-      meetingUrl: session.meetingUrl,
-      maxParticipants: session.maxParticipants,
+      duration: session.duration || 60,
+      meetingUrl: session.meetingUrl || '',
+      maxParticipants: session.maxParticipants || 100,
       courseId: session.courseId?.toString() || 'none',
     })
   }
@@ -264,11 +264,13 @@ export default function AdminLiveSessionsPage() {
               <SelectValue placeholder="Sélectionner un instructeur" />
             </SelectTrigger>
             <SelectContent>
-              {users.filter((u: any) => u.role === 'instructor' || u.role === 'admin').map((user: any) => (
-                <SelectItem key={user.id} value={user.id.toString()}>
-                  {user.firstName} {user.lastName}
-                </SelectItem>
-              ))}
+              {users
+                .filter((u: any) => ['super_admin', 'admin', 'director', 'manager'].includes(u.role))
+                .map((user: any) => (
+                  <SelectItem key={user.id} value={user.id.toString()}>
+                    {user.display_name}
+                  </SelectItem>
+                ))}
             </SelectContent>
           </Select>
         </div>

@@ -149,6 +149,7 @@ router.post(
     body('description').optional({ nullable: true }).trim(),
     body('courseId').optional({ nullable: true }).isInt(),
     body('moduleId').optional({ nullable: true }).isInt(),
+    body('instructorId').optional({ nullable: true }).isInt(),
     body('scheduledAt').optional({ nullable: true }).isISO8601(),
     body('duration').optional({ nullable: true }).isInt({ min: 1 }),
     body('maxParticipants').optional({ nullable: true }).isInt({ min: 1 }),
@@ -158,6 +159,23 @@ router.post(
   async (req: AuthRequest, res, next) => {
     try {
       validate(req);
+
+      // instructorId lets the creator schedule a session hosted by someone else (e.g. an
+      // admin scheduling on behalf of a manager who will actually run it) -- defaults to
+      // the creator when not given. Only /:id/start and /:id/end check organizer_id, so
+      // getting this right matters for who can actually run the session afterward.
+      let organizerId = req.user!.id;
+      if (req.body.instructorId) {
+        const instructors = await DatabaseService.query<any>(
+          `SELECT id FROM users WHERE id = @instructorId AND tenant_id = @tenantId
+           AND role IN ('super_admin', 'admin', 'director', 'manager')`,
+          { instructorId: req.body.instructorId, tenantId: req.user!.tenantId }
+        );
+        if (instructors.length === 0) {
+          throw BadRequestError('Invalid instructor');
+        }
+        organizerId = req.body.instructorId;
+      }
 
       const result = await DatabaseService.query<{ id: number }>(
         IS_PG
@@ -187,18 +205,18 @@ router.post(
           moduleId: req.body.moduleId || null,
           scheduledAt: req.body.scheduledAt ? new Date(req.body.scheduledAt) : null,
           duration: req.body.duration || null,
-          organizerId: req.user!.id,
+          organizerId,
           meetingProvider: req.body.meetingProvider || 'webrtc',
           meetingLink: req.body.meetingUrl || null,
           maxParticipants: req.body.maxParticipants || null,
         }
       );
 
-      // Add organizer as host
+      // Add the organizer (not necessarily the creator, see instructorId above) as host
       await DatabaseService.execute(
         `INSERT INTO live_participants (session_id, user_id, role)
          VALUES (@sessionId, @userId, 'host')`,
-        { sessionId: result[0].id, userId: req.user!.id }
+        { sessionId: result[0].id, userId: organizerId }
       );
 
       const session = await DatabaseService.query<any>(
@@ -256,12 +274,45 @@ router.put(
         updateFields.push('meeting_link = @meetingLink');
         params.meetingLink = req.body.meetingUrl;
       }
+      let newOrganizerId: number | null = null;
+      if (req.body.instructorId) {
+        const instructors = await DatabaseService.query<any>(
+          `SELECT id FROM users WHERE id = @instructorId AND tenant_id = @tenantId
+           AND role IN ('super_admin', 'admin', 'director', 'manager')`,
+          { instructorId: req.body.instructorId, tenantId: req.user!.tenantId }
+        );
+        if (instructors.length === 0) {
+          throw BadRequestError('Invalid instructor');
+        }
+        newOrganizerId = req.body.instructorId;
+        updateFields.push('organizer_id = @organizerId');
+        params.organizerId = newOrganizerId;
+      }
 
       if (updateFields.length > 0) {
         await DatabaseService.execute(
           `UPDATE live_sessions SET ${updateFields.join(', ')} WHERE id = @sessionId AND tenant_id = @tenantId`,
           params
         );
+      }
+
+      if (newOrganizerId !== null) {
+        // Keep live_participants' host row in sync with the reassigned organizer.
+        const existingHost = await DatabaseService.query<any>(
+          `SELECT session_id FROM live_participants WHERE session_id = @sessionId AND user_id = @userId`,
+          { sessionId, userId: newOrganizerId }
+        );
+        if (existingHost.length > 0) {
+          await DatabaseService.execute(
+            `UPDATE live_participants SET role = 'host' WHERE session_id = @sessionId AND user_id = @userId`,
+            { sessionId, userId: newOrganizerId }
+          );
+        } else {
+          await DatabaseService.execute(
+            `INSERT INTO live_participants (session_id, user_id, role) VALUES (@sessionId, @userId, 'host')`,
+            { sessionId, userId: newOrganizerId }
+          );
+        }
       }
 
       const session = await DatabaseService.query<any>(
@@ -281,6 +332,41 @@ router.put(
 );
 
 /**
+ * @route DELETE /api/v1/live-sessions/:id
+ * @desc Delete a live session (and its participants/breakout rooms/recordings/whiteboard --
+ * none of those child tables have ON DELETE CASCADE, so they're cleared first or the
+ * DELETE on live_sessions itself would fail with a foreign-key violation)
+ */
+router.delete(
+  '/:id',
+  authenticate,
+  authorize('admin', 'director', 'manager'),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const sessionId = parseInt(req.params.id, 10);
+
+      const sessions = await DatabaseService.query<any>(
+        'SELECT id FROM live_sessions WHERE id = @sessionId AND tenant_id = @tenantId',
+        { sessionId, tenantId: req.user!.tenantId }
+      );
+      if (sessions.length === 0) {
+        throw NotFoundError('Live session');
+      }
+
+      await DatabaseService.execute('DELETE FROM breakout_rooms WHERE session_id = @sessionId', { sessionId });
+      await DatabaseService.execute('DELETE FROM live_participants WHERE session_id = @sessionId', { sessionId });
+      await DatabaseService.execute('DELETE FROM live_recordings WHERE session_id = @sessionId', { sessionId });
+      await DatabaseService.execute('DELETE FROM whiteboards WHERE session_id = @sessionId', { sessionId });
+      await DatabaseService.execute('DELETE FROM live_sessions WHERE id = @sessionId AND tenant_id = @tenantId', { sessionId, tenantId: req.user!.tenantId });
+
+      res.json({ success: true, message: 'Live session deleted' });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
  * @route POST /api/v1/live-sessions/:id/start
  * @desc Start a live session
  */
@@ -288,10 +374,16 @@ router.post('/:id/start', authenticate, async (req: AuthRequest, res, next) => {
   try {
     const sessionId = parseInt(req.params.id, 10);
 
-    // Verify organizer
+    // The organizer can always start their own session; admin/director/manager can start
+    // any session in their tenant too (e.g. one they scheduled but assigned to someone
+    // else as instructor via instructorId -- without this, that session could never be
+    // started if the assigned instructor never logs in to do it themselves).
+    const isManager = ['super_admin', 'admin', 'director', 'manager'].includes(req.user!.role);
     const sessions = await DatabaseService.query<any>(
-      'SELECT * FROM live_sessions WHERE id = @sessionId AND organizer_id = @organizerId',
-      { sessionId, organizerId: req.user!.id }
+      isManager
+        ? 'SELECT * FROM live_sessions WHERE id = @sessionId AND tenant_id = @tenantId'
+        : 'SELECT * FROM live_sessions WHERE id = @sessionId AND organizer_id = @organizerId AND tenant_id = @tenantId',
+      { sessionId, organizerId: req.user!.id, tenantId: req.user!.tenantId }
     );
 
     if (sessions.length === 0) {
@@ -326,9 +418,12 @@ router.post('/:id/end', authenticate, async (req: AuthRequest, res, next) => {
   try {
     const sessionId = parseInt(req.params.id, 10);
 
-    // Verify organizer (mirrors the /:id/start check)
+    // Mirrors the /:id/start check: organizer, or any admin/director/manager in the tenant.
+    const isManager = ['super_admin', 'admin', 'director', 'manager'].includes(req.user!.role);
     const sessions = await DatabaseService.query<any>(
-      'SELECT id FROM live_sessions WHERE id = @sessionId AND organizer_id = @organizerId AND tenant_id = @tenantId',
+      isManager
+        ? 'SELECT id FROM live_sessions WHERE id = @sessionId AND tenant_id = @tenantId'
+        : 'SELECT id FROM live_sessions WHERE id = @sessionId AND organizer_id = @organizerId AND tenant_id = @tenantId',
       { sessionId, organizerId: req.user!.id, tenantId: req.user!.tenantId }
     );
 
@@ -455,6 +550,17 @@ router.post(
     try {
       validate(req);
       const sessionId = parseInt(req.params.id, 10);
+
+      // The session id comes straight from the URL param -- without this check, a caller
+      // could create a breakout room against a session belonging to a different tenant
+      // (the FK to live_sessions doesn't care about tenant, only that the id exists).
+      const sessions = await DatabaseService.query<any>(
+        'SELECT id FROM live_sessions WHERE id = @sessionId AND tenant_id = @tenantId',
+        { sessionId, tenantId: req.user!.tenantId }
+      );
+      if (sessions.length === 0) {
+        throw NotFoundError('Live session');
+      }
 
       const result = await DatabaseService.query<{ id: number }>(
         IS_PG
