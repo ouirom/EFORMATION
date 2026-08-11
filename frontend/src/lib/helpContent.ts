@@ -168,7 +168,16 @@ export const helpTopics: HelpTopic[] = [
     title: 'Sessions live',
     tips: [
       'Consultez les sessions à venir, en direct et les enregistrements passés.',
-      'Cliquez sur "Rejoindre" quand une session est en direct.',
+      'Cliquez sur une session pour voir son détail : formateur, horaire, participants et lien de visioconférence (si renseigné).',
+      'Depuis le détail, cliquez sur "S\'inscrire" pour une session à venir, ou "Rejoindre" une fois qu\'elle est passée en direct.',
+    ],
+  },
+  {
+    pattern: '/live/:id',
+    title: 'Détail de la session live',
+    tips: [
+      'Inscrivez-vous à une session programmée avec "S\'inscrire", ou rejoignez-la avec "Rejoindre" une fois qu\'elle est en direct.',
+      'Si aucun lien de visioconférence n\'a été configuré par l\'organisateur, votre inscription/participation est bien enregistrée mais aucun lien ne s\'ouvre automatiquement.',
     ],
   },
   {
@@ -279,8 +288,8 @@ export const helpTopics: HelpTopic[] = [
     pattern: '/admin/badges',
     title: 'Badges (administration)',
     tips: [
-      'Créez et configurez les badges et leurs critères d\'obtention.',
-      'Associez un badge à un quiz pour une remise automatique.',
+      'Chaque badge a un code unique (ex: QUIZ_COMPLETED), un nom, un type (trophée, quiz complété, score parfait, début/fin de cours...) et un critère d\'obtention au format JSON libre (ex: {"type": "quiz_pass"}).',
+      'L\'attribution automatique de certains badges (quiz réussi, score parfait, cours démarré/terminé) est câblée sur le code du badge, pas sur le contenu du critère JSON — celui-ci reste informatif.',
     ],
   },
   {
@@ -297,17 +306,19 @@ export const helpTopics: HelpTopic[] = [
     pattern: '/admin/live-sessions',
     title: 'Sessions live (administration)',
     tips: [
-      'Planifiez une nouvelle session avec le bouton "Nouvelle session".',
-      'Renseignez la date, la durée, le nombre de participants et le lien de réunion.',
-      'Démarrez une session depuis cette page pour la faire apparaître comme "En direct".',
+      'Planifiez une nouvelle session avec le bouton "Nouvelle session" — la date et l\'heure sont obligatoires.',
+      'Le champ "Instructeur" désigne qui animera la session ; cette personne (ou tout admin/director/manager) pourra ensuite la démarrer et la terminer, pas forcément vous qui l\'avez créée.',
+      'Une fois programmée, démarrez la session avec "Démarrer" pour la faire apparaître comme "En direct" aux apprenants, puis "Terminer" une fois finie.',
+      '"Annuler" une session programmée la marque comme annulée ; l\'icône de corbeille la supprime définitivement, avec son historique de participants.',
+      'Modifiez une session existante (y compris réassigner l\'instructeur) avec l\'icône de crayon.',
     ],
   },
   {
     pattern: '/admin/notifications',
     title: 'Notifications (administration)',
     tips: [
-      'Envoyez des notifications ciblées à des utilisateurs ou groupes.',
-      'Configurez les modèles de notifications automatiques.',
+      'Envoyez une notification via "Envoyer une notification" : choisissez le canal (application, email, SMS, WhatsApp, push) et les destinataires (tous les utilisateurs, un utilisateur précis, ou tout un rôle).',
+      'La liste ci-dessous affiche l\'historique des notifications envoyées dans votre organisation, avec leur statut lu/non lu par destinataire.',
     ],
   },
   {
