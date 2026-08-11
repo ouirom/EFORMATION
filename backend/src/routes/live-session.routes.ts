@@ -5,7 +5,7 @@ import { authenticate, authorize, AuthRequest } from '../middleware/auth.middlew
 import { DatabaseService } from '../services/database.service';
 import { BadRequestError, NotFoundError, InternalError } from '../middleware/error.middleware';
 import { db, IS_PG } from '../database/db-helpers';
-import { config } from '../config';
+import { LiveKitService } from '../services/livekit.service';
 
 const router = Router();
 
@@ -534,7 +534,8 @@ router.post('/:id/join', authenticate, async (req: AuthRequest, res, next) => {
  */
 router.post('/:id/livekit-token', authenticate, async (req: AuthRequest, res, next) => {
   try {
-    if (!config.livekit.url || !config.livekit.apiKey || !config.livekit.apiSecret) {
+    const liveKitConfig = await LiveKitService.getLiveKitConfig(req.user!.tenantId);
+    if (!liveKitConfig) {
       throw InternalError(
         "La visioconférence intégrée n'est pas configurée sur ce serveur (LiveKit)."
       );
@@ -580,7 +581,7 @@ router.post('/:id/livekit-token', authenticate, async (req: AuthRequest, res, ne
     // same LiveKit project even though session ids aren't globally unique.
     const roomName = `session-${req.user!.tenantId}-${sessionId}`;
 
-    const at = new AccessToken(config.livekit.apiKey, config.livekit.apiSecret, {
+    const at = new AccessToken(liveKitConfig.apiKey, liveKitConfig.apiSecret, {
       identity: String(req.user!.id),
       name: displayName,
       ttl: '6h',
@@ -599,7 +600,7 @@ router.post('/:id/livekit-token', authenticate, async (req: AuthRequest, res, ne
 
     res.json({
       success: true,
-      data: { token, url: config.livekit.url, roomName },
+      data: { token, url: liveKitConfig.url, roomName },
     });
   } catch (error) {
     next(error);

@@ -1,16 +1,22 @@
-// Deliberately does NOT set LIVEKIT_URL/API_KEY/API_SECRET -- exercises the
-// real default dev state (see backend/.env.example) where the embedded video
-// feature has no credentials yet, and must fail with a clear message instead
-// of throwing "api-key and api-secret must be set" from inside the SDK.
+// Forces config.livekit.* empty regardless of what's in the real backend/.env
+// (which may well have real credentials, e.g. for local dev) -- this test's
+// whole point is the "not configured anywhere" fallback path: no tenant row
+// in livekit_settings AND no global env fallback. Must fail with a clear
+// message instead of throwing "api-key and api-secret must be set" from
+// inside the SDK.
 import express from 'express';
 import request from 'supertest';
 import jwt from 'jsonwebtoken';
+
+jest.mock('../config', () => ({
+  config: { ...jest.requireActual('../config').config, livekit: { url: '', apiKey: '', apiSecret: '' } },
+}));
+jest.mock('../services/database.service');
+
 import liveSessionRoutes from './live-session.routes';
 import { DatabaseService } from '../services/database.service';
 import { errorHandler } from '../middleware/error.middleware';
 import { config } from '../config';
-
-jest.mock('../services/database.service');
 
 const mockedQuery = DatabaseService.query as jest.Mock;
 

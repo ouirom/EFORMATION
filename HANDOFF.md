@@ -190,7 +190,17 @@ dont le vrai fix était plus simple que prévu) — corrigés le 2026-08-10, dé
   `LIVEKIT_URL`/`LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET` dans `backend/.env` pour fonctionner — tant
   qu'ils sont absents, la route répond 500 avec un message clair au lieu de planter. Ces identifiants
   ne peuvent pas être générés automatiquement : il faut créer un compte sur https://cloud.livekit.io
-  (gratuit jusqu'à un certain volume) et copier les 3 valeurs du projet.
+  (gratuit jusqu'à un certain volume) et copier les 3 valeurs du projet. **Validé en direct avec un
+  vrai compte LiveKit Cloud** (connexion WebSocket réelle, UI de visioconférence complète) le
+  2026-08-11.
+  - **Configuration par tenant ajoutée** (`livekit_settings` table, migration
+    `012_livekit_settings.sql`, `LiveKitService.getLiveKitConfig` dans
+    `backend/src/services/livekit.service.ts`) : un admin peut renseigner ses propres identifiants
+    LiveKit via `/admin/livekit-settings` (`GET`/`PUT`/`POST .../test` sur `/settings/livekit`),
+    qui prennent le pas sur la config globale (`config.livekit.*`, elle-même lue depuis
+    `backend/.env`) si `enabled=true`. Mirroir exact du pattern déjà existant pour
+    `email_settings`/`AdminEmailSettingsPage.tsx` — même logique de secret masqué
+    (`MASKED_PASSWORD`), même cache invalidé à l'enregistrement.
 
 ---
 

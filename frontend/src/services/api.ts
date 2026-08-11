@@ -72,6 +72,9 @@ interface ExtendedAPI extends AxiosInstance {
     getEmail: () => Promise<any>;
     updateEmail: (data: any) => Promise<any>;
     testEmail: (to: string) => Promise<any>;
+    getLiveKit: () => Promise<any>;
+    updateLiveKit: (data: any) => Promise<any>;
+    testLiveKit: () => Promise<any>;
     getInactivityPolicies: () => Promise<any[]>;
     setInactivityPolicy: (role: string, maxInactiveDays: number | null) => Promise<any>;
   };
@@ -293,6 +296,9 @@ api.settings = {
   getEmail: () => api.get('/settings/email').then(r => r.data.data),
   updateEmail: (data: any) => api.put('/settings/email', data).then(r => r.data),
   testEmail: (to: string) => api.post('/settings/email/test', { to }).then(r => r.data),
+  getLiveKit: () => api.get('/settings/livekit').then(r => r.data.data),
+  updateLiveKit: (data: any) => api.put('/settings/livekit', data).then(r => r.data),
+  testLiveKit: () => api.post('/settings/livekit/test').then(r => r.data),
   getInactivityPolicies: () => api.get('/settings/inactivity-policies').then(r => r.data.data),
   setInactivityPolicy: (role: string, maxInactiveDays: number | null) =>
     api.put('/settings/inactivity-policies', { role, maxInactiveDays }).then(r => r.data),

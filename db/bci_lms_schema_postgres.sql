@@ -342,6 +342,16 @@ CREATE TABLE IF NOT EXISTS email_settings (
   updated_at           TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc')
 );
 
+CREATE TABLE IF NOT EXISTS livekit_settings (
+  id                   BIGSERIAL PRIMARY KEY,
+  tenant_id            BIGINT NOT NULL,
+  enabled              BOOLEAN NOT NULL DEFAULT FALSE,
+  url                  VARCHAR(500),
+  api_key              VARCHAR(255),
+  api_secret           VARCHAR(500),
+  updated_at           TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc')
+);
+
 CREATE TABLE IF NOT EXISTS enrollments (
   id                   BIGSERIAL PRIMARY KEY,
   tenant_id            BIGINT NOT NULL,
@@ -801,6 +811,7 @@ ALTER TABLE categories ADD CONSTRAINT uq_category_name UNIQUE (tenant_id, name);
 ALTER TABLE certificates ADD CONSTRAINT UQ__certific__61787229C0EA02EE UNIQUE (serial);
 ALTER TABLE course_evaluations ADD CONSTRAINT uq_course_eval UNIQUE (tenant_id, course_id, user_id);
 ALTER TABLE email_settings ADD CONSTRAINT UQ__email_se__D6F29F3F469BE66D UNIQUE (tenant_id);
+ALTER TABLE livekit_settings ADD CONSTRAINT uq_livekit_settings_tenant UNIQUE (tenant_id);
 ALTER TABLE enrollments ADD CONSTRAINT uq_enrollment UNIQUE (user_id, course_id);
 ALTER TABLE enterprises ADD CONSTRAINT UQ__enterpri__357D4CF94A2DB61D UNIQUE (code);
 ALTER TABLE inactivity_policies ADD CONSTRAINT uq_inactivity_policies_tenant_role UNIQUE (tenant_id, role);
@@ -899,6 +910,7 @@ ALTER TABLE courses ADD CONSTRAINT fk_courses_user FOREIGN KEY (created_by) REFE
 ALTER TABLE directions ADD CONSTRAINT fk_directions_enterprise FOREIGN KEY (enterprise_id) REFERENCES enterprises (id);
 ALTER TABLE directions ADD CONSTRAINT fk_directions_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
 ALTER TABLE email_settings ADD CONSTRAINT fk_email_settings_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
+ALTER TABLE livekit_settings ADD CONSTRAINT fk_livekit_settings_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
 ALTER TABLE enterprises ADD CONSTRAINT fk_enterprises_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
 ALTER TABLE file_assets ADD CONSTRAINT fk_file_assets_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
 ALTER TABLE file_assets ADD CONSTRAINT fk_file_assets_user FOREIGN KEY (created_by) REFERENCES users (id);

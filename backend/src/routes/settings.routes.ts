@@ -1,11 +1,13 @@
 import { Router } from 'express';
 import { body, validationResult } from 'express-validator';
+import { RoomServiceClient } from 'livekit-server-sdk';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.middleware';
 import { DatabaseService } from '../services/database.service';
 import { db } from '../database/db-helpers';
 import { BadRequestError } from '../middleware/error.middleware';
 import { NotificationService } from '../services/notification.service';
 import { InactivityPolicyService, INACTIVITY_POLICY_ROLES } from '../services/inactivity.service';
+import { LiveKitService } from '../services/livekit.service';
 
 const router = Router();
 
@@ -156,6 +158,131 @@ router.post(
     }
   }
 );
+
+/**
+ * @route GET /api/v1/settings/livekit
+ * @desc Get the tenant's LiveKit (embedded video conferencing) settings
+ */
+router.get('/livekit', authenticate, authorize('admin'), async (req: AuthRequest, res, next) => {
+  try {
+    const tenantId = req.user!.tenantId;
+
+    const rows = await DatabaseService.query<any>(
+      'SELECT * FROM livekit_settings WHERE tenant_id = @tenantId',
+      { tenantId }
+    );
+
+    const settings = rows[0] || {
+      enabled: false,
+      url: '',
+      api_key: '',
+      api_secret: null,
+    };
+
+    res.json({
+      success: true,
+      data: {
+        enabled: !!settings.enabled,
+        url: settings.url || '',
+        apiKey: settings.api_key || '',
+        // Never return the real secret; the frontend only re-sends it if the admin types a new one.
+        apiSecret: settings.api_secret ? MASKED_PASSWORD : '',
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @route PUT /api/v1/settings/livekit
+ * @desc Update the tenant's LiveKit settings
+ */
+router.put(
+  '/livekit',
+  authenticate,
+  authorize('admin'),
+  [
+    body('enabled').isBoolean(),
+    body('url').optional({ nullable: true }).isString(),
+    body('apiKey').optional({ nullable: true }).isString(),
+    body('apiSecret').optional({ nullable: true }).isString(),
+  ],
+  async (req: AuthRequest, res, next) => {
+    try {
+      validate(req);
+      const tenantId = req.user!.tenantId;
+
+      const existing = await DatabaseService.query<{ id: number; api_secret: string | null }>(
+        'SELECT id, api_secret FROM livekit_settings WHERE tenant_id = @tenantId',
+        { tenantId }
+      );
+
+      // Keep the stored secret if the client sent back the masked placeholder (i.e. didn't change it).
+      const incomingSecret = req.body.apiSecret;
+      const apiSecret =
+        incomingSecret === MASKED_PASSWORD || incomingSecret === undefined
+          ? existing[0]?.api_secret ?? null
+          : incomingSecret || null;
+
+      const params = {
+        tenantId,
+        enabled: req.body.enabled,
+        url: req.body.url || null,
+        apiKey: req.body.apiKey || null,
+        apiSecret,
+      };
+
+      if (existing.length === 0) {
+        await DatabaseService.execute(
+          `INSERT INTO livekit_settings (tenant_id, enabled, url, api_key, api_secret)
+           VALUES (@tenantId, @enabled, @url, @apiKey, @apiSecret)`,
+          params
+        );
+      } else {
+        await DatabaseService.execute(
+          `UPDATE livekit_settings SET
+             enabled = @enabled, url = @url, api_key = @apiKey, api_secret = @apiSecret,
+             updated_at = ${db.now()}
+           WHERE tenant_id = @tenantId`,
+          params
+        );
+      }
+
+      LiveKitService.invalidateLiveKitSettingsCache(tenantId);
+
+      res.json({ success: true, message: 'LiveKit settings updated' });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * @route POST /api/v1/settings/livekit/test
+ * @desc Verify the tenant's (or, absent one, the global) LiveKit credentials actually work
+ */
+router.post('/livekit/test', authenticate, authorize('admin'), async (req: AuthRequest, res, next) => {
+  try {
+    LiveKitService.invalidateLiveKitSettingsCache(req.user!.tenantId);
+    const liveKitConfig = await LiveKitService.getLiveKitConfig(req.user!.tenantId);
+    if (!liveKitConfig) {
+      throw BadRequestError("Aucune configuration LiveKit n'est disponible (ni tenant, ni globale).");
+    }
+
+    const host = liveKitConfig.url.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
+    const client = new RoomServiceClient(host, liveKitConfig.apiKey, liveKitConfig.apiSecret);
+    try {
+      await client.listRooms();
+    } catch (err: any) {
+      throw BadRequestError(`Connexion à LiveKit échouée : ${err?.message || 'erreur inconnue'}`);
+    }
+
+    res.json({ success: true, message: 'Connexion LiveKit réussie' });
+  } catch (error) {
+    next(error);
+  }
+});
 
 /**
  * @route GET /api/v1/settings/inactivity-policies

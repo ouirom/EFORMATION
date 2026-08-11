@@ -443,6 +443,19 @@ CREATE TABLE dbo.email_settings (
 );
 END;
 
+IF OBJECT_ID(N'[dbo].[livekit_settings]', N'U') IS NULL
+BEGIN
+CREATE TABLE dbo.livekit_settings (
+  [id]                    BIGINT IDENTITY(1,1) PRIMARY KEY,
+  [tenant_id]             BIGINT NOT NULL,
+  [enabled]               BIT NOT NULL DEFAULT (0),
+  [url]                   NVARCHAR(500) NULL,
+  [api_key]               NVARCHAR(255) NULL,
+  [api_secret]            NVARCHAR(500) NULL,
+  [updated_at]            DATETIME2(0) NOT NULL DEFAULT (sysutcdatetime())
+);
+END;
+
 IF OBJECT_ID(N'[dbo].[enrollments]', N'U') IS NULL
 BEGIN
 CREATE TABLE dbo.enrollments (
@@ -1028,6 +1041,8 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'uq_course_eval' AND obje
   ALTER TABLE dbo.course_evaluations ADD CONSTRAINT uq_course_eval UNIQUE ([tenant_id], [course_id], [user_id]);
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UQ__email_se__D6F29F3F469BE66D' AND object_id = OBJECT_ID(N'[dbo].[email_settings]'))
   ALTER TABLE dbo.email_settings ADD CONSTRAINT UQ__email_se__D6F29F3F469BE66D UNIQUE ([tenant_id]);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'uq_livekit_settings_tenant' AND object_id = OBJECT_ID(N'[dbo].[livekit_settings]'))
+  ALTER TABLE dbo.livekit_settings ADD CONSTRAINT uq_livekit_settings_tenant UNIQUE ([tenant_id]);
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'uq_enrollment' AND object_id = OBJECT_ID(N'[dbo].[enrollments]'))
   ALTER TABLE dbo.enrollments ADD CONSTRAINT uq_enrollment UNIQUE ([user_id], [course_id]);
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UQ__enterpri__357D4CF94A2DB61D' AND object_id = OBJECT_ID(N'[dbo].[enterprises]'))
@@ -1222,6 +1237,8 @@ IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'fk_directions_tenan
   ALTER TABLE dbo.directions ADD CONSTRAINT fk_directions_tenant FOREIGN KEY ([tenant_id]) REFERENCES dbo.tenants ([id]);
 IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'fk_email_settings_tenant')
   ALTER TABLE dbo.email_settings ADD CONSTRAINT fk_email_settings_tenant FOREIGN KEY ([tenant_id]) REFERENCES dbo.tenants ([id]);
+IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'fk_livekit_settings_tenant')
+  ALTER TABLE dbo.livekit_settings ADD CONSTRAINT fk_livekit_settings_tenant FOREIGN KEY ([tenant_id]) REFERENCES dbo.tenants ([id]);
 IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'fk_enterprises_tenant')
   ALTER TABLE dbo.enterprises ADD CONSTRAINT fk_enterprises_tenant FOREIGN KEY ([tenant_id]) REFERENCES dbo.tenants ([id]);
 IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'fk_file_assets_tenant')

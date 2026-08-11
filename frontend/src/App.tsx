@@ -51,6 +51,7 @@ import AdminReportsPage from '@/pages/admin/AdminReportsPage';
 import AdminOrganizationPage from '@/pages/admin/AdminOrganizationPage';
 import AdminImportPage from '@/pages/admin/AdminImportPage';
 import AdminEmailSettingsPage from '@/pages/admin/AdminEmailSettingsPage';
+import AdminLiveKitSettingsPage from '@/pages/admin/AdminLiveKitSettingsPage';
 import AdminLogsPage from '@/pages/admin/AdminLogsPage';
 import AdminPlatformPage from '@/pages/admin/AdminPlatformPage';
 
@@ -154,6 +155,7 @@ function App() {
             <Route path="organization" element={<AdminOrganizationPage />} />
             <Route path="import" element={<AdminImportPage />} />
             <Route path="email-settings" element={<AdminEmailSettingsPage />} />
+            <Route path="livekit-settings" element={<AdminLiveKitSettingsPage />} />
             <Route path="logs" element={<AdminLogsPage />} />
             <Route path="analytics" element={<AdminAnalyticsPage />} />
             <Route path="platform" element={<AdminPlatformPage />} />

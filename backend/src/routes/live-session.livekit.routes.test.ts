@@ -158,4 +158,37 @@ describe('POST /live-sessions/:id/livekit-token', () => {
     expect(response.status).toBe(200);
     expect(response.body.data.roomName).toBe('session-99-1');
   });
+
+  it("prefers the tenant's own enabled livekit_settings row over the global env fallback", async () => {
+    // A tenant id never used by an earlier test in this file -- LiveKitService caches its
+    // resolved config per tenant in a module-level Map that Jest's clearMocks doesn't
+    // reset, so reusing tenant 10 here would silently return an already-cached result.
+    const overrideTenantToken = tokenFor({ id: 20, tenantId: 55, email: 'override@test.com', role: 'agent' });
+    mockedQuery.mockImplementation((query: string) => {
+      if (query.includes('FROM users WHERE id = @id')) {
+        return Promise.resolve([mockAuthLookup({ id: 20, tenant_id: 55, email: 'override@test.com', display_name: 'Override Tenant User' })]);
+      }
+      if (query.includes('SELECT id, status, organizer_id')) {
+        return Promise.resolve([{ id: 1, status: 'live', organizer_id: 2 }]);
+      }
+      if (query.includes('SELECT * FROM livekit_settings')) {
+        return Promise.resolve([{
+          enabled: true,
+          url: 'wss://tenant-override.livekit.cloud',
+          api_key: 'tenant-api-key',
+          api_secret: 'tenant-api-secret-thats-long-enough',
+        }]);
+      }
+      if (query.includes('SELECT session_id FROM live_participants')) return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+
+    const response = await request(makeApp())
+      .post('/live-sessions/1/livekit-token')
+      .set('Authorization', `Bearer ${overrideTenantToken}`);
+
+    expect(response.status).toBe(200);
+    // Tenant row wins, not the process.env.LIVEKIT_URL set at the top of this file.
+    expect(response.body.data.url).toBe('wss://tenant-override.livekit.cloud');
+  });
 });

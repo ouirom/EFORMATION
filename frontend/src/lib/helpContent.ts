@@ -383,6 +383,16 @@ export const helpTopics: HelpTopic[] = [
     ],
   },
   {
+    pattern: '/admin/livekit-settings',
+    title: 'Visioconférence (LiveKit)',
+    tips: [
+      'Ces identifiants remplacent, pour ce tenant uniquement, la configuration globale du serveur.',
+      'Laissez désactivé pour utiliser la configuration globale (si définie côté serveur).',
+      'Utilisez "Tester la connexion" après enregistrement pour vérifier que les identifiants sont valides.',
+      'Sans configuration (ni tenant, ni globale), le bouton "Rejoindre" d\'une session sans lien externe affichera un message d\'erreur clair au lieu de la visioconférence.',
+    ],
+  },
+  {
     pattern: '/admin/logs',
     title: 'Journaux d\'audit',
     tips: [

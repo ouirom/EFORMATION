@@ -49,6 +49,7 @@ import {
   LifeBuoy,
   Globe,
   UploadCloud,
+  PlugZap,
 } from 'lucide-react'
 
 const mainNavItems = [
@@ -78,6 +79,7 @@ const adminNavItems = [
   { icon: Building2, label: 'Organisation', path: '/admin/organization' },
   { icon: UploadCloud, label: 'Import de données', path: '/admin/import' },
   { icon: Mail, label: 'Email', path: '/admin/email-settings' },
+  { icon: PlugZap, label: 'Visioconférence', path: '/admin/livekit-settings' },
   { icon: ScrollText, label: 'Journaux d\'audit', path: '/admin/logs', tourId: 'logs' },
 ]
 
