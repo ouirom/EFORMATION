@@ -36,6 +36,7 @@
     "jsonwebtoken": "^9.0.2",
     "knex": "^3.3.0",
     "ldapts": "^9.0.0",
+    "livekit-server-sdk": "^2.17.0",
     "mime-types": "^2.1.35",
     "morgan": "^1.10.0",
     "msnodesqlv8": "^5.1.3",

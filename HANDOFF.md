@@ -183,6 +183,14 @@ dont le vrai fix était plus simple que prévu) — corrigés le 2026-08-10, dé
   pouvait voir ses pairs/supérieurs) — corrigée dans une session antérieure. Toute nouvelle route
   qui liste des utilisateurs doit reprendre ce même scoping plutôt que d'ouvrir `GET /users` à de
   nouveaux rôles.
+- **Visioconférence intégrée (LiveKit) — nécessite un compte externe non fourni.** Le bouton
+  "Rejoindre" d'une session live sans `meetingUrl` externe ouvre désormais une visioconférence
+  intégrée (`LiveKitRoomEmbed.tsx` côté frontend, `POST /live-sessions/:id/livekit-token` côté
+  backend). Le code est complet et testé (cf. `live-session.livekit.routes.test.ts`), mais il faut
+  `LIVEKIT_URL`/`LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET` dans `backend/.env` pour fonctionner — tant
+  qu'ils sont absents, la route répond 500 avec un message clair au lieu de planter. Ces identifiants
+  ne peuvent pas être générés automatiquement : il faut créer un compte sur https://cloud.livekit.io
+  (gratuit jusqu'à un certain volume) et copier les 3 valeurs du projet.
 
 ---
 

@@ -37,6 +37,7 @@ interface ExtendedAPI extends AxiosInstance {
     list: (params?: any) => Promise<any[]>;
     get: (id: number) => Promise<any>;
     join: (id: number) => Promise<any>;
+    getLivekitToken: (id: number) => Promise<{ token: string; url: string; roomName: string }>;
   };
   badges: {
     list: () => Promise<any[]>;
@@ -248,6 +249,7 @@ api.liveSessions = {
   list: (params?: any) => api.get('/live-sessions', { params }).then(r => r.data.data || []),
   get: (id: number) => api.get(`/live-sessions/${id}`).then(r => r.data.data),
   join: (id: number) => api.post(`/live-sessions/${id}/join`).then(r => r.data.data),
+  getLivekitToken: (id: number) => api.post(`/live-sessions/${id}/livekit-token`).then(r => r.data.data),
 };
 
 api.badges = {

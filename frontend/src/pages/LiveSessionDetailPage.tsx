@@ -18,6 +18,7 @@ import {
   Video,
 } from 'lucide-react'
 import { api } from '@/services/api'
+import { LiveKitRoomEmbed } from '@/components/LiveKitRoomEmbed'
 
 const statusColors: Record<string, string> = {
   scheduled: 'bg-blue-100 text-blue-800',
@@ -36,6 +37,7 @@ export default function LiveSessionDetailPage() {
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const [hasJoined, setHasJoined] = useState(false)
+  const [inEmbeddedRoom, setInEmbeddedRoom] = useState(false)
 
   const { data: session, isLoading } = useQuery({
     queryKey: ['live-session', id],
@@ -76,7 +78,7 @@ export default function LiveSessionDetailPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className={`space-y-6 ${inEmbeddedRoom ? 'max-w-6xl' : 'max-w-3xl'}`}>
       <Link to="/live" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
         <ArrowLeft className="h-4 w-4" />
         Retour aux sessions live
@@ -155,26 +157,19 @@ export default function LiveSessionDetailPage() {
                 </p>
               )
             ) : session.status === 'live' ? (
-              hasJoined || session.meetingUrl ? (
-                session.meetingUrl ? (
-                  <a href={session.meetingUrl} target="_blank" rel="noopener noreferrer">
-                    <Button onClick={() => !hasJoined && joinMutation.mutate()}>
-                      <ExternalLink className="h-4 w-4 mr-2" />
-                      Ouvrir la réunion
-                    </Button>
-                  </a>
-                ) : (
-                  <div className="space-y-2">
-                    <p className="text-sm text-muted-foreground">
-                      Vous avez rejoint la session. Aucun lien de visioconférence n'a été configuré
-                      pour cette session.
-                    </p>
-                  </div>
-                )
+              session.meetingUrl ? (
+                <a href={session.meetingUrl} target="_blank" rel="noopener noreferrer">
+                  <Button onClick={() => !hasJoined && joinMutation.mutate()}>
+                    <ExternalLink className="h-4 w-4 mr-2" />
+                    Ouvrir la réunion
+                  </Button>
+                </a>
+              ) : inEmbeddedRoom ? (
+                <LiveKitRoomEmbed sessionId={Number(id)} onLeave={() => setInEmbeddedRoom(false)} />
               ) : (
-                <Button onClick={() => joinMutation.mutate()} disabled={joinMutation.isPending}>
+                <Button onClick={() => setInEmbeddedRoom(true)}>
                   <Play className="h-4 w-4 mr-2" />
-                  {joinMutation.isPending ? 'Connexion...' : 'Rejoindre'}
+                  Rejoindre
                 </Button>
               )
             ) : hasJoined ? (

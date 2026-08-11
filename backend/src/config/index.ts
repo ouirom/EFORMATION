@@ -138,6 +138,16 @@ export const config = {
     nameAttribute: process.env.LDAP_NAME_ATTRIBUTE || 'displayName',
   },
 
+  // LiveKit (embedded video for live sessions -- see live-session.routes.ts's
+  // POST /:id/livekit-token). url is the project's wss:// endpoint (LiveKit
+  // Cloud or self-hosted); apiKey/apiSecret sign the per-participant access
+  // token server-side and are never sent to the client.
+  livekit: {
+    url: process.env.LIVEKIT_URL || '',
+    apiKey: process.env.LIVEKIT_API_KEY || '',
+    apiSecret: process.env.LIVEKIT_API_SECRET || '',
+  },
+
   // Zoom
   zoom: {
     clientId: process.env.ZOOM_CLIENT_ID || '',

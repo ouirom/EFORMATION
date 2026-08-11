@@ -1,9 +1,11 @@
 import { Router } from 'express';
 import { body, validationResult } from 'express-validator';
+import { AccessToken } from 'livekit-server-sdk';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.middleware';
 import { DatabaseService } from '../services/database.service';
-import { BadRequestError, NotFoundError } from '../middleware/error.middleware';
+import { BadRequestError, NotFoundError, InternalError } from '../middleware/error.middleware';
 import { db, IS_PG } from '../database/db-helpers';
+import { config } from '../config';
 
 const router = Router();
 
@@ -518,6 +520,87 @@ router.post('/:id/join', authenticate, async (req: AuthRequest, res, next) => {
     );
 
     res.json({ success: true, data: mapSession(sessions[0]) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @route POST /api/v1/live-sessions/:id/livekit-token
+ * @desc Mint a per-participant LiveKit access token for this session's embedded
+ * video room (used when no external meetingUrl is configured). Registers the
+ * caller as a participant the same way POST /:id/join does, so a client can
+ * call this directly without a separate join request.
+ */
+router.post('/:id/livekit-token', authenticate, async (req: AuthRequest, res, next) => {
+  try {
+    if (!config.livekit.url || !config.livekit.apiKey || !config.livekit.apiSecret) {
+      throw InternalError(
+        "La visioconférence intégrée n'est pas configurée sur ce serveur (LiveKit)."
+      );
+    }
+
+    const sessionId = parseInt(req.params.id, 10);
+
+    const sessions = await DatabaseService.query<{ id: number; status: string; organizer_id: number }>(
+      'SELECT id, status, organizer_id FROM live_sessions WHERE id = @sessionId AND tenant_id = @tenantId',
+      { sessionId, tenantId: req.user!.tenantId }
+    );
+    if (sessions.length === 0) {
+      throw NotFoundError('Live session');
+    }
+    const session = sessions[0];
+
+    if (session.status !== 'live') {
+      throw BadRequestError("La session n'est pas en direct pour le moment.", 'SESSION_NOT_LIVE');
+    }
+
+    const isHost = session.organizer_id === req.user!.id;
+
+    const existing = await DatabaseService.query<any>(
+      'SELECT session_id FROM live_participants WHERE session_id = @sessionId AND user_id = @userId',
+      { sessionId, userId: req.user!.id }
+    );
+    if (existing.length > 0) {
+      await DatabaseService.execute(
+        `UPDATE live_participants SET joined_at = ${db.now()}, left_at = NULL WHERE session_id = @sessionId AND user_id = @userId`,
+        { sessionId, userId: req.user!.id }
+      );
+    } else {
+      await DatabaseService.execute(
+        `INSERT INTO live_participants (session_id, user_id, role, joined_at)
+         VALUES (@sessionId, @userId, @role, ${db.now()})`,
+        { sessionId, userId: req.user!.id, role: isHost ? 'host' : 'attendee' }
+      );
+    }
+
+    const displayName = req.user!.displayName || req.user!.email;
+
+    // Room name is namespaced by tenant so two tenants can never collide on the
+    // same LiveKit project even though session ids aren't globally unique.
+    const roomName = `session-${req.user!.tenantId}-${sessionId}`;
+
+    const at = new AccessToken(config.livekit.apiKey, config.livekit.apiSecret, {
+      identity: String(req.user!.id),
+      name: displayName,
+      ttl: '6h',
+    });
+    at.addGrant({
+      room: roomName,
+      roomJoin: true,
+      canPublish: true,
+      canSubscribe: true,
+      canPublishData: true,
+      // Lets the organizer mute/remove participants via the LiveKit server API later;
+      // no moderation UI is wired up to use it yet.
+      roomAdmin: isHost,
+    });
+    const token = await at.toJwt();
+
+    res.json({
+      success: true,
+      data: { token, url: config.livekit.url, roomName },
+    });
   } catch (error) {
     next(error);
   }
