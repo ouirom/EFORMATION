@@ -385,24 +385,28 @@ export class NotificationService {
     );
 
     return prefs[0] || {
-      email_enabled: true,
-      sms_enabled: false,
-      whatsapp_enabled: false,
-      push_enabled: true,
-      in_app_enabled: true,
+      email: true,
+      sms: false,
+      whatsapp: false,
+      push_web: true,
+      push_mobile: true,
     };
   }
 
   /**
-   * Check if channel is enabled in preferences
+   * Check if channel is enabled in preferences. Matches notification_preferences' real
+   * columns (email, sms, whatsapp, push_web, push_mobile) -- this used to look up
+   * *_enabled keys that don't exist on the real row, so preferences[undefined] was
+   * always undefined and `!== false` made every channel silently always "enabled"
+   * regardless of what the user actually saved.
    */
   private static isChannelEnabled(preferences: any, channel: string): boolean {
+    if (channel === 'in_app') return true; // no column for this -- can't be disabled
     const channelMap: Record<string, string> = {
-      email: 'email_enabled',
-      sms: 'sms_enabled',
-      whatsapp: 'whatsapp_enabled',
-      push: 'push_enabled',
-      in_app: 'in_app_enabled',
+      email: 'email',
+      sms: 'sms',
+      whatsapp: 'whatsapp',
+      push: 'push_web',
     };
 
     return preferences[channelMap[channel]] !== false;

@@ -130,7 +130,7 @@ export default function NotificationsPage() {
               Tout marquer comme lu
             </Button>
           )}
-          <Link to="/settings/notifications">
+          <Link to="/settings">
             <Button variant="outline">
               <Settings className="h-4 w-4 mr-2" />
               Préférences

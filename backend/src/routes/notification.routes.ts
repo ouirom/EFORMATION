@@ -294,16 +294,18 @@ router.get('/preferences', authenticate, async (req: AuthRequest, res, next) => 
     );
 
     if (preferences.length === 0) {
-      // Return default preferences
+      // Return defaults matching notification_preferences' real columns (email, sms,
+      // whatsapp, push_web, push_mobile -- there is no in_app_enabled/digest_frequency
+      // column; in-app notifications can't be disabled, they're just a list the user
+      // can ignore).
       res.json({
         success: true,
         data: {
-          email_enabled: true,
-          sms_enabled: false,
-          whatsapp_enabled: false,
-          push_enabled: true,
-          in_app_enabled: true,
-          digest_frequency: 'immediate',
+          email: true,
+          sms: false,
+          whatsapp: false,
+          push_web: true,
+          push_mobile: true,
         },
       });
       return;
@@ -321,14 +323,11 @@ router.get('/preferences', authenticate, async (req: AuthRequest, res, next) => 
  */
 router.put('/preferences', authenticate, async (req: AuthRequest, res, next) => {
   try {
-    const {
-      email_enabled,
-      sms_enabled,
-      whatsapp_enabled,
-      push_enabled,
-      in_app_enabled,
-      digest_frequency,
-    } = req.body;
+    // Body fields match notification_preferences' real columns (email, sms, whatsapp,
+    // push_web, push_mobile) -- this used to read *_enabled fields and an in_app_enabled/
+    // digest_frequency that don't exist as columns at all, so every save (insert or
+    // update) 500'd with "column does not exist".
+    const { email, sms, whatsapp, push_web, push_mobile } = req.body;
 
     // Check if preferences exist
     const existing = await DatabaseService.query<any>(
@@ -339,46 +338,43 @@ router.put('/preferences', authenticate, async (req: AuthRequest, res, next) => 
     if (existing.length === 0) {
       // Create new preferences
       await DatabaseService.execute(
-        `INSERT INTO notification_preferences (user_id, email_enabled, sms_enabled, whatsapp_enabled, push_enabled, in_app_enabled, digest_frequency)
-         VALUES (@userId, @email, @sms, @whatsapp, @push, @inApp, @digest)`,
+        `INSERT INTO notification_preferences (tenant_id, user_id, email, sms, whatsapp, push_web, push_mobile)
+         VALUES (@tenantId, @userId, @email, @sms, @whatsapp, @pushWeb, @pushMobile)`,
         {
+          tenantId: req.user!.tenantId,
           userId: req.user!.id,
-          email: email_enabled ?? true,
-          sms: sms_enabled ?? false,
-          whatsapp: whatsapp_enabled ?? false,
-          push: push_enabled ?? true,
-          inApp: in_app_enabled ?? true,
-          digest: digest_frequency ?? 'immediate',
+          email: email ?? true,
+          sms: sms ?? false,
+          whatsapp: whatsapp ?? false,
+          pushWeb: push_web ?? true,
+          pushMobile: push_mobile ?? true,
         }
       );
     } else {
       const updateFields: string[] = [];
       const params: Record<string, any> = { userId: req.user!.id };
 
-      if (email_enabled !== undefined) {
-        updateFields.push('email_enabled = @email');
-        params.email = email_enabled;
+      if (email !== undefined) {
+        updateFields.push('email = @email');
+        params.email = email;
       }
-      if (sms_enabled !== undefined) {
-        updateFields.push('sms_enabled = @sms');
-        params.sms = sms_enabled;
+      if (sms !== undefined) {
+        updateFields.push('sms = @sms');
+        params.sms = sms;
       }
-      if (whatsapp_enabled !== undefined) {
-        updateFields.push('whatsapp_enabled = @whatsapp');
-        params.whatsapp = whatsapp_enabled;
+      if (whatsapp !== undefined) {
+        updateFields.push('whatsapp = @whatsapp');
+        params.whatsapp = whatsapp;
       }
-      if (push_enabled !== undefined) {
-        updateFields.push('push_enabled = @push');
-        params.push = push_enabled;
+      if (push_web !== undefined) {
+        updateFields.push('push_web = @pushWeb');
+        params.pushWeb = push_web;
       }
-      if (in_app_enabled !== undefined) {
-        updateFields.push('in_app_enabled = @inApp');
-        params.inApp = in_app_enabled;
+      if (push_mobile !== undefined) {
+        updateFields.push('push_mobile = @pushMobile');
+        params.pushMobile = push_mobile;
       }
-      if (digest_frequency !== undefined) {
-        updateFields.push('digest_frequency = @digest');
-        params.digest = digest_frequency;
-      }
+      updateFields.push(`updated_at = ${db.now()}`);
 
       if (updateFields.length > 0) {
         await DatabaseService.execute(

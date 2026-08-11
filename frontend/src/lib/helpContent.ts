@@ -193,7 +193,15 @@ export const helpTopics: HelpTopic[] = [
     title: 'Mon profil',
     tips: [
       'Modifiez vos informations personnelles et votre photo de profil.',
-      'Gérez vos préférences de notifications depuis cette page.',
+      'Les préférences de notifications se gèrent depuis "Paramètres", accessible par le menu de votre avatar en haut à droite.',
+    ],
+  },
+  {
+    pattern: '/settings',
+    title: 'Paramètres',
+    tips: [
+      'Choisissez, par canal (email, SMS, WhatsApp, push navigateur, push mobile), si vous souhaitez recevoir les notifications qui vous concernent.',
+      'Les notifications dans l\'application (la cloche en haut de l\'écran) restent toujours visibles, quel que soit votre choix ici — seuls les envois vers les autres canaux sont concernés.',
     ],
   },
   {

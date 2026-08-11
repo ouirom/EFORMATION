@@ -26,6 +26,7 @@ import LiveSessionsPage from '@/pages/LiveSessionsPage';
 import LiveSessionDetailPage from '@/pages/LiveSessionDetailPage';
 import BlogPage from '@/pages/BlogPage';
 import ProfilePage from '@/pages/ProfilePage';
+import SettingsPage from '@/pages/SettingsPage';
 import AITutorPage from '@/pages/AITutorPage';
 import CertificatesPage from '@/pages/CertificatesPage';
 import NotificationsPage from '@/pages/NotificationsPage';
@@ -124,6 +125,7 @@ function App() {
             <Route path="/live/:id" element={<LiveSessionDetailPage />} />
             <Route path="/blog" element={<BlogPage />} />
             <Route path="/profile" element={<ProfilePage />} />
+            <Route path="/settings" element={<SettingsPage />} />
             <Route path="/ai-tutor" element={<AITutorPage />} />
             <Route path="/content-upload" element={<ContentUploadPage />} />
             <Route path="/my-team" element={<MyTeamPage />} />
