@@ -11,6 +11,7 @@ import { NotificationService } from '../services/notification.service';
 import { BadRequestError, NotFoundError, ConflictError, ForbiddenError } from '../middleware/error.middleware';
 import { config } from '../config';
 import { parseSpreadsheet } from '../utils/xlsx';
+import { logger } from '../utils/logger';
 
 const router = Router();
 const csvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -190,6 +191,22 @@ router.post(
       await AuditService.log(req.user!.tenantId, req.user!.id, 'USER_CREATED', 'users', userId, {
         email: req.body.email,
         role: req.body.role,
+      });
+
+      // Best-effort welcome email -- unlike the bulk-import flow (which
+      // generates a temporary password nobody else knows), the admin typed
+      // this password themselves, so it isn't repeated here; just point the
+      // new user at where to log in. A failed send must never fail account
+      // creation itself.
+      NotificationService.send({
+        tenantId: req.user!.tenantId,
+        userId,
+        channel: 'email',
+        subject: 'Votre compte E-Formation a été créé',
+        body: `Bonjour ${req.body.displayName},\n\nUn compte E-Formation a été créé pour vous.\nIdentifiant : ${req.body.email}\n\nConnectez-vous avec le mot de passe qui vous a été communiqué par votre administrateur.`,
+        actionUrl: `${config.frontendUrl}/login`,
+      }).catch((error) => {
+        logger.error('Failed to send account-creation email', { error, userId });
       });
 
       // Get created user

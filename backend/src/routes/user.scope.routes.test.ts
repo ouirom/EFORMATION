@@ -37,6 +37,12 @@ function mockAuthLookup(overrides: Partial<Record<string, any>> = {}) {
   };
 }
 
+// POST /users sends a best-effort welcome email; the auto-mock otherwise
+// returns undefined, and calling .catch() on that throws synchronously.
+beforeEach(() => {
+  mockedSend.mockResolvedValue({ id: 1, status: 'sent', channel: 'email' });
+});
+
 describe('GET /users list scoping', () => {
   it('excludes peers/superiors from the WHERE clause a director-scoped query builds', async () => {
     mockedQuery.mockImplementation((query: string) => {

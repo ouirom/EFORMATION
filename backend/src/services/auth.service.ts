@@ -143,6 +143,19 @@ export class AuthService {
       logger.error('Failed to notify approvers of a pending registration', { error, userId });
     });
 
+    // Confirm receipt to the applicant themselves -- separate from the
+    // approver notification above, which they never see.
+    NotificationService.send({
+      tenantId: data.tenantId,
+      userId,
+      channel: 'email',
+      subject: 'Votre compte E-Formation a été créé',
+      body: `Bonjour ${data.displayName},\n\nVotre demande de compte E-Formation a bien été reçue. Il est en attente d'activation par votre responsable ; vous recevrez un email dès qu'il sera activé.`,
+      actionUrl: `${config.frontendUrl}/login`,
+    }).catch((error) => {
+      logger.error('Failed to send registration confirmation email', { error, userId });
+    });
+
     return {
       user: {
         id: userId,
