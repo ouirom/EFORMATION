@@ -150,7 +150,13 @@ router.post(
     body('courseId').optional({ nullable: true }).isInt(),
     body('moduleId').optional({ nullable: true }).isInt(),
     body('instructorId').optional({ nullable: true }).isInt(),
-    body('scheduledAt').optional({ nullable: true }).isISO8601(),
+    // A live session with no scheduled time makes no sense (it drives sorting, the
+    // upcoming/live/ended tabs, and reminder emails) -- required, not optional. This was
+    // previously `.optional({nullable:true})`, which only skips validation for undefined/
+    // null, not for an empty string -- so an incompletely-filled datetime-local input
+    // (value === '') fell through to isISO8601() and failed with a generic, unhelpful
+    // "Validation error" the frontend couldn't explain to the user.
+    body('scheduledAt').notEmpty().withMessage('scheduledAt is required').bail().isISO8601().withMessage('scheduledAt must be a valid date'),
     body('duration').optional({ nullable: true }).isInt({ min: 1 }),
     body('maxParticipants').optional({ nullable: true }).isInt({ min: 1 }),
     body('meetingProvider').optional().isIn(['webrtc', 'zoom', 'teams', 'meet']),

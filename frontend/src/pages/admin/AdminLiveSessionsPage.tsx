@@ -27,6 +27,18 @@ import {
 import { api } from '@/services/api'
 import { formatDate } from '@/lib/utils'
 
+// Surfaces the backend's actual validation message (e.g. "scheduledAt is required")
+// instead of a generic "Erreur lors de la création" that gives the user no way to
+// know what to fix -- this is what made session creation look silently broken
+// whenever the date/heure field was left incomplete.
+function describeApiError(error: any, fallback: string): string {
+  const details = error?.response?.data?.error?.details
+  if (Array.isArray(details) && details.length > 0) {
+    return details.map((d: any) => d.msg).filter(Boolean).join(' ')
+  }
+  return error?.response?.data?.error?.message || fallback
+}
+
 interface LiveSession {
   id: number
   title: string
@@ -96,8 +108,8 @@ export default function AdminLiveSessionsPage() {
       resetForm()
       toast({ title: 'Succès', description: 'Session créée avec succès' })
     },
-    onError: () => {
-      toast({ title: 'Erreur', description: 'Erreur lors de la création', variant: 'destructive' })
+    onError: (error: any) => {
+      toast({ title: 'Erreur', description: describeApiError(error, 'Erreur lors de la création'), variant: 'destructive' })
     },
   })
 
@@ -111,8 +123,8 @@ export default function AdminLiveSessionsPage() {
       resetForm()
       toast({ title: 'Succès', description: 'Session mise à jour' })
     },
-    onError: () => {
-      toast({ title: 'Erreur', description: 'Erreur lors de la mise à jour', variant: 'destructive' })
+    onError: (error: any) => {
+      toast({ title: 'Erreur', description: describeApiError(error, 'Erreur lors de la mise à jour'), variant: 'destructive' })
     },
   })
 
@@ -193,6 +205,10 @@ export default function AdminLiveSessionsPage() {
   }
 
   const handleSubmit = () => {
+    if (!editingSession && !formData.scheduledAt) {
+      toast({ title: 'Erreur', description: 'La date et l\'heure sont requises', variant: 'destructive' })
+      return
+    }
     const data = {
       ...formData,
       instructorId: parseInt(formData.instructorId),
@@ -294,7 +310,7 @@ export default function AdminLiveSessionsPage() {
 
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label>Date et heure</Label>
+          <Label>Date et heure {!editingSession && <span className="text-destructive">*</span>}</Label>
           <Input
             type="datetime-local"
             value={formData.scheduledAt}
