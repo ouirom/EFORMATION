@@ -116,10 +116,15 @@ router.post(
         throw BadRequestError('Only a super admin can create another super admin');
       }
 
-      // Check if email already exists
+      // users.email/username carry a GLOBAL unique constraint (not scoped per
+      // tenant), matching auth.service.ts's register() — a same-email user in a
+      // different tenant must be caught here too, or it sails past this check
+      // and hits the raw INSERT as an unhandled constraint violation (500)
+      // instead of a clean 409. Soft-deleted accounts are excluded so a freed-up
+      // email can be reused.
       const existingUsers = await DatabaseService.query<{ id: number }>(
-        'SELECT id FROM users WHERE email = @email AND tenant_id = @tenantId',
-        { email: req.body.email, tenantId: req.user!.tenantId }
+        'SELECT id FROM users WHERE email = @email AND deleted_at IS NULL',
+        { email: req.body.email }
       );
 
       if (existingUsers.length > 0) {
@@ -135,40 +140,50 @@ router.post(
       const passwordHash = await bcrypt.hash(req.body.password, config.bcryptRounds);
 
       // Insert user
-      const result = await DatabaseService.query<{ id: number }>(
-        IS_PG
-          ? `INSERT INTO users (
-              tenant_id, email, username, password_hash, display_name, role,
-              enterprise_id, direction_id, service_id, supervisor_id, is_active
-            )
-            VALUES (
-              @tenantId, @email, @username, @passwordHash, @displayName, @role,
-              @enterpriseId, @directionId, @serviceId, @supervisorId, @isActive
-            )
-            RETURNING id`
-          : `INSERT INTO users (
-              tenant_id, email, username, password_hash, display_name, role,
-              enterprise_id, direction_id, service_id, supervisor_id, is_active
-            )
-            OUTPUT INSERTED.id
-            VALUES (
-              @tenantId, @email, @username, @passwordHash, @displayName, @role,
-              @enterpriseId, @directionId, @serviceId, @supervisorId, @isActive
-            )`,
-        {
-          tenantId: req.user!.tenantId,
-          email: req.body.email,
-          username,
-          passwordHash,
-          displayName: req.body.displayName,
-          role: req.body.role,
-          enterpriseId: req.body.enterpriseId || null,
-          directionId: req.body.directionId || null,
-          serviceId: req.body.serviceId || null,
-          supervisorId,
-          isActive: true,
+      let result: { id: number }[];
+      try {
+        result = await DatabaseService.query<{ id: number }>(
+          IS_PG
+            ? `INSERT INTO users (
+                tenant_id, email, username, password_hash, display_name, role,
+                enterprise_id, direction_id, service_id, supervisor_id, is_active
+              )
+              VALUES (
+                @tenantId, @email, @username, @passwordHash, @displayName, @role,
+                @enterpriseId, @directionId, @serviceId, @supervisorId, @isActive
+              )
+              RETURNING id`
+            : `INSERT INTO users (
+                tenant_id, email, username, password_hash, display_name, role,
+                enterprise_id, direction_id, service_id, supervisor_id, is_active
+              )
+              OUTPUT INSERTED.id
+              VALUES (
+                @tenantId, @email, @username, @passwordHash, @displayName, @role,
+                @enterpriseId, @directionId, @serviceId, @supervisorId, @isActive
+              )`,
+          {
+            tenantId: req.user!.tenantId,
+            email: req.body.email,
+            username,
+            passwordHash,
+            displayName: req.body.displayName,
+            role: req.body.role,
+            enterpriseId: req.body.enterpriseId || null,
+            directionId: req.body.directionId || null,
+            serviceId: req.body.serviceId || null,
+            supervisorId,
+            isActive: true,
+          }
+        );
+      } catch (error: any) {
+        // Belt-and-suspenders for a race between two concurrent creations with
+        // the same email/generated username slipping past the checks above.
+        if (error?.code === '23505' || error?.number === 2627 || error?.number === 2601) {
+          throw ConflictError('Email already registered');
         }
-      );
+        throw error;
+      }
 
       const userId = result[0].id;
 

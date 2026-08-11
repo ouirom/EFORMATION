@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useState, useEffect } from 'react'
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -141,8 +141,23 @@ export default function AdminUsersPage() {
   const { user: currentUser } = useAuth()
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [page, setPage] = useState(1)
+
+  // Debounce the search box before it enters the server-side query key -- without
+  // this, every keystroke fired a new request and (combined with the isLoading
+  // guard below) unmounted the whole page, kicking the input out of focus.
+  useEffect(() => {
+    const timeout = setTimeout(() => setDebouncedSearch(search), 400)
+    return () => clearTimeout(timeout)
+  }, [search])
+
+  // Any filter change invalidates whatever page we were on.
+  useEffect(() => {
+    setPage(1)
+  }, [debouncedSearch, roleFilter, statusFilter])
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
@@ -170,13 +185,18 @@ export default function AdminUsersPage() {
     isActive: true,
   })
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['admin-users', { search, role: roleFilter, status: statusFilter }],
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['admin-users', { search: debouncedSearch, role: roleFilter, status: statusFilter, page }],
     queryFn: () => api.users.list({
-      search,
+      search: debouncedSearch,
       role: roleFilter !== 'all' ? roleFilter : undefined,
       status: statusFilter !== 'all' ? statusFilter : undefined,
+      page,
     }),
+    // Keep the previous page's data (and the mounted <input>) on screen while a
+    // new search/filter/page loads, instead of the query key change flipping
+    // isLoading back to true and unmounting the whole page.
+    placeholderData: keepPreviousData,
   })
 
   const { data: pendingData } = useQuery({
@@ -364,44 +384,16 @@ export default function AdminUsersPage() {
     return <PageLoading />
   }
 
-  const users = data?.data || [
-    {
-      id: '1',
-      firstName: 'Marie',
-      lastName: 'Uokak',
-      email: 'marie.dupont@company.com',
-      role: 'admin',
-      status: 'active',
-      organization: 'Direction IT',
-      avatar: '/avatars/1.jpg',
-      lastLogin: new Date(),
-      createdAt: new Date(Date.now() - 90 * 86400000),
-    },
-    {
-      id: '2',
-      firstName: 'Thomas',
-      lastName: 'Martin',
-      email: 'thomas.martin@company.com',
-      role: 'manager',
-      status: 'active',
-      organization: 'Direction RH',
-      avatar: '/avatars/2.jpg',
-      lastLogin: new Date(Date.now() - 2 * 86400000),
-      createdAt: new Date(Date.now() - 60 * 86400000),
-    },
-    {
-      id: '3',
-      firstName: 'Sophie',
-      lastName: 'Laurent',
-      email: 'sophie.laurent@company.com',
-      role: 'agent',
-      status: 'inactive',
-      organization: 'Direction Marketing',
-      avatar: '/avatars/3.jpg',
-      lastLogin: new Date(Date.now() - 30 * 86400000),
-      createdAt: new Date(Date.now() - 120 * 86400000),
-    },
-  ]
+  if (isError) {
+    return (
+      <div className="rounded-md border border-destructive/50 bg-destructive/10 p-6 text-center text-destructive">
+        Impossible de charger la liste des utilisateurs. Veuillez réessayer.
+      </div>
+    )
+  }
+
+  const users = data?.data || []
+  const meta = data?.meta as { page: number; limit: number; total: number; totalPages: number } | undefined
 
   const roleLabels: Record<string, string> = {
     admin: 'Administrateur',
@@ -456,7 +448,7 @@ export default function AdminUsersPage() {
         <div>
           <h1 className="text-3xl font-bold">Gestion des utilisateurs</h1>
           <p className="text-muted-foreground">
-            {users.length} utilisateurs au total
+            {meta?.total ?? users.length} utilisateurs au total
             {pendingCount > 0 && (
               <>
                 {' '}·{' '}
@@ -545,7 +537,11 @@ export default function AdminUsersPage() {
                       {currentUser?.role === 'super_admin' && (
                         <SelectItem value="super_admin">Super administrateur</SelectItem>
                       )}
-                      <SelectItem value="admin">Administrateur</SelectItem>
+                      {/* Directors can't create admin/super_admin accounts (enforced backend-side
+                          too) -- hiding the option avoids a guaranteed rejection on submit. */}
+                      {currentUser?.role !== 'director' && (
+                        <SelectItem value="admin">Administrateur</SelectItem>
+                      )}
                       <SelectItem value="director">Directeur</SelectItem>
                       <SelectItem value="manager">Manager</SelectItem>
                       <SelectItem value="supervisor">Superviseur</SelectItem>
@@ -669,6 +665,8 @@ export default function AdminUsersPage() {
             <SelectItem value="manager">Manager</SelectItem>
             <SelectItem value="supervisor">Superviseur</SelectItem>
             <SelectItem value="agent">Agent</SelectItem>
+            <SelectItem value="externe">Externe</SelectItem>
+            <SelectItem value="stagiaire">Stagiaire</SelectItem>
           </SelectContent>
         </Select>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -796,11 +794,44 @@ export default function AdminUsersPage() {
                     </td>
                   </tr>
                 ))}
+                {users.length === 0 && (
+                  <tr>
+                    <td colSpan={9} className="p-8 text-center text-muted-foreground">
+                      Aucun utilisateur ne correspond à ces critères.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
         </CardContent>
       </Card>
+
+      {meta && meta.totalPages > 1 && (
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-muted-foreground">
+            Page {meta.page} sur {meta.totalPages} ({meta.total} utilisateurs)
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              Précédent
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page >= meta.totalPages}
+              onClick={() => setPage((p) => Math.min(meta.totalPages, p + 1))}
+            >
+              Suivant
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Edit User Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
@@ -822,7 +853,14 @@ export default function AdminUsersPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="editRole">Rôle</Label>
-              <Select value={editUser.role} onValueChange={(value: string) => setEditUser({ ...editUser, role: value })}>
+              {/* Only admins/super_admins can actually change a role (the backend silently
+                  drops the field otherwise) -- disable rather than let a director submit a
+                  change that quietly does nothing. */}
+              <Select
+                value={editUser.role}
+                onValueChange={(value: string) => setEditUser({ ...editUser, role: value })}
+                disabled={currentUser?.role !== 'admin' && currentUser?.role !== 'super_admin'}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Sélectionner un rôle" />
                 </SelectTrigger>
@@ -834,6 +872,8 @@ export default function AdminUsersPage() {
                   <SelectItem value="director">Directeur</SelectItem>
                   <SelectItem value="manager">Manager</SelectItem>
                   <SelectItem value="supervisor">Superviseur</SelectItem>
+                  <SelectItem value="externe">Externe</SelectItem>
+                  <SelectItem value="stagiaire">Stagiaire</SelectItem>
                   <SelectItem value="agent">Agent</SelectItem>
                 </SelectContent>
               </Select>

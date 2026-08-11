@@ -212,6 +212,57 @@ describe('POST /users externe/stagiaire roles', () => {
   });
 });
 
+describe('POST /users duplicate email handling', () => {
+  const adminToken = tokenFor({ id: 2, tenantId: 10, email: 'admin@test.com', role: 'admin' });
+
+  it('rejects an email already used in a different tenant with a clean 409', async () => {
+    // users.email is a GLOBAL unique constraint, not scoped per tenant -- the
+    // duplicate check must catch a cross-tenant collision too, or it falls
+    // through to an unhandled constraint violation on the INSERT.
+    mockedQuery.mockImplementation((query: string) => {
+      if (query.includes('FROM users WHERE id = @id')) {
+        return Promise.resolve([mockAuthLookup({ id: 2, email: 'admin@test.com', role: 'admin', direction_id: null })]);
+      }
+      if (query.includes('SELECT id FROM users WHERE email')) return Promise.resolve([{ id: 999 }]);
+      return Promise.resolve([]);
+    });
+
+    const response = await request(makeApp())
+      .post('/users')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ email: 'taken@test.com', password: 'password123', displayName: 'Dup', role: 'agent' });
+
+    expect(response.status).toBe(409);
+    const emailCheckCall = mockedQuery.mock.calls.find(([q]: [string]) =>
+      q.includes('SELECT id FROM users WHERE email')
+    );
+    expect(emailCheckCall[0]).not.toContain('tenant_id');
+    expect(emailCheckCall[0]).toContain('deleted_at IS NULL');
+  });
+
+  it('allows reusing the email of a soft-deleted account', async () => {
+    mockedExecute.mockResolvedValue({ rowsAffected: 1 });
+    mockedQuery.mockImplementation((query: string) => {
+      if (query.includes('FROM users WHERE id = @id')) {
+        return Promise.resolve([mockAuthLookup({ id: 2, email: 'admin@test.com', role: 'admin', direction_id: null })]);
+      }
+      // deleted_at IS NULL is part of the query text, so the mock simply returns
+      // no rows -- exercising the real SQL text is covered by the assertion above.
+      if (query.includes('SELECT id FROM users WHERE email')) return Promise.resolve([]);
+      if (query.includes('INSERT INTO users')) return Promise.resolve([{ id: 103 }]);
+      if (query.includes('WHERE u.id = @userId')) return Promise.resolve([{ id: 103 }]);
+      return Promise.resolve([]);
+    });
+
+    const response = await request(makeApp())
+      .post('/users')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ email: 'freed-up@test.com', password: 'password123', displayName: 'Reused Email', role: 'agent' });
+
+    expect(response.status).toBe(201);
+  });
+});
+
 describe('POST /users supervisorId assignment', () => {
   const adminToken = tokenFor({ id: 2, tenantId: 10, email: 'admin@test.com', role: 'admin' });
 
