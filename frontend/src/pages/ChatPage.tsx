@@ -5,6 +5,8 @@ import { useChat } from '@/contexts/SocketContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
+import { EmojiPicker } from '@/components/EmojiPicker'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { PageLoading } from '@/components/ui/loading'
@@ -183,7 +185,32 @@ function ChatArea({
   const { user } = useAuth()
   const { messages: socketMessages, sendMessage: socketSend, typing } = useChat(Number(conversationId))
   const [newMessage, setNewMessage] = useState('')
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messageInputRef = useRef<HTMLInputElement>(null)
+
+  // Inserts at the cursor position (falling back to the end) rather than always
+  // appending, so picking an emoji mid-sentence doesn't jump it to the end. Closes
+  // the popover and refocuses the input afterward -- Radix returns focus to the
+  // trigger button on close by default, which would leave the user unable to keep
+  // typing without an extra click.
+  const handleInsertEmoji = (emoji: string) => {
+    const input = messageInputRef.current
+    const start = input?.selectionStart ?? newMessage.length
+    const end = input?.selectionEnd ?? newMessage.length
+    const next = newMessage.slice(0, start) + emoji + newMessage.slice(end)
+    setNewMessage(next)
+    setEmojiPickerOpen(false)
+    // Radix's own close-animation-then-refocus-trigger sequence can finish after
+    // a requestAnimationFrame callback would, silently stealing focus back from
+    // the input despite onCloseAutoFocus's preventDefault -- a short timeout
+    // outlasts that animation (see PopoverContent's animate-out classes).
+    setTimeout(() => {
+      input?.focus()
+      const cursor = start + emoji.length
+      input?.setSelectionRange(cursor, cursor)
+    }, 150)
+  }
 
   // Charger les messages depuis l'API
   const { data: apiMessages = [], refetch } = useQuery({
@@ -293,15 +320,29 @@ function ChatArea({
             <Paperclip className="h-5 w-5" />
           </Button>
           <Input
+            ref={messageInputRef}
             placeholder="Écrire un message..."
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
             className="flex-1"
           />
-          <Button variant="ghost" size="icon">
-            <Smile className="h-5 w-5" />
-          </Button>
+          <Popover open={emojiPickerOpen} onOpenChange={setEmojiPickerOpen}>
+            <PopoverTrigger asChild>
+              <Button type="button" variant="ghost" size="icon">
+                <Smile className="h-5 w-5" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent
+              align="end"
+              className="w-auto"
+              // Radix returns focus to the trigger button on close by default,
+              // which would fight the explicit input refocus in handleInsertEmoji.
+              onCloseAutoFocus={(e) => e.preventDefault()}
+            >
+              <EmojiPicker onSelect={handleInsertEmoji} />
+            </PopoverContent>
+          </Popover>
           <Button onClick={handleSend} disabled={!newMessage.trim()}>
             <Send className="h-4 w-4" />
           </Button>
