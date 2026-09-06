@@ -40,7 +40,7 @@ function mockAuthLookup() {
 const token = jwt.sign({ id: 1, tenantId: 10, email: 'agent@test.com', role: 'agent' }, config.jwt.secret);
 
 describe('GET /ai/recommendations/courses', () => {
-  it('logs recommendations using parameterized placeholders, not interpolated values', async () => {
+  it('logs recommendations using a parameterized placeholder, not interpolated values', async () => {
     mockedQuery.mockImplementation((query: string) => {
       if (query.includes('FROM users WHERE id = @id')) return Promise.resolve([mockAuthLookup()]);
       if (query.includes('FROM enrollments e')) return Promise.resolve([]);
@@ -59,9 +59,15 @@ describe('GET /ai/recommendations/courses', () => {
     expect(response.status).toBe(200);
     expect(mockedExecute).toHaveBeenCalledTimes(1);
     const [insertQuery, insertParams] = mockedExecute.mock.calls[0];
+    // ai_recommendations only has a single JSONB `recommendation` column (no
+    // per-field course_id/score/reason columns) -- the whole array is bound as
+    // one parameter, never interpolated into the SQL text.
     expect(insertQuery).not.toContain("quote");
-    expect(insertQuery).toContain('@reason0');
-    expect(insertParams.reason0).toBe("Great fit; contains a ' quote");
+    expect(insertQuery).toContain('@recommendation');
+    expect(insertQuery).not.toContain('score0');
+    expect(JSON.parse(insertParams.recommendation)).toEqual([
+      { courseId: 5, score: 0.9, reason: "Great fit; contains a ' quote" },
+    ]);
   });
 
   it('skips the logging insert when there are no recommendations', async () => {

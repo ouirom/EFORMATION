@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
@@ -24,6 +25,7 @@ import { useAuth } from '@/contexts/AuthContext'
 const CAN_CREATE_SESSION_ROLES = ['super_admin', 'admin', 'director', 'manager']
 
 export default function LiveSessionsPage() {
+  const { t } = useTranslation('live')
   const { user } = useAuth()
   const [search, setSearch] = useState('')
 
@@ -47,16 +49,16 @@ export default function LiveSessionsPage() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold">Sessions Live</h1>
+          <h1 className="text-3xl font-bold">{t('list.title')}</h1>
           <p className="text-muted-foreground">
-            Participez à des sessions interactives en direct
+            {t('list.subtitle')}
           </p>
         </div>
         {user && CAN_CREATE_SESSION_ROLES.includes(user.role) && (
           <Link to="/admin/live-sessions">
             <Button>
               <Plus className="h-4 w-4 mr-2" />
-              Créer une session
+              {t('list.createSession')}
             </Button>
           </Link>
         )}
@@ -68,19 +70,19 @@ export default function LiveSessionsPage() {
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-2">
               <div className="h-3 w-3 rounded-full bg-red-500 animate-pulse" />
-              <span className="font-semibold text-red-600 dark:text-red-400">EN DIRECT</span>
+              <span className="font-semibold text-red-600 dark:text-red-400">{t('list.liveNow')}</span>
             </div>
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
                 <h3 className="font-semibold">{liveSessions[0].title}</h3>
                 <p className="text-sm text-muted-foreground">
-                  {liveSessions[0].currentParticipants} participants
+                  {t('list.participantsCount', { count: liveSessions[0].currentParticipants })}
                 </p>
               </div>
               <Link to={`/live/${liveSessions[0].id}`}>
                 <Button>
                   <Play className="h-4 w-4 mr-2" />
-                  Rejoindre maintenant
+                  {t('list.joinNow')}
                 </Button>
               </Link>
             </div>
@@ -92,7 +94,7 @@ export default function LiveSessionsPage() {
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
-          placeholder="Rechercher une session..."
+          placeholder={t('list.searchPlaceholder')}
           className="pl-10"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -103,16 +105,16 @@ export default function LiveSessionsPage() {
       <Tabs defaultValue="upcoming">
         <TabsList>
           <TabsTrigger value="upcoming">
-            À venir ({upcomingSessions.length})
+            {t('list.tabs.upcoming', { count: upcomingSessions.length })}
           </TabsTrigger>
           <TabsTrigger value="live" className="flex items-center gap-2">
-            En direct
+            {t('list.tabs.live')}
             {liveSessions.length > 0 && (
               <div className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
             )}
           </TabsTrigger>
           <TabsTrigger value="recordings">
-            Enregistrements ({pastSessions.length})
+            {t('list.tabs.recordings', { count: pastSessions.length })}
           </TabsTrigger>
         </TabsList>
 
@@ -125,8 +127,8 @@ export default function LiveSessionsPage() {
           {upcomingSessions.length === 0 && (
             <EmptyState
               icon={Calendar}
-              title="Aucune session programmée"
-              description="Les prochaines sessions apparaîtront ici"
+              title={t('list.empty.upcomingTitle')}
+              description={t('list.empty.upcomingDescription')}
             />
           )}
         </TabsContent>
@@ -140,8 +142,8 @@ export default function LiveSessionsPage() {
           {liveSessions.length === 0 && (
             <EmptyState
               icon={Video}
-              title="Aucune session en direct"
-              description="Consultez les sessions à venir"
+              title={t('list.empty.liveTitle')}
+              description={t('list.empty.liveDescription')}
             />
           )}
         </TabsContent>
@@ -155,8 +157,8 @@ export default function LiveSessionsPage() {
           {pastSessions.length === 0 && (
             <EmptyState
               icon={Play}
-              title="Aucun enregistrement"
-              description="Les sessions passées seront disponibles ici"
+              title={t('list.empty.recordingsTitle')}
+              description={t('list.empty.recordingsDescription')}
             />
           )}
         </TabsContent>
@@ -166,6 +168,7 @@ export default function LiveSessionsPage() {
 }
 
 function SessionCard({ session }: { session: any }) {
+  const { t } = useTranslation('live')
   const statusColors: Record<string, string> = {
     scheduled: 'bg-blue-100 text-blue-800',
     live: 'bg-red-100 text-red-800',
@@ -173,9 +176,9 @@ function SessionCard({ session }: { session: any }) {
   }
 
   const statusLabels: Record<string, string> = {
-    scheduled: 'Programmée',
-    live: 'En direct',
-    ended: 'Terminée',
+    scheduled: t('list.status.scheduled'),
+    live: t('list.status.live'),
+    ended: t('list.status.ended'),
   }
 
   return (
@@ -201,18 +204,18 @@ function SessionCard({ session }: { session: any }) {
         <div className="flex items-center gap-3 mb-3">
           <Avatar className="h-8 w-8">
             <AvatarFallback>
-              {getInitials(session.instructorName || 'Formateur')}
+              {getInitials(session.instructorName || t('list.defaultInstructor'))}
             </AvatarFallback>
           </Avatar>
           <div>
-            <p className="text-sm font-medium">{session.instructorName || 'Formateur non assigné'}</p>
-            <p className="text-xs text-muted-foreground">Formateur</p>
+            <p className="text-sm font-medium">{session.instructorName || t('list.noInstructorAssigned')}</p>
+            <p className="text-xs text-muted-foreground">{t('list.defaultInstructor')}</p>
           </div>
         </div>
         <div className="flex items-center gap-4 text-sm text-muted-foreground">
           <span className="flex items-center gap-1">
             <Calendar className="h-4 w-4" />
-            {session.scheduledAt ? formatDate(session.scheduledAt) : 'Non planifiée'}
+            {session.scheduledAt ? formatDate(session.scheduledAt) : t('list.notScheduled')}
           </span>
           {session.duration && (
             <span className="flex items-center gap-1">
@@ -231,10 +234,10 @@ function SessionCard({ session }: { session: any }) {
           <Button className="w-full" variant={session.status === 'live' ? 'default' : 'outline'}>
             {session.status === 'live' && <Play className="h-4 w-4 mr-2" />}
             {session.status === 'live'
-              ? 'Rejoindre'
+              ? t('list.join')
               : session.status === 'ended'
-              ? 'Voir l\'enregistrement'
-              : 'S\'inscrire'}
+              ? t('list.viewRecording')
+              : t('list.enroll')}
           </Button>
         </Link>
       </CardFooter>

@@ -1,0 +1,35 @@
+{
+  "downloadErrorDescription": "Impossible de télécharger le certificat",
+  "linkCopiedTitle": "Lien copié",
+  "linkCopiedDescription": "Le lien de vérification a été copié dans le presse-papiers",
+  "copyLinkErrorDescription": "Impossible de copier le lien",
+  "title": "Mes Certificats",
+  "subtitle": "Consultez et téléchargez vos certificats de formation",
+  "stats": {
+    "earned": "Certificats obtenus",
+    "valid": "Certificats valides",
+    "expiringSoon": "Expirent bientôt"
+  },
+  "searchPlaceholder": "Rechercher un certificat...",
+  "empty": {
+    "title": "Aucun certificat",
+    "noMatch": "Aucun certificat ne correspond à votre recherche",
+    "noneYet": "Terminez des formations pour obtenir des certificats"
+  },
+  "status": {
+    "valid": "Valide",
+    "expired": "Expiré"
+  },
+  "serialNumber": "N° {{number}}",
+  "issuedOn": "Délivré le",
+  "expiresOn": "Expire le",
+  "share": "Partager",
+  "verify": {
+    "validTitle": "Certificat authentique",
+    "notFoundTitle": "Certificat introuvable",
+    "notFoundHint": "Aucun certificat ne correspond à ce numéro de série. Vérifiez le lien ou contactez l'émetteur.",
+    "holder": "Titulaire",
+    "course": "Formation",
+    "issuer": "Émis par"
+  }
+}

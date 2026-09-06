@@ -1,10 +1,12 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../services/api';
 import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
+import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { Plus, Edit2, Trash2 } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
@@ -17,10 +19,13 @@ interface Quiz {
 }
 
 export const LessonQuizzesPage: React.FC = () => {
+  const { t } = useTranslation('courses');
+  const { t: tCommon } = useTranslation('common');
   const { lessonId } = useParams<{ lessonId: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const lessonIdNum = parseInt(lessonId || '0', 10);
+  const [quizPendingDelete, setQuizPendingDelete] = useState<Quiz | null>(null);
 
   // Fetch quizzes for this lesson
   const { data: quizzesData, isLoading } = useQuery({
@@ -38,10 +43,8 @@ export const LessonQuizzesPage: React.FC = () => {
 
   const quizzes: Quiz[] = quizzesData?.data || [];
 
-  const handleDeleteQuiz = (quizId: number, title: string) => {
-    if (window.confirm(`Êtes-vous sûr de vouloir supprimer le quiz "${title}"?`)) {
-      deleteQuizMutation.mutate(quizId);
-    }
+  const handleDeleteQuiz = (quiz: Quiz) => {
+    setQuizPendingDelete(quiz);
   };
 
   return (
@@ -51,30 +54,30 @@ export const LessonQuizzesPage: React.FC = () => {
           onClick={() => navigate(-1)}
           className="text-blue-600 hover:text-blue-800 mb-4"
         >
-          ← Retour
+          {t('lessonQuizzes.back')}
         </button>
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-3xl font-bold">Quizzes de la leçon</h1>
-            <p className="text-gray-600">({quizzes.length} quiz)</p>
+            <h1 className="text-3xl font-bold">{t('lessonQuizzes.title')}</h1>
+            <p className="text-gray-600">{t('lessonQuizzes.quizCount', { count: quizzes.length })}</p>
           </div>
           <Button
             onClick={() => navigate(`/lessons/${lessonId}/quiz/create`)}
             className="flex items-center gap-2"
           >
             <Plus className="w-4 h-4" />
-            Créer un quiz
+            {t('lessonQuizzes.createQuiz')}
           </Button>
         </div>
       </div>
 
       {isLoading ? (
-        <div className="text-center py-8">Chargement...</div>
+        <div className="text-center py-8">{t('lessonQuizzes.loading')}</div>
       ) : quizzes.length === 0 ? (
         <Card className="p-8 text-center">
-          <p className="text-gray-600 mb-4">Aucun quiz pour cette leçon</p>
+          <p className="text-gray-600 mb-4">{t('lessonQuizzes.empty')}</p>
           <Button onClick={() => navigate(`/lessons/${lessonId}/quiz/create`)}>
-            Créer un quiz
+            {t('lessonQuizzes.createQuiz')}
           </Button>
         </Card>
       ) : (
@@ -89,10 +92,10 @@ export const LessonQuizzesPage: React.FC = () => {
                   )}
                   <div className="flex gap-2 flex-wrap">
                     <Badge variant="secondary">
-                      {quiz.question_count} questions
+                      {t('lessonQuizzes.questionCount', { count: quiz.question_count })}
                     </Badge>
                     <Badge variant="outline">
-                      Score: {quiz.passing_score}%
+                      {t('lessonQuizzes.scoreLabel', { score: quiz.passing_score })}
                     </Badge>
                   </div>
                 </div>
@@ -105,12 +108,12 @@ export const LessonQuizzesPage: React.FC = () => {
                     className="flex items-center gap-1"
                   >
                     <Edit2 className="w-4 h-4" />
-                    Gérer
+                    {t('lessonQuizzes.manage')}
                   </Button>
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => handleDeleteQuiz(quiz.id, quiz.title)}
+                    onClick={() => handleDeleteQuiz(quiz)}
                     disabled={deleteQuizMutation.isPending}
                     className="text-red-600 hover:text-red-700"
                   >
@@ -122,6 +125,19 @@ export const LessonQuizzesPage: React.FC = () => {
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!quizPendingDelete}
+        onOpenChange={(open) => !open && setQuizPendingDelete(null)}
+        title={tCommon('actions.delete')}
+        description={t('lessonQuizzes.confirmDelete', { title: quizPendingDelete?.title })}
+        onConfirm={() => {
+          if (quizPendingDelete) {
+            deleteQuizMutation.mutate(quizPendingDelete.id);
+          }
+          setQuizPendingDelete(null);
+        }}
+      />
     </div>
   );
 };

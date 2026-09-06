@@ -1,0 +1,37 @@
+{
+  "title": "My Badges & Trophies",
+  "subtitle": "Collect rewards by achieving your goals",
+  "stats": {
+    "total": "Total badges",
+    "trophies": "Trophies",
+    "quizBadges": "Quiz Badges",
+    "courseBadges": "Course Badges"
+  },
+  "recentlyEarned": "🎉 Recently earned rewards",
+  "defaultBadge": "Badge",
+  "categories": {
+    "all": "All",
+    "trophy": "🏆 Trophies",
+    "quiz": "📝 Quiz",
+    "course": "📚 Courses"
+  },
+  "emptyCategory": "No badges in this category",
+  "types": {
+    "trophy": "Trophy",
+    "perfectScore": "Perfect Score",
+    "quizCompletion": "Quiz Passed",
+    "courseStart": "Explorer",
+    "courseCompletion": "Graduate",
+    "default": "Badge"
+  },
+  "quizLabel": "Quiz: {{title}}",
+  "courseLabel": "Course: {{title}}",
+  "earnedOn": "Earned on {{date}}",
+  "lockedHints": {
+    "trophy": "Score 100% on a quiz to unlock this trophy",
+    "perfectScore": "Get a perfect score on a quiz",
+    "quizCompletion": "Pass a quiz to earn this badge",
+    "courseStart": "Start a course to earn this badge",
+    "courseCompletion": "Finish a course to earn this badge"
+  }
+}

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -5,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { PageLoading } from '@/components/ui/loading'
 import { useToast } from '@/components/ui/use-toast'
 import { getInitials } from '@/lib/utils'
@@ -23,43 +24,54 @@ import {
   HelpCircle,
   Download,
   Share2,
-  Heart,
   ArrowLeft,
 } from 'lucide-react'
 import { api } from '@/services/api'
+import { FavoriteButton } from '@/components/FavoriteButton'
 
 export default function CourseDetailPage() {
+  const { t } = useTranslation('courses')
+  const { t: tCommon } = useTranslation('common')
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { toast } = useToast()
   const queryClient = useQueryClient()
-  const courseId = id ? parseInt(id, 10) : null
 
   // Fetch full course structure with modules, lessons, quizzes
   const { data: course, isLoading, error } = useQuery({
-    queryKey: ['course-full', courseId],
+    queryKey: ['course-full', id],
     queryFn: async () => {
-      const response = await api.get(`/courses/${courseId}/full`)
+      const response = await api.get(`/courses/${id}/full`)
       return response.data.data
     },
-    enabled: !!courseId,
+    enabled: !!id,
   })
 
-  console.log('CourseDetailPage - courseId:', courseId, 'course:', course, 'isLoading:', isLoading, 'error:', error)
+  // Real enrollment/progress state -- avoids assuming every visitor is
+  // enrolled and every lesson incomplete.
+  const { data: myProgress } = useQuery({
+    queryKey: ['course-my-progress', id],
+    queryFn: async () => {
+      const response = await api.get(`/courses/${id}/my-progress`)
+      return response.data.data
+    },
+    enabled: !!id,
+  })
 
   const enrollMutation = useMutation({
-    mutationFn: () => api.courses.enroll(courseId!),
+    mutationFn: () => api.courses.enroll(course!.id),
     onSuccess: () => {
       toast({
-        title: 'Inscription réussie',
-        description: 'Vous êtes maintenant inscrit à cette formation',
+        title: t('detail.enrollSuccessTitle'),
+        description: t('detail.enrollSuccessDescription'),
       })
-      queryClient.invalidateQueries({ queryKey: ['course-full', courseId] })
+      queryClient.invalidateQueries({ queryKey: ['course-full', id] })
+      queryClient.invalidateQueries({ queryKey: ['course-my-progress', id] })
     },
     onError: (err: any) => {
       toast({
-        title: 'Erreur',
-        description: err.response?.data?.error?.message || "Une erreur s'est produite lors de l'inscription",
+        title: tCommon('status.error'),
+        description: err.response?.data?.error?.message || t('detail.enrollErrorDescription'),
         variant: 'destructive',
       })
     },
@@ -73,10 +85,10 @@ export default function CourseDetailPage() {
     return (
       <div className="text-center py-12">
         <BookOpen className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-        <h2 className="text-xl font-semibold mb-2">Formation non trouvée</h2>
-        <p className="text-muted-foreground mb-4">Cette formation n'existe pas ou n'est pas accessible.</p>
+        <h2 className="text-xl font-semibold mb-2">{t('detail.notFoundTitle')}</h2>
+        <p className="text-muted-foreground mb-4">{t('detail.notFoundHint')}</p>
         <Link to="/courses">
-          <Button>Retour au catalogue</Button>
+          <Button>{t('detail.backToCatalog')}</Button>
         </Link>
       </div>
     )
@@ -84,49 +96,65 @@ export default function CourseDetailPage() {
 
   // Build course data from real API response
   const courseModules = course.modules || []
-  
-  // Default objectives and prerequisites if not provided
-  const defaultObjectives = [
-    'Maîtriser les concepts fondamentaux',
-    'Appliquer les connaissances en pratique',
-    'Développer des compétences professionnelles',
-  ]
-  const defaultPrerequisites = ['Aucun prérequis particulier']
+  const completedLessonIds = new Set<number>(myProgress?.completedLessonIds || [])
+
+  // `objectives` isn't a real course field and `prerequisites` (when set) is a
+  // structured {courseIds, badgeIds} reference, not free-text -- neither has
+  // genuine per-course display text today, so we show an honest empty state
+  // instead of inventing generic copy.
+  const realPrerequisites = Array.isArray(course.prerequisites) ? course.prerequisites : []
 
   const mergedCourse = {
     id: course.id,
-    title: course.title || 'Formation',
-    description: course.description || 'Description de la formation',
+    title: course.title || t('detail.defaultTitle'),
+    description: course.description || t('detail.defaultDescription'),
     instructor: {
-      name: course.creatorName || 'Formateur',
-      title: 'Instructeur',
-      avatar: '/avatars/instructor.jpg',
+      name: course.creatorName || t('detail.defaultInstructor'),
+      title: t('detail.defaultInstructorTitle'),
     },
-    category: course.category || 'Formation',
+    category: course.category || t('detail.defaultCategory'),
     level: course.level || 'intermediate',
     duration: course.duration ? `${course.duration}h` : '-',
     enrolledCount: course.enrolledCount || 0,
-    rating: course.avgRating || 4.5,
+    rating: course.reviewCount > 0 ? Math.round(course.avgRating * 10) / 10 : null,
     reviewsCount: course.reviewCount || 0,
-    enrolled: true, // For now, assume user can access
-    progress: 0,
+    enrolled: !!myProgress?.enrolled,
     modules: courseModules.map((m: any) => ({
       id: m.id,
       title: m.title,
       lessons: (m.lessons || []).map((l: any) => ({
         id: l.id,
+        public_id: l.public_id,
         title: l.title,
+        duration_min: l.duration_min,
         duration: l.duration_min ? `${l.duration_min}min` : '-',
         type: l.type || 'video',
-        completed: false,
+        completed: completedLessonIds.has(l.id),
         quizzes: l.quizzes || [],
+        contents: l.contents || [],
       })),
     })),
-    objectives: course.objectives || defaultObjectives,
-    prerequisites: course.prerequisites || defaultPrerequisites,
+    objectives: Array.isArray(course.objectives) ? course.objectives : [],
+    prerequisites: realPrerequisites,
   }
 
   const totalLessons = mergedCourse.modules.reduce((acc: number, m: any) => acc + m.lessons.length, 0)
+  const totalVideoMinutes = mergedCourse.modules.reduce(
+    (acc: number, m: any) => acc + m.lessons.filter((l: any) => l.type === 'video').reduce((a: number, l: any) => a + (l.duration_min || 0), 0),
+    0
+  )
+  const articlesCount = mergedCourse.modules.reduce(
+    (acc: number, m: any) => acc + m.lessons.filter((l: any) => l.type === 'article').length,
+    0
+  )
+  const downloadableResourcesCount = mergedCourse.modules.reduce(
+    (acc: number, m: any) => acc + m.lessons.reduce((a: number, l: any) => a + l.contents.filter((c: any) => c.storage_key).length, 0),
+    0
+  )
+  const quizzesCount = mergedCourse.modules.reduce(
+    (acc: number, m: any) => acc + m.lessons.reduce((a: number, l: any) => a + l.quizzes.length, 0),
+    0
+  )
   const completedLessons = mergedCourse.modules.reduce(
     (acc: number, m: any) => acc + m.lessons.filter((l: any) => l.completed).length,
     0
@@ -137,7 +165,7 @@ export default function CourseDetailPage() {
       {/* Back Button */}
       <Button variant="ghost" onClick={() => navigate(-1)}>
         <ArrowLeft className="h-4 w-4 mr-2" />
-        Retour
+        {t('detail.back')}
       </Button>
 
       {/* Hero Section */}
@@ -149,8 +177,8 @@ export default function CourseDetailPage() {
               <div className="flex items-center gap-2 mb-4">
                 <Badge>{mergedCourse.category}</Badge>
                 <Badge variant="outline">
-                  {mergedCourse.level === 'beginner' ? 'Débutant' : 
-                   mergedCourse.level === 'advanced' ? 'Avancé' : 'Intermédiaire'}
+                  {mergedCourse.level === 'beginner' ? t('detail.levels.beginner') :
+                   mergedCourse.level === 'advanced' ? t('detail.levels.advanced') : t('detail.levels.intermediate')}
                 </Badge>
               </div>
               <h1 className="text-3xl font-bold mb-4">{mergedCourse.title}</h1>
@@ -160,12 +188,18 @@ export default function CourseDetailPage() {
               <div className="flex flex-wrap items-center gap-6 text-sm">
                 <div className="flex items-center gap-2">
                   <Star className="h-5 w-5 fill-yellow-400 text-yellow-400" />
-                  <span className="font-medium">{mergedCourse.rating}</span>
-                  <span className="text-muted-foreground">({mergedCourse.reviewsCount} avis)</span>
+                  {mergedCourse.rating !== null ? (
+                    <>
+                      <span className="font-medium">{mergedCourse.rating}</span>
+                      <span className="text-muted-foreground">{t('detail.reviewsCount', { count: mergedCourse.reviewsCount })}</span>
+                    </>
+                  ) : (
+                    <span className="text-muted-foreground">{t('detail.noReviewsYet')}</span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <Users className="h-5 w-5 text-muted-foreground" />
-                  <span>{mergedCourse.enrolledCount} inscrits</span>
+                  <span>{t('detail.enrolledCount', { count: mergedCourse.enrolledCount })}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Clock className="h-5 w-5 text-muted-foreground" />
@@ -173,14 +207,13 @@ export default function CourseDetailPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <BookOpen className="h-5 w-5 text-muted-foreground" />
-                  <span>{totalLessons} leçons</span>
+                  <span>{t('detail.lessonsCount', { count: totalLessons })}</span>
                 </div>
               </div>
 
               {/* Instructor */}
               <div className="flex items-center gap-4 mt-6 pt-6 border-t">
                 <Avatar className="h-12 w-12">
-                  <AvatarImage src={mergedCourse.instructor.avatar} />
                   <AvatarFallback>
                     {getInitials(mergedCourse.instructor.name)}
                   </AvatarFallback>
@@ -196,9 +229,9 @@ export default function CourseDetailPage() {
           {/* Tabs */}
           <Tabs defaultValue="content">
             <TabsList className="w-full justify-start">
-              <TabsTrigger value="content">Contenu</TabsTrigger>
-              <TabsTrigger value="objectives">Objectifs</TabsTrigger>
-              <TabsTrigger value="reviews">Avis</TabsTrigger>
+              <TabsTrigger value="content">{t('detail.tabs.content')}</TabsTrigger>
+              <TabsTrigger value="objectives">{t('detail.tabs.objectives')}</TabsTrigger>
+              <TabsTrigger value="reviews">{t('detail.tabs.reviews')}</TabsTrigger>
             </TabsList>
 
             <TabsContent value="content" className="mt-4 space-y-4">
@@ -212,7 +245,7 @@ export default function CourseDetailPage() {
                       {module.title}
                     </CardTitle>
                     <CardDescription>
-                      {module.lessons.length} leçons · {module.lessons.filter((l: any) => l.completed).length} terminées
+                      {t('detail.moduleLessons', { total: module.lessons.length, completed: module.lessons.filter((l: any) => l.completed).length })}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -221,7 +254,7 @@ export default function CourseDetailPage() {
                         <LessonItem
                           key={lesson.id}
                           lesson={lesson}
-                          courseId={courseId!}
+                          courseId={id!}
                           enrolled={mergedCourse.enrolled}
                         />
                       ))}
@@ -234,33 +267,41 @@ export default function CourseDetailPage() {
             <TabsContent value="objectives" className="mt-4">
               <Card>
                 <CardHeader>
-                  <CardTitle>Ce que vous apprendrez</CardTitle>
+                  <CardTitle>{t('detail.whatYouWillLearn')}</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <ul className="grid md:grid-cols-2 gap-4">
-                    {mergedCourse.objectives.map((obj: string, i: number) => (
-                      <li key={i} className="flex items-start gap-2">
-                        <CheckCircle className="h-5 w-5 text-green-500 shrink-0 mt-0.5" />
-                        <span>{obj}</span>
-                      </li>
-                    ))}
-                  </ul>
+                  {mergedCourse.objectives.length > 0 ? (
+                    <ul className="grid md:grid-cols-2 gap-4">
+                      {mergedCourse.objectives.map((obj: string, i: number) => (
+                        <li key={i} className="flex items-start gap-2">
+                          <CheckCircle className="h-5 w-5 text-green-500 shrink-0 mt-0.5" />
+                          <span>{obj}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">{t('detail.noObjectives')}</p>
+                  )}
                 </CardContent>
               </Card>
 
               <Card className="mt-4">
                 <CardHeader>
-                  <CardTitle>Prérequis</CardTitle>
+                  <CardTitle>{t('detail.prerequisites')}</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <ul className="space-y-2">
-                    {mergedCourse.prerequisites.map((prereq: string, i: number) => (
-                      <li key={i} className="flex items-center gap-2">
-                        <div className="h-2 w-2 rounded-full bg-primary" />
-                        <span>{prereq}</span>
-                      </li>
-                    ))}
-                  </ul>
+                  {mergedCourse.prerequisites.length > 0 ? (
+                    <ul className="space-y-2">
+                      {mergedCourse.prerequisites.map((prereq: string, i: number) => (
+                        <li key={i} className="flex items-center gap-2">
+                          <div className="h-2 w-2 rounded-full bg-primary" />
+                          <span>{prereq}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">{t('detail.noPrerequisites')}</p>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>
@@ -269,12 +310,18 @@ export default function CourseDetailPage() {
               <Card>
                 <CardContent className="p-6 text-center">
                   <Star className="h-12 w-12 mx-auto text-yellow-400 mb-4" />
-                  <h3 className="text-xl font-semibold mb-2">
-                    Note moyenne: {mergedCourse.rating}/5
-                  </h3>
-                  <p className="text-muted-foreground">
-                    Basée sur {mergedCourse.reviewsCount} avis
-                  </p>
+                  {mergedCourse.rating !== null ? (
+                    <>
+                      <h3 className="text-xl font-semibold mb-2">
+                        {t('detail.avgRating', { rating: mergedCourse.rating })}
+                      </h3>
+                      <p className="text-muted-foreground">
+                        {t('detail.basedOnReviews', { count: mergedCourse.reviewsCount })}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-muted-foreground">{t('detail.noReviewsYet')}</p>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>
@@ -290,28 +337,28 @@ export default function CourseDetailPage() {
                 <>
                   <div className="mb-4">
                     <div className="flex items-center justify-between text-sm mb-2">
-                      <span>Progression</span>
+                      <span>{t('detail.progress')}</span>
                       <span className="font-medium">
-                        {Math.round((completedLessons / totalLessons) * 100)}%
+                        {totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0}%
                       </span>
                     </div>
-                    <Progress value={(completedLessons / totalLessons) * 100} />
+                    <Progress value={totalLessons > 0 ? (completedLessons / totalLessons) * 100 : 0} />
                     <p className="text-xs text-muted-foreground mt-2">
-                      {completedLessons}/{totalLessons} leçons terminées
+                      {t('detail.lessonsCompleted', { completed: completedLessons, total: totalLessons })}
                     </p>
                   </div>
-                  <Link to={`/courses/${courseId}/learn`}>
+                  <Link to={`/courses/${id}/learn`}>
                     <Button className="w-full" size="lg">
                       <Play className="h-4 w-4 mr-2" />
-                      Continuer le cours
+                      {t('detail.continueCourse')}
                     </Button>
                   </Link>
                 </>
               ) : (
                 <>
                   <div className="text-center mb-6">
-                    <p className="text-3xl font-bold text-primary mb-2">Gratuit</p>
-                    <p className="text-sm text-muted-foreground">Accès illimité</p>
+                    <p className="text-3xl font-bold text-primary mb-2">{t('detail.free')}</p>
+                    <p className="text-sm text-muted-foreground">{t('detail.unlimitedAccess')}</p>
                   </div>
                   <Button
                     className="w-full"
@@ -319,19 +366,16 @@ export default function CourseDetailPage() {
                     onClick={() => enrollMutation.mutate()}
                     disabled={enrollMutation.isPending}
                   >
-                    {enrollMutation.isPending ? 'Inscription...' : "S'inscrire maintenant"}
+                    {enrollMutation.isPending ? t('detail.enrolling') : t('detail.enrollNow')}
                   </Button>
                 </>
               )}
 
               <div className="flex items-center justify-center gap-4 mt-4">
-                <Button variant="outline" size="sm">
-                  <Heart className="h-4 w-4 mr-1" />
-                  Favoris
-                </Button>
+                <FavoriteButton type="course" id={mergedCourse.id} />
                 <Button variant="outline" size="sm">
                   <Share2 className="h-4 w-4 mr-1" />
-                  Partager
+                  {t('detail.share')}
                 </Button>
               </div>
             </CardContent>
@@ -345,9 +389,9 @@ export default function CourseDetailPage() {
                   <Award className="h-6 w-6 text-primary" />
                 </div>
                 <div>
-                  <h4 className="font-medium">Certificat de réussite</h4>
+                  <h4 className="font-medium">{t('detail.certificateTitle')}</h4>
                   <p className="text-sm text-muted-foreground">
-                    Obtenez un certificat à la fin du cours
+                    {t('detail.certificateHint')}
                   </p>
                 </div>
               </div>
@@ -357,24 +401,24 @@ export default function CourseDetailPage() {
           {/* Resources */}
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-base">Ressources incluses</CardTitle>
+              <CardTitle className="text-base">{t('detail.resourcesTitle')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex items-center gap-3 text-sm">
                 <Video className="h-4 w-4 text-muted-foreground" />
-                <span>12 heures de vidéo</span>
+                <span>{t('detail.resourceVideo', { count: totalVideoMinutes })}</span>
               </div>
               <div className="flex items-center gap-3 text-sm">
                 <FileText className="h-4 w-4 text-muted-foreground" />
-                <span>25 articles</span>
+                <span>{t('detail.resourceArticles', { count: articlesCount })}</span>
               </div>
               <div className="flex items-center gap-3 text-sm">
                 <Download className="h-4 w-4 text-muted-foreground" />
-                <span>15 ressources téléchargeables</span>
+                <span>{t('detail.resourceDownloads', { count: downloadableResourcesCount })}</span>
               </div>
               <div className="flex items-center gap-3 text-sm">
                 <HelpCircle className="h-4 w-4 text-muted-foreground" />
-                <span>5 quiz d'évaluation</span>
+                <span>{t('detail.resourceQuizzes', { count: quizzesCount })}</span>
               </div>
             </CardContent>
           </Card>
@@ -390,7 +434,7 @@ function LessonItem({
   enrolled,
 }: {
   lesson: any
-  courseId: number
+  courseId: string
   enrolled: boolean
 }) {
   const navigate = useNavigate()
@@ -413,7 +457,7 @@ function LessonItem({
     }
     
     // For all other types, go to the lesson page
-    return `/courses/${courseId}/lessons/${lesson.id}`
+    return `/courses/${courseId}/lessons/${lesson.public_id}`
   }
 
   const handleClick = (e: React.MouseEvent) => {

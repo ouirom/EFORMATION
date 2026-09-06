@@ -1,0 +1,94 @@
+{
+  "greeting": "Bonjour, {{name}}! 👋",
+  "defaultUser": "Utilisateur",
+  "subtitle": "Bienvenue sur votre espace d'apprentissage",
+  "streakDays": "{{count}} jours",
+  "stats": {
+    "courses": "Cours",
+    "coursesCompleted_one": "{{count}} terminé",
+    "coursesCompleted_other": "{{count}} terminés",
+    "lessons": "Leçons",
+    "lessonsStarted_one": "sur {{count}} commencée",
+    "lessonsStarted_other": "sur {{count}} commencées",
+    "learningTime": "Temps d'apprentissage",
+    "badgesEarned_one": "{{count}} badge obtenu",
+    "badgesEarned_other": "{{count}} badges obtenus"
+  },
+  "catalog": {
+    "title": "Catalogue des Formations",
+    "viewAll": "Voir tout",
+    "general": "Général",
+    "required": "Obligatoire",
+    "recommended": "Recommandé",
+    "completed": "Terminée",
+    "noGeneral": "Aucun cours général disponible",
+    "noRequired": "Aucun cours obligatoire",
+    "noRecommended": "Aucun cours recommandé",
+    "noCompleted": "Aucun cours terminé pour l'instant",
+    "noCompletedHint": "Complétez des formations pour les voir ici",
+    "favorites": "Favoris",
+    "noFavorites": "Aucun cours favori pour l'instant"
+  },
+  "lessonCatalog": {
+    "title": "Catalogue des leçons",
+    "inProgress": "En cours",
+    "mandatory": "Obligatoire",
+    "all": "Toutes les leçons",
+    "favorites": "Favoris",
+    "filterByCourse": "Filtrer par cours",
+    "allCourses": "Tous les cours",
+    "noInProgress": "Aucune leçon en cours — commencez une formation pour la retrouver ici",
+    "noMandatory": "Aucune leçon obligatoire pour l'instant",
+    "noLessons": "Aucune leçon disponible pour l'instant",
+    "noFavorites": "Aucune leçon favorite pour l'instant",
+    "durationMin": "{{count}} min",
+    "completed": "Terminée",
+    "start": "Commencer"
+  },
+  "lessonsPage": {
+    "title": "Leçons",
+    "subtitle": "Parcourez toutes les leçons de vos formations, sans passer par le détail d'un cours",
+    "searchPlaceholder": "Rechercher une leçon...",
+    "previous": "Précédent",
+    "next": "Suivant",
+    "pageOf": "Page {{page}} sur {{total}}"
+  },
+  "quizzes": {
+    "title": "Quiz Effectués",
+    "viewHistory": "Voir l'historique",
+    "none": "Aucun quiz effectué pour l'instant",
+    "noneHint": "Commencez vos formations et passez les quiz",
+    "passed": "✓ Réussi",
+    "retry": "⚠ À reprendre",
+    "lesson": "Leçon : {{title}}",
+    "required": "Requis : {{percent}}%",
+    "takenOn": "Passé le"
+  },
+  "course": {
+    "defaultCategory": "Formation",
+    "completed": "Terminé",
+    "defaultInstructor": "Formateur",
+    "progress": "Progression",
+    "completedNotice": "✓ Formation complétée",
+    "lessonsCount": "{{completed}}/{{total}} leçons",
+    "review": "Revoir",
+    "continue": "Continuer"
+  },
+  "upcomingSessions": {
+    "title": "Sessions à venir",
+    "viewAll": "Voir toutes les sessions",
+    "none": "Aucune session programmée",
+    "noInstructor": "Formateur non assigné"
+  },
+  "badgesCard": {
+    "title": "Mes Badges Obtenus",
+    "none": "Aucun badge obtenu pour l'instant",
+    "noneHint": "Réussissez des quiz et des cours pour débloquer des badges !",
+    "viewAll": "Voir tous les badges"
+  },
+  "leaderboard": {
+    "title": "Classement",
+    "you": "(vous)",
+    "none": "Pas encore de classement. Terminez des cours et des quiz pour y apparaître !"
+  }
+}

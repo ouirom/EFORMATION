@@ -1,0 +1,35 @@
+{
+  "downloadErrorDescription": "Unable to download the certificate",
+  "linkCopiedTitle": "Link copied",
+  "linkCopiedDescription": "The verification link has been copied to the clipboard",
+  "copyLinkErrorDescription": "Unable to copy the link",
+  "title": "My Certificates",
+  "subtitle": "View and download your training certificates",
+  "stats": {
+    "earned": "Certificates earned",
+    "valid": "Valid certificates",
+    "expiringSoon": "Expiring soon"
+  },
+  "searchPlaceholder": "Search a certificate...",
+  "empty": {
+    "title": "No certificates",
+    "noMatch": "No certificate matches your search",
+    "noneYet": "Complete courses to earn certificates"
+  },
+  "status": {
+    "valid": "Valid",
+    "expired": "Expired"
+  },
+  "serialNumber": "No. {{number}}",
+  "issuedOn": "Issued on",
+  "expiresOn": "Expires on",
+  "share": "Share",
+  "verify": {
+    "validTitle": "Genuine certificate",
+    "notFoundTitle": "Certificate not found",
+    "notFoundHint": "No certificate matches this serial number. Check the link or contact the issuer.",
+    "holder": "Holder",
+    "course": "Course",
+    "issuer": "Issued by"
+  }
+}

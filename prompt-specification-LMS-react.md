@@ -106,9 +106,9 @@ Chaque log doit contenir a minima : `userId`, `action`, `contextId` (formation/m
 
 ## 7. Architecture technique attendue
 
-- **Frontend** : React (avec React Router, gestion d'état via Redux Toolkit ou Zustand/Context selon complexité), TypeScript recommandé, UI via un design system (Tailwind CSS + composants type shadcn/ui ou Material UI).
+
 - **Backend** : API REST (Node.js/Express ou NestJS) ou GraphQL, avec couche d'authentification modulaire (stratégies : local, LDAP, API/SSO — pattern type Passport.js).
-- **Base de données** : relationnelle (PostgreSQL/MySQL) pour les données structurées (utilisateurs, formations, logs) ; éventuellement stockage objet (S3 ou équivalent) pour les documents/vidéos.
+- **Base de données** : relationnelle (PostgreSQL/MySQL/SQL Server) pour les données structurées (utilisateurs, formations, logs) ; éventuellement stockage objet (S3 ou équivalent) pour les documents/vidéos.
 - **Gestion des sessions** : JWT avec refresh token + mécanisme d'expiration/renouvellement côté client (intercepteur Axios + timer de session).
 - **Sécurité** : chiffrement des mots de passe, protection CSRF/XSS, validation des entrées, gestion des rôles/permissions au niveau API (middleware).
 - **Scalabilité** : architecture modulaire permettant l'ajout futur de nouveaux modes d'authentification, types de contenus ou types de logs.
@@ -143,7 +143,6 @@ Décrire les relations clés (1-N, N-N) avant l'implémentation, notamment :
 2. Modèle de données finalisé (schéma relationnel).
 3. Maquettes/wireframes des écrans clés (connexion, dashboard, catalogue de formations, lecteur de document, quiz, back-office logs).
 4. Spécification des endpoints API (contrats d'entrée/sortie).
-5. Application React fonctionnelle avec les modules décrits ci-dessus.
 6. Documentation technique (installation, configuration LDAP/API, administration).
 
 ---
@@ -160,7 +159,7 @@ Après chaque module développé (et avant de passer au suivant), applique syst�
 - Produire un compte-rendu de relecture listant : points bloquants, points d'amélioration, points conformes.
 
 ### 11.2 Tests
-- **Tests unitaires** : composants React (Jest + React Testing Library) et fonctions métier backend (services, contrôleurs).
+- **Tests unitaires** : test unitaires et fonctions métier backend (services, contrôleurs).
 - **Tests d'intégration** : parcours critiques (connexion via les 3 modes, gestion de session/expiration, lecture d'un document avec génération du log, passage d'un quiz avec tirage aléatoire, remontée des logs dans un dashboard).
 - **Tests end-to-end (E2E)** : Cypress ou Playwright sur les scénarios utilisateurs complets (apprenant, manager, administrateur).
 - **Tests de non-régression** : à chaque évolution, rejouer les suites existantes avant merge.

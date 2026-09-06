@@ -1,0 +1,29 @@
+{
+  "title": "Assistant IA",
+  "subtitle": "Votre tuteur personnel",
+  "greeting": "Bonjour! 👋 Je suis votre assistant IA pédagogique. Je suis là pour vous aider dans votre apprentissage.\n\nJe peux:\n• Répondre à vos questions sur les cours\n• Expliquer des concepts complexes\n• Vous suggérer des ressources\n• Vous aider à préparer les quiz\n\nComment puis-je vous aider aujourd'hui?",
+  "greetingSuggestions": [
+    "Explique-moi le Machine Learning",
+    "Quels cours me recommandes-tu?",
+    "Aide-moi à comprendre React"
+  ],
+  "quickActions": {
+    "summarize": "Résumer un cours",
+    "explain": "Expliquer un concept",
+    "quiz": "Préparer un quiz"
+  },
+  "quickActionPrompts": {
+    "summarize": "Résume-moi le cours sur ",
+    "explain": "Explique-moi ",
+    "quiz": "Aide-moi à préparer le quiz sur "
+  },
+  "placeholder": "Posez votre question...",
+  "copied": "Copié dans le presse-papier",
+  "errorTitle": "Erreur",
+  "errorDescription": "Impossible de générer une réponse",
+  "languageLabel": "Langue",
+  "languageOptions": {
+    "fr": "Français",
+    "en": "English"
+  }
+}

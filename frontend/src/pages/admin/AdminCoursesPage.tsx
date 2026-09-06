@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -22,6 +23,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { PageLoading } from '@/components/ui/loading'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { useToast } from '@/components/ui/use-toast'
 import {
   BookOpen,
@@ -36,6 +38,7 @@ import {
   EyeOff,
   Copy,
   Settings,
+  CheckCircle,
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -46,8 +49,11 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Link } from 'react-router-dom'
 import { api } from '@/services/api'
+import { getRoleLabel } from '@/lib/utils'
 
 export default function AdminCoursesPage() {
+  const { t } = useTranslation('admin')
+  const { t: tCommon } = useTranslation('common')
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
@@ -55,6 +61,7 @@ export default function AdminCoursesPage() {
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
+  const [coursePendingDelete, setCoursePendingDelete] = useState<any>(null)
   const [selectedCourse, setSelectedCourse] = useState<any>(null)
   const [newCourse, setNewCourse] = useState({
     title: '',
@@ -62,6 +69,7 @@ export default function AdminCoursesPage() {
     category: '',
     duration: '',
     level: 'beginner',
+    audienceScope: { level: 'general', ids: [] as number[], roles: [] as string[] },
   })
   const [editCourse, setEditCourse] = useState({
     title: '',
@@ -70,6 +78,7 @@ export default function AdminCoursesPage() {
     duration: '',
     level: 'beginner',
     isPublished: false,
+    audienceScope: { level: 'general', ids: [] as number[], roles: [] as string[] },
   })
 
   const { data, isLoading } = useQuery({
@@ -82,49 +91,39 @@ export default function AdminCoursesPage() {
 
   // Mutations
   const createMutation = useMutation({
-    mutationFn: (data: any) => {
-      const token = localStorage.getItem('accessToken')
-      console.log('Token présent:', !!token)
-      console.log('Creating course with data:', data)
-      return api.courses.create(data)
-    },
-    onSuccess: (result) => {
-      console.log('Course created successfully:', result)
+    mutationFn: (data: any) => api.courses.create(data),
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-courses'] })
-      toast({ title: 'Succès', description: 'Formation créée avec succès' })
+      toast({ title: tCommon('status.success'), description: t('courses.toasts.createdDescription') })
       setIsAddDialogOpen(false)
-      setNewCourse({ title: '', description: '', category: '', duration: '', level: 'beginner' })
+      setNewCourse({ title: '', description: '', category: '', duration: '', level: 'beginner', audienceScope: { level: 'general', ids: [], roles: [] } })
     },
     onError: (error: any) => {
       console.error('Error creating course:', error)
       console.error('Error response:', error.response?.data)
       console.error('Error status:', error.response?.status)
-      toast({ 
-        title: 'Erreur', 
-        description: error.response?.data?.error?.message || error.message || 'Impossible de créer la formation',
+      toast({
+        title: tCommon('status.error'),
+        description: error.response?.data?.error?.message || error.message || t('courses.toasts.createErrorDescription'),
         variant: 'destructive'
       })
     },
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: any }) => {
-      console.log('Updating course:', id, data)
-      return api.courses.update(id, data)
-    },
-    onSuccess: (result) => {
-      console.log('Course updated successfully:', result)
+    mutationFn: ({ id, data }: { id: number; data: any }) => api.courses.update(id, data),
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-courses'] })
-      toast({ title: 'Succès', description: 'Formation mise à jour avec succès' })
+      toast({ title: tCommon('status.success'), description: t('courses.toasts.updatedDescription') })
       setIsEditDialogOpen(false)
       setSelectedCourse(null)
     },
     onError: (error: any) => {
       console.error('Error updating course:', error)
       console.error('Error response:', error.response?.data)
-      toast({ 
-        title: 'Erreur', 
-        description: error.response?.data?.error?.message || error.message || 'Impossible de mettre à jour la formation',
+      toast({
+        title: tCommon('status.error'),
+        description: error.response?.data?.error?.message || error.message || t('courses.toasts.updateErrorDescription'),
         variant: 'destructive'
       })
     },
@@ -134,12 +133,12 @@ export default function AdminCoursesPage() {
     mutationFn: (id: number) => api.courses.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-courses'] })
-      toast({ title: 'Succès', description: 'Formation supprimée avec succès' })
+      toast({ title: tCommon('status.success'), description: t('courses.toasts.deletedDescription') })
     },
     onError: (error: any) => {
       toast({
-        title: 'Erreur',
-        description: error.response?.data?.error?.message || 'Impossible de supprimer la formation',
+        title: tCommon('status.error'),
+        description: error.response?.data?.error?.message || t('courses.toasts.deleteErrorDescription'),
         variant: 'destructive'
       })
     },
@@ -151,14 +150,14 @@ export default function AdminCoursesPage() {
     onSuccess: (_result, course) => {
       queryClient.invalidateQueries({ queryKey: ['admin-courses'] })
       toast({
-        title: 'Succès',
-        description: course.isPublished ? 'Formation dépubliée' : 'Formation publiée avec succès',
+        title: tCommon('status.success'),
+        description: course.isPublished ? t('courses.toasts.unpublishedDescription') : t('courses.toasts.publishedDescription'),
       })
     },
     onError: (error: any) => {
       toast({
-        title: 'Erreur',
-        description: error.response?.data?.error?.message || 'Impossible de changer le statut de publication',
+        title: tCommon('status.error'),
+        description: error.response?.data?.error?.message || t('courses.toasts.publishErrorDescription'),
         variant: 'destructive',
       })
     },
@@ -168,12 +167,12 @@ export default function AdminCoursesPage() {
     mutationFn: (id: number) => api.courses.clone(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-courses'] })
-      toast({ title: 'Succès', description: 'Formation dupliquée avec succès' })
+      toast({ title: tCommon('status.success'), description: t('courses.toasts.clonedDescription') })
     },
     onError: (error: any) => {
       toast({
-        title: 'Erreur',
-        description: error.response?.data?.error?.message || 'Impossible de dupliquer la formation',
+        title: tCommon('status.error'),
+        description: error.response?.data?.error?.message || t('courses.toasts.cloneErrorDescription'),
         variant: 'destructive',
       })
     },
@@ -181,7 +180,7 @@ export default function AdminCoursesPage() {
 
   const handleCreateCourse = () => {
     if (!newCourse.title) {
-      toast({ title: 'Erreur', description: 'Le titre est obligatoire', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: t('courses.toasts.titleRequired'), variant: 'destructive' })
       return
     }
     // Préparer les données en filtrant les valeurs vides et en convertissant duration
@@ -190,6 +189,7 @@ export default function AdminCoursesPage() {
       description: newCourse.description || undefined,
       category: newCourse.category || undefined,
       level: newCourse.level || undefined,
+      audienceScope: newCourse.audienceScope,
     }
     if (newCourse.duration && newCourse.duration.trim() !== '') {
       courseData.duration = parseInt(newCourse.duration, 10)
@@ -206,6 +206,7 @@ export default function AdminCoursesPage() {
       duration: course.duration || '',
       level: course.level || 'beginner',
       isPublished: !!course.isPublished,
+      audienceScope: course.audienceScope || { level: 'general', ids: [], roles: [] },
     })
     setIsEditDialogOpen(true)
   }
@@ -219,6 +220,7 @@ export default function AdminCoursesPage() {
       category: editCourse.category || undefined,
       level: editCourse.level || undefined,
       isPublished: editCourse.isPublished,
+      audienceScope: editCourse.audienceScope,
     }
     if (editCourse.duration && String(editCourse.duration).trim() !== '') {
       courseData.duration = parseInt(String(editCourse.duration), 10)
@@ -227,9 +229,7 @@ export default function AdminCoursesPage() {
   }
 
   const handleDeleteCourse = (course: any) => {
-    if (window.confirm(`Êtes-vous sûr de vouloir supprimer "${course.title}" ?`)) {
-      deleteMutation.mutate(course.id)
-    }
+    setCoursePendingDelete(course)
   }
 
   if (isLoading) {
@@ -240,29 +240,29 @@ export default function AdminCoursesPage() {
   const courses = data || []
 
   const statusLabels: Record<string, { label: string; color: string }> = {
-    true: { label: 'Publié', color: 'bg-green-100 text-green-800' },
-    false: { label: 'Brouillon', color: 'bg-yellow-100 text-yellow-800' },
-    published: { label: 'Publié', color: 'bg-green-100 text-green-800' },
-    draft: { label: 'Brouillon', color: 'bg-yellow-100 text-yellow-800' },
-    archived: { label: 'Archivé', color: 'bg-gray-100 text-gray-800' },
+    true: { label: t('courses.statuses.published'), color: 'bg-green-100 text-green-800' },
+    false: { label: t('courses.statuses.draft'), color: 'bg-yellow-100 text-yellow-800' },
+    published: { label: t('courses.statuses.published'), color: 'bg-green-100 text-green-800' },
+    draft: { label: t('courses.statuses.draft'), color: 'bg-yellow-100 text-yellow-800' },
+    archived: { label: t('courses.statuses.archived'), color: 'bg-gray-100 text-gray-800' },
   }
 
   const levelLabels: Record<string, string> = {
-    beginner: 'Débutant',
-    intermediate: 'Intermédiaire',
-    advanced: 'Avancé',
-    expert: 'Expert',
+    beginner: t('courses.levels.beginner'),
+    intermediate: t('courses.levels.intermediate'),
+    advanced: t('courses.levels.advanced'),
+    expert: t('courses.levels.expert'),
   }
 
   const categoryLabels: Record<string, string> = {
-    technology: 'Technologie',
-    management: 'Management',
-    marketing: 'Marketing',
-    finance: 'Finance',
-    hr: 'Ressources Humaines',
-    'soft-skills': 'Soft Skills',
-    compliance: 'Conformité',
-    other: 'Autre',
+    technology: t('courses.categories.technology'),
+    management: t('courses.categories.management'),
+    marketing: t('courses.categories.marketing'),
+    finance: t('courses.categories.finance'),
+    hr: t('courses.categories.hr'),
+    'soft-skills': t('courses.categories.soft-skills'),
+    compliance: t('courses.categories.compliance'),
+    other: t('courses.categories.other'),
   }
 
   return (
@@ -270,14 +270,14 @@ export default function AdminCoursesPage() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold">Gestion des cours</h1>
+          <h1 className="text-3xl font-bold">{t('courses.title')}</h1>
           <p className="text-muted-foreground">
-            {courses.length} cours au total
+            {t('courses.totalCourses', { count: courses.length })}
           </p>
         </div>
         <Button onClick={() => setIsAddDialogOpen(true)}>
           <Plus className="h-4 w-4 mr-2" />
-          Nouveau cours
+          {t('courses.newCourse')}
         </Button>
       </div>
 
@@ -291,7 +291,7 @@ export default function AdminCoursesPage() {
               </div>
               <div>
                 <p className="text-2xl font-bold">{courses.length}</p>
-                <p className="text-sm text-muted-foreground">Total cours</p>
+                <p className="text-sm text-muted-foreground">{t('courses.stats.total')}</p>
               </div>
             </div>
           </CardContent>
@@ -306,7 +306,7 @@ export default function AdminCoursesPage() {
                 <p className="text-2xl font-bold">
                   {courses.filter((c: any) => c.isPublished).length}
                 </p>
-                <p className="text-sm text-muted-foreground">Publiés</p>
+                <p className="text-sm text-muted-foreground">{t('courses.stats.published')}</p>
               </div>
             </div>
           </CardContent>
@@ -321,7 +321,7 @@ export default function AdminCoursesPage() {
                 <p className="text-2xl font-bold">
                   {courses.filter((c: any) => !c.isPublished).length}
                 </p>
-                <p className="text-sm text-muted-foreground">Brouillons</p>
+                <p className="text-sm text-muted-foreground">{t('courses.stats.drafts')}</p>
               </div>
             </div>
           </CardContent>
@@ -336,7 +336,7 @@ export default function AdminCoursesPage() {
                 <p className="text-2xl font-bold">
                   {courses.reduce((acc: number, c: any) => acc + (c.enrolledCount || 0), 0)}
                 </p>
-                <p className="text-sm text-muted-foreground">Total inscrits</p>
+                <p className="text-sm text-muted-foreground">{t('courses.stats.totalEnrolled')}</p>
               </div>
             </div>
           </CardContent>
@@ -348,7 +348,7 @@ export default function AdminCoursesPage() {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Rechercher un cours..."
+            placeholder={t('courses.filters.searchPlaceholder')}
             className="pl-10"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -356,24 +356,24 @@ export default function AdminCoursesPage() {
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-[150px]">
-            <SelectValue placeholder="Tous les statuts" />
+            <SelectValue placeholder={t('courses.filters.allStatuses')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Tous les statuts</SelectItem>
-            <SelectItem value="published">Publié</SelectItem>
-            <SelectItem value="draft">Brouillon</SelectItem>
-            <SelectItem value="archived">Archivé</SelectItem>
+            <SelectItem value="all">{t('courses.filters.allStatuses')}</SelectItem>
+            <SelectItem value="published">{t('courses.statuses.published')}</SelectItem>
+            <SelectItem value="draft">{t('courses.statuses.draft')}</SelectItem>
+            <SelectItem value="archived">{t('courses.statuses.archived')}</SelectItem>
           </SelectContent>
         </Select>
         <Select value={categoryFilter} onValueChange={setCategoryFilter}>
           <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="Toutes catégories" />
+            <SelectValue placeholder={t('courses.filters.allCategories')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Toutes catégories</SelectItem>
-            <SelectItem value="tech">Technologie</SelectItem>
-            <SelectItem value="management">Management</SelectItem>
-            <SelectItem value="soft-skills">Soft Skills</SelectItem>
+            <SelectItem value="all">{t('courses.filters.allCategories')}</SelectItem>
+            <SelectItem value="tech">{t('courses.categories.technology')}</SelectItem>
+            <SelectItem value="management">{t('courses.categories.management')}</SelectItem>
+            <SelectItem value="soft-skills">{t('courses.categories.soft-skills')}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -385,20 +385,20 @@ export default function AdminCoursesPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="text-left p-4 font-medium">Cours</th>
-                  <th className="text-left p-4 font-medium">Catégorie</th>
-                  <th className="text-left p-4 font-medium">Niveau</th>
-                  <th className="text-left p-4 font-medium">Statut</th>
-                  <th className="text-left p-4 font-medium">Modules</th>
-                  <th className="text-left p-4 font-medium">Note</th>
-                  <th className="text-right p-4 font-medium">Actions</th>
+                  <th className="text-left p-4 font-medium">{t('courses.table.course')}</th>
+                  <th className="text-left p-4 font-medium">{t('courses.table.category')}</th>
+                  <th className="text-left p-4 font-medium">{t('courses.table.level')}</th>
+                  <th className="text-left p-4 font-medium">{t('courses.table.status')}</th>
+                  <th className="text-left p-4 font-medium">{t('courses.table.modules')}</th>
+                  <th className="text-left p-4 font-medium">{t('courses.table.rating')}</th>
+                  <th className="text-right p-4 font-medium">{t('courses.table.actions')}</th>
                 </tr>
               </thead>
               <tbody>
                 {courses.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="p-8 text-center text-muted-foreground">
-                      Aucun cours trouvé. Cliquez sur "Nouveau cours" pour en créer un.
+                      {t('courses.table.noResults')}
                     </td>
                   </tr>
                 ) : (
@@ -406,15 +406,20 @@ export default function AdminCoursesPage() {
                     <tr key={course.id} className="border-b hover:bg-muted/50">
                       <td className="p-4">
                         <div>
-                          <p className="font-medium">{course.title}</p>
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium">{course.title}</p>
+                            <Badge variant="outline" className="text-xs shrink-0">
+                              {audienceScopeLabel(course.audienceScope, t)}
+                            </Badge>
+                          </div>
                           <p className="text-sm text-muted-foreground mt-1 line-clamp-1">
-                            {course.description || 'Pas de description'}
+                            {course.description || t('courses.table.noDescription')}
                           </p>
                         </div>
                       </td>
                       <td className="p-4">
                         <Badge variant="outline">
-                          {categoryLabels[course.category] || course.category || 'Non défini'}
+                          {categoryLabels[course.category] || course.category || t('courses.categories.undefined')}
                         </Badge>
                       </td>
                       <td className="p-4">
@@ -424,7 +429,7 @@ export default function AdminCoursesPage() {
                       </td>
                       <td className="p-4">
                         <Badge className={statusLabels[String(course.isPublished)]?.color || statusLabels[course.status]?.color || 'bg-gray-100 text-gray-800'}>
-                          {statusLabels[String(course.isPublished)]?.label || statusLabels[course.status]?.label || (course.isPublished ? 'Publié' : 'Brouillon')}
+                          {statusLabels[String(course.isPublished)]?.label || statusLabels[course.status]?.label || (course.isPublished ? t('courses.statuses.published') : t('courses.statuses.draft'))}
                         </Badge>
                       </td>
                       <td className="p-4">
@@ -453,20 +458,20 @@ export default function AdminCoursesPage() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem asChild>
-                            <Link to={`/courses/${course.id}`}>
+                            <Link to={`/courses/${course.publicId}`}>
                               <Eye className="h-4 w-4 mr-2" />
-                              Voir
+                              {t('courses.rowActions.view')}
                             </Link>
                           </DropdownMenuItem>
                           <DropdownMenuItem asChild>
                             <Link to={`/admin/courses/${course.id}/edit`}>
                               <Settings className="h-4 w-4 mr-2" />
-                              Gérer le contenu
+                              {t('courses.rowActions.manageContent')}
                             </Link>
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => handleEditCourse(course)}>
                             <Edit className="h-4 w-4 mr-2" />
-                            Modifier les infos
+                            {t('courses.rowActions.editInfo')}
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onClick={() => togglePublishMutation.mutate(course)}
@@ -475,12 +480,12 @@ export default function AdminCoursesPage() {
                             {course.isPublished ? (
                               <>
                                 <EyeOff className="h-4 w-4 mr-2" />
-                                Dépublier
+                                {t('courses.rowActions.unpublish')}
                               </>
                             ) : (
                               <>
                                 <Eye className="h-4 w-4 mr-2" />
-                                Publier
+                                {t('courses.rowActions.publish')}
                               </>
                             )}
                           </DropdownMenuItem>
@@ -489,7 +494,7 @@ export default function AdminCoursesPage() {
                             disabled={cloneMutation.isPending}
                           >
                             <Copy className="h-4 w-4 mr-2" />
-                            Dupliquer
+                            {t('courses.rowActions.duplicate')}
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
@@ -497,7 +502,7 @@ export default function AdminCoursesPage() {
                             onClick={() => handleDeleteCourse(course)}
                           >
                             <Trash2 className="h-4 w-4 mr-2" />
-                            Supprimer
+                            {t('courses.rowActions.delete')}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -515,26 +520,26 @@ export default function AdminCoursesPage() {
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Nouvelle formation</DialogTitle>
+            <DialogTitle>{t('courses.addDialog.title')}</DialogTitle>
             <DialogDescription>
-              Créez une nouvelle formation pour vos apprenants
+              {t('courses.addDialog.description')}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="title">Titre *</Label>
+              <Label htmlFor="title">{t('courses.addDialog.titleLabel')}</Label>
               <Input
                 id="title"
-                placeholder="Ex: Introduction au Machine Learning"
+                placeholder={t('courses.addDialog.titlePlaceholder')}
                 value={newCourse.title}
                 onChange={(e) => setNewCourse({ ...newCourse, title: e.target.value })}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
+              <Label htmlFor="description">{t('courses.addDialog.descriptionLabel')}</Label>
               <Textarea
                 id="description"
-                placeholder="Décrivez le contenu de la formation..."
+                placeholder={t('courses.addDialog.descriptionPlaceholder')}
                 rows={4}
                 value={newCourse.description}
                 onChange={(e) => setNewCourse({ ...newCourse, description: e.target.value })}
@@ -542,60 +547,64 @@ export default function AdminCoursesPage() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="category">Catégorie</Label>
-                <Select 
-                  value={newCourse.category} 
+                <Label htmlFor="category">{t('courses.addDialog.category')}</Label>
+                <Select
+                  value={newCourse.category}
                   onValueChange={(value) => setNewCourse({ ...newCourse, category: value })}
                 >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Sélectionner une catégorie" />
+                  <SelectTrigger id="category">
+                    <SelectValue placeholder={t('courses.addDialog.categoryPlaceholder')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="technology">Technologie</SelectItem>
-                    <SelectItem value="management">Management</SelectItem>
-                    <SelectItem value="marketing">Marketing</SelectItem>
-                    <SelectItem value="finance">Finance</SelectItem>
-                    <SelectItem value="hr">Ressources Humaines</SelectItem>
-                    <SelectItem value="soft-skills">Soft Skills</SelectItem>
-                    <SelectItem value="compliance">Conformité</SelectItem>
-                    <SelectItem value="other">Autre</SelectItem>
+                    <SelectItem value="technology">{t('courses.categories.technology')}</SelectItem>
+                    <SelectItem value="management">{t('courses.categories.management')}</SelectItem>
+                    <SelectItem value="marketing">{t('courses.categories.marketing')}</SelectItem>
+                    <SelectItem value="finance">{t('courses.categories.finance')}</SelectItem>
+                    <SelectItem value="hr">{t('courses.categories.hr')}</SelectItem>
+                    <SelectItem value="soft-skills">{t('courses.categories.soft-skills')}</SelectItem>
+                    <SelectItem value="compliance">{t('courses.categories.compliance')}</SelectItem>
+                    <SelectItem value="other">{t('courses.categories.other')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="level">Niveau</Label>
-                <Select 
-                  value={newCourse.level} 
+                <Label htmlFor="level">{t('courses.addDialog.level')}</Label>
+                <Select
+                  value={newCourse.level}
                   onValueChange={(value) => setNewCourse({ ...newCourse, level: value })}
                 >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Sélectionner un niveau" />
+                  <SelectTrigger id="level">
+                    <SelectValue placeholder={t('courses.addDialog.levelPlaceholder')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="beginner">Débutant</SelectItem>
-                    <SelectItem value="intermediate">Intermédiaire</SelectItem>
-                    <SelectItem value="advanced">Avancé</SelectItem>
-                    <SelectItem value="expert">Expert</SelectItem>
+                    <SelectItem value="beginner">{t('courses.levels.beginner')}</SelectItem>
+                    <SelectItem value="intermediate">{t('courses.levels.intermediate')}</SelectItem>
+                    <SelectItem value="advanced">{t('courses.levels.advanced')}</SelectItem>
+                    <SelectItem value="expert">{t('courses.levels.expert')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="duration">Durée estimée</Label>
+              <Label htmlFor="duration">{t('courses.addDialog.duration')}</Label>
               <Input
                 id="duration"
-                placeholder="Ex: 8h 30min"
+                placeholder={t('courses.addDialog.durationPlaceholder')}
                 value={newCourse.duration}
                 onChange={(e) => setNewCourse({ ...newCourse, duration: e.target.value })}
               />
             </div>
+            <AudienceScopePicker
+              value={newCourse.audienceScope}
+              onChange={(audienceScope) => setNewCourse({ ...newCourse, audienceScope })}
+            />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsAddDialogOpen(false)} disabled={createMutation.isPending}>
-              Annuler
+              {t('courses.addDialog.cancel')}
             </Button>
             <Button onClick={handleCreateCourse} disabled={createMutation.isPending}>
-              {createMutation.isPending ? 'Création...' : 'Créer la formation'}
+              {createMutation.isPending ? t('courses.addDialog.creating') : t('courses.addDialog.create')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -605,14 +614,14 @@ export default function AdminCoursesPage() {
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Modifier la formation</DialogTitle>
+            <DialogTitle>{t('courses.editDialog.title')}</DialogTitle>
             <DialogDescription>
-              Modifiez les informations de la formation
+              {t('courses.editDialog.description')}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="editTitle">Titre *</Label>
+              <Label htmlFor="editTitle">{t('courses.addDialog.titleLabel')}</Label>
               <Input
                 id="editTitle"
                 value={editCourse.title}
@@ -620,7 +629,7 @@ export default function AdminCoursesPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="editDescription">Description</Label>
+              <Label htmlFor="editDescription">{t('courses.addDialog.descriptionLabel')}</Label>
               <Textarea
                 id="editDescription"
                 rows={4}
@@ -630,48 +639,48 @@ export default function AdminCoursesPage() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="editCategory">Catégorie</Label>
-                <Select 
-                  value={editCourse.category || "none"} 
+                <Label htmlFor="editCategory">{t('courses.addDialog.category')}</Label>
+                <Select
+                  value={editCourse.category || "none"}
                   onValueChange={(value) => setEditCourse({ ...editCourse, category: value === "none" ? "" : value })}
                 >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Sélectionner une catégorie" />
+                  <SelectTrigger id="editCategory">
+                    <SelectValue placeholder={t('courses.addDialog.categoryPlaceholder')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">Non défini</SelectItem>
-                    <SelectItem value="technology">Technologie</SelectItem>
-                    <SelectItem value="management">Management</SelectItem>
-                    <SelectItem value="marketing">Marketing</SelectItem>
-                    <SelectItem value="finance">Finance</SelectItem>
-                    <SelectItem value="hr">Ressources Humaines</SelectItem>
-                    <SelectItem value="soft-skills">Soft Skills</SelectItem>
-                    <SelectItem value="compliance">Conformité</SelectItem>
-                    <SelectItem value="other">Autre</SelectItem>
+                    <SelectItem value="none">{t('courses.categories.undefined')}</SelectItem>
+                    <SelectItem value="technology">{t('courses.categories.technology')}</SelectItem>
+                    <SelectItem value="management">{t('courses.categories.management')}</SelectItem>
+                    <SelectItem value="marketing">{t('courses.categories.marketing')}</SelectItem>
+                    <SelectItem value="finance">{t('courses.categories.finance')}</SelectItem>
+                    <SelectItem value="hr">{t('courses.categories.hr')}</SelectItem>
+                    <SelectItem value="soft-skills">{t('courses.categories.soft-skills')}</SelectItem>
+                    <SelectItem value="compliance">{t('courses.categories.compliance')}</SelectItem>
+                    <SelectItem value="other">{t('courses.categories.other')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="editLevel">Niveau</Label>
-                <Select 
-                  value={editCourse.level} 
+                <Label htmlFor="editLevel">{t('courses.addDialog.level')}</Label>
+                <Select
+                  value={editCourse.level}
                   onValueChange={(value) => setEditCourse({ ...editCourse, level: value })}
                 >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Sélectionner un niveau" />
+                  <SelectTrigger id="editLevel">
+                    <SelectValue placeholder={t('courses.addDialog.levelPlaceholder')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="beginner">Débutant</SelectItem>
-                    <SelectItem value="intermediate">Intermédiaire</SelectItem>
-                    <SelectItem value="advanced">Avancé</SelectItem>
-                    <SelectItem value="expert">Expert</SelectItem>
+                    <SelectItem value="beginner">{t('courses.levels.beginner')}</SelectItem>
+                    <SelectItem value="intermediate">{t('courses.levels.intermediate')}</SelectItem>
+                    <SelectItem value="advanced">{t('courses.levels.advanced')}</SelectItem>
+                    <SelectItem value="expert">{t('courses.levels.expert')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="editDuration">Durée estimée</Label>
+                <Label htmlFor="editDuration">{t('courses.addDialog.duration')}</Label>
                 <Input
                   id="editDuration"
                   value={editCourse.duration}
@@ -679,7 +688,7 @@ export default function AdminCoursesPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="editStatus">Statut</Label>
+                <Label htmlFor="editStatus">{t('courses.editDialog.status')}</Label>
                 <Select
                   value={editCourse.isPublished ? 'published' : 'draft'}
                   onValueChange={(value) => setEditCourse({ ...editCourse, isPublished: value === 'published' })}
@@ -688,23 +697,143 @@ export default function AdminCoursesPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="draft">Brouillon</SelectItem>
-                    <SelectItem value="published">Publié</SelectItem>
+                    <SelectItem value="draft">{t('courses.statuses.draft')}</SelectItem>
+                    <SelectItem value="published">{t('courses.statuses.published')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
+            <AudienceScopePicker
+              value={editCourse.audienceScope}
+              onChange={(audienceScope) => setEditCourse({ ...editCourse, audienceScope })}
+            />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsEditDialogOpen(false)} disabled={updateMutation.isPending}>
-              Annuler
+              {t('courses.editDialog.cancel')}
             </Button>
             <Button onClick={handleUpdateCourse} disabled={updateMutation.isPending}>
-              {updateMutation.isPending ? 'Enregistrement...' : 'Enregistrer'}
+              {updateMutation.isPending ? t('courses.editDialog.saving') : t('courses.editDialog.save')}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!coursePendingDelete}
+        onOpenChange={(open) => !open && setCoursePendingDelete(null)}
+        title={tCommon('actions.delete')}
+        description={t('courses.confirmDelete', { title: coursePendingDelete?.title })}
+        onConfirm={() => {
+          if (coursePendingDelete) {
+            deleteMutation.mutate(coursePendingDelete.id)
+          }
+          setCoursePendingDelete(null)
+        }}
+      />
+    </div>
+  )
+}
+
+const AUDIENCE_ROLES = ['stagiaire', 'externe', 'agent', 'supervisor', 'manager', 'director', 'admin']
+
+/** Short label for the course-list badge -- a NULL audience_scope (courses created
+ * before this field had a UI) reads the same as an explicit 'general' scope. */
+function audienceScopeLabel(scope: any, t: (key: string) => string): string {
+  const level = scope?.level || 'general'
+  if (level === 'general') return t('courses.audienceScope.levels.general')
+  const count = level === 'role' ? (scope?.roles?.length || 0) : (scope?.ids?.length || 0)
+  return `${t(`courses.audienceScope.levels.${level}`)} (${count})`
+}
+
+/** Who can see/access a course: "Général" (default, whole tenant) or scoped down to
+ * specific enterprises/directions/services/roles. Reused for both the add and edit
+ * course dialogs. Mirrors the target-checklist pattern from AdminAssignmentsPage.tsx
+ * (course_assignments' own scope picker) for visual/UX consistency, adapted to this
+ * component's own `{level, ids, roles}` shape rather than that page's `assignmentType`. */
+function AudienceScopePicker({ value, onChange }: { value: any; onChange: (value: any) => void }) {
+  const { t } = useTranslation('admin')
+
+  const { data: enterprises = [] } = useQuery({
+    queryKey: ['enterprises'],
+    queryFn: () => api.organizations.getEnterprises(),
+    enabled: value.level === 'enterprise',
+  })
+  const { data: directions = [] } = useQuery({
+    queryKey: ['directions'],
+    queryFn: () => api.organizations.getDirections(),
+    enabled: value.level === 'direction',
+  })
+  const { data: services = [] } = useQuery({
+    queryKey: ['services'],
+    queryFn: () => api.organizations.getServices(),
+    enabled: value.level === 'service',
+  })
+
+  const getList = (): any[] => {
+    switch (value.level) {
+      case 'enterprise': return enterprises
+      case 'direction': return directions
+      case 'service': return services
+      case 'role': return AUDIENCE_ROLES.map((r) => ({ id: r, name: getRoleLabel(r) }))
+      default: return []
+    }
+  }
+
+  const isRoleLevel = value.level === 'role'
+  const selected: any[] = isRoleLevel ? value.roles : value.ids
+
+  const toggle = (id: any) => {
+    const key = isRoleLevel ? 'roles' : 'ids'
+    const list = value[key] as any[]
+    const next = list.includes(id) ? list.filter((x) => x !== id) : [...list, id]
+    onChange({ ...value, [key]: next })
+  }
+
+  return (
+    <div className="space-y-2">
+      <Label htmlFor="course-audience-level">{t('courses.audienceScope.label')}</Label>
+      <Select
+        value={value.level}
+        onValueChange={(level) => onChange({ level, ids: [], roles: [] })}
+      >
+        <SelectTrigger id="course-audience-level">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="general">{t('courses.audienceScope.levels.general')}</SelectItem>
+          <SelectItem value="enterprise">{t('courses.audienceScope.levels.enterprise')}</SelectItem>
+          <SelectItem value="direction">{t('courses.audienceScope.levels.direction')}</SelectItem>
+          <SelectItem value="service">{t('courses.audienceScope.levels.service')}</SelectItem>
+          <SelectItem value="role">{t('courses.audienceScope.levels.role')}</SelectItem>
+        </SelectContent>
+      </Select>
+      <p className="text-xs text-muted-foreground">{t('courses.audienceScope.hint')}</p>
+
+      {value.level !== 'general' && (
+        <div className="border rounded-lg max-h-40 overflow-y-auto">
+          {getList().length === 0 ? (
+            <p className="p-4 text-center text-sm text-muted-foreground">{t('courses.audienceScope.noItemsFound')}</p>
+          ) : (
+            getList().map((item) => (
+              <div
+                key={item.id}
+                className={`flex items-center gap-2 p-2 cursor-pointer hover:bg-muted/50 ${
+                  selected.includes(item.id) ? 'bg-primary/5' : ''
+                }`}
+                onClick={() => toggle(item.id)}
+              >
+                <div className={`h-5 w-5 rounded border flex items-center justify-center ${
+                  selected.includes(item.id) ? 'bg-primary border-primary' : 'border-gray-300'
+                }`}>
+                  {selected.includes(item.id) && <CheckCircle className="h-4 w-4 text-white" />}
+                </div>
+                <span className="text-sm">{item.name}</span>
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </div>
   )
 }

@@ -27,7 +27,13 @@ export function SocketProvider({ children }: { children: ReactNode }) {
     }
 
     const token = localStorage.getItem('accessToken');
-    const socketUrl = import.meta.env.VITE_API_URL?.replace('/api/v1', '') || 'http://localhost:3001';
+    // Falling back to a literal 'localhost' breaks the socket for anyone who isn't
+    // on the dev machine itself (e.g. a phone on the LAN, where 'localhost' means
+    // the phone) -- derive the backend host from whatever host the browser actually
+    // used to load the page instead.
+    const socketUrl =
+      import.meta.env.VITE_API_URL?.replace('/api/v1', '') ||
+      `${window.location.protocol}//${window.location.hostname}:3001`;
     
     const newSocket = io(socketUrl, {
       auth: { token },

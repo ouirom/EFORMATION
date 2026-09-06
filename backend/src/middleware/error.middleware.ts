@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { logger } from '../utils/logger';
+import { captureException } from '../utils/sentry';
 
 export interface AppError extends Error {
   statusCode?: number;
@@ -48,6 +49,7 @@ export const errorHandler = (
       ip: req.ip,
       userId: (req as any).user?.id,
     }, 'Server error');
+    captureException(err);
   } else {
     logger.warn({
       statusCode,
@@ -92,3 +94,6 @@ export const ValidationError = (message: string, details?: any) =>
 
 export const InternalError = (message: string = 'Internal server error') =>
   new ApiError(message, 500, 'INTERNAL_ERROR');
+
+export const ServiceUnavailableError = (message: string = 'Service unavailable') =>
+  new ApiError(message, 503, 'SERVICE_UNAVAILABLE');

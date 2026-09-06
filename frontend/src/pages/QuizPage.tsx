@@ -1,4 +1,5 @@
 import React from 'react'
+import { useTranslation } from 'react-i18next'
 import { useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { useParams, useNavigate } from 'react-router-dom'
@@ -115,6 +116,8 @@ function clearProgress(quizId: string | undefined) {
 }
 
 export default function QuizPage() {
+  const { t } = useTranslation('courses');
+  const { t: tCommon } = useTranslation('common');
   const [quizStarted, setQuizStarted] = useState(false);
   const [quizSubmitted, setQuizSubmitted] = useState(false);
   // Gestion de la boîte de confirmation agréable
@@ -245,8 +248,8 @@ export default function QuizPage() {
     },
     onError: (error: any) => {
       toast({
-        title: 'Erreur',
-        description: error.response?.data?.error?.message || 'Impossible de démarrer le quiz',
+        title: tCommon('status.error'),
+        description: error.response?.data?.error?.message || t('quizPage.startFailedDescription'),
         variant: 'destructive',
       });
     },
@@ -265,11 +268,11 @@ export default function QuizPage() {
     onError: (error: any) => {
       const code = error.response?.data?.error?.code;
       toast({
-        title: 'Erreur',
+        title: tCommon('status.error'),
         description:
           code === 'MAX_ATTEMPTS_REACHED' || code === 'TIME_LIMIT_EXCEEDED'
             ? error.response.data.error.message
-            : "Impossible de soumettre le quiz",
+            : t('quizPage.submitFailedDescription'),
         variant: 'destructive',
       });
       if (code === 'TIME_LIMIT_EXCEEDED' || code === 'MAX_ATTEMPTS_REACHED') {
@@ -293,8 +296,7 @@ export default function QuizPage() {
       try {
         const badgeResponse = await api.post('/badges/award-quiz', {
           quizId: parseInt(quizId || '0'),
-          score: data.score,
-          passed: data.passed,
+          attemptId: data.id,
         })
         
         // Merge badge data into result
@@ -312,10 +314,10 @@ export default function QuizPage() {
       queryClient.invalidateQueries({ queryKey: ['my-badges'] })
       
       toast({
-        title: data.passed ? '🎉 Félicitations !' : 'Quiz terminé',
+        title: data.passed ? t('quizPage.congratsToastTitle') : t('quizPage.completedToastTitle'),
         description: data.passed
-          ? `Vous avez réussi avec ${data.score}% !`
-          : `Score: ${data.score}%. Minimum requis: ${quiz?.passing_score}%`,
+          ? t('quizPage.passedToastDescription', { score: data.score })
+          : t('quizPage.failedToastDescription', { score: data.score, passingScore: quiz?.passing_score }),
       })
     },
   })
@@ -393,7 +395,7 @@ export default function QuizPage() {
       <div className="max-w-2xl mx-auto space-y-6">
         <Button variant="ghost" onClick={() => navigate(-1)}>
           <ArrowLeft className="h-4 w-4 mr-2" />
-          Retour
+          {t('quizPage.back')}
         </Button>
 
         <Card>
@@ -405,23 +407,23 @@ export default function QuizPage() {
             <div className="grid grid-cols-2 gap-4 text-center">
               <div className="p-4 bg-muted rounded-lg">
                 <p className="text-2xl font-bold">{quiz.questions.length}</p>
-                <p className="text-sm text-muted-foreground">Questions</p>
+                <p className="text-sm text-muted-foreground">{t('quizPage.stats.questions')}</p>
               </div>
               <div className="p-4 bg-muted rounded-lg">
                 <p className="text-2xl font-bold">
                   {quiz.time_limit_minutes ? `${quiz.time_limit_minutes} min` : '-'}
                 </p>
-                <p className="text-sm text-muted-foreground">Durée</p>
+                <p className="text-sm text-muted-foreground">{t('quizPage.stats.duration')}</p>
               </div>
               <div className="p-4 bg-muted rounded-lg">
                 <p className="text-2xl font-bold">{quiz.passing_score}%</p>
-                <p className="text-sm text-muted-foreground">Score minimum</p>
+                <p className="text-sm text-muted-foreground">{t('quizPage.stats.minScore')}</p>
               </div>
               <div className="p-4 bg-muted rounded-lg">
                 <p className="text-2xl font-bold">
                   {quiz.questions.reduce((sum, q) => sum + q.points, 0)}
                 </p>
-                <p className="text-sm text-muted-foreground">Points total</p>
+                <p className="text-sm text-muted-foreground">{t('quizPage.stats.totalPoints')}</p>
               </div>
             </div>
 
@@ -429,15 +431,15 @@ export default function QuizPage() {
               <AlertTriangle className="h-5 w-5 text-yellow-600 shrink-0 mt-0.5" />
               <div className="text-sm">
                 <p className="font-medium text-yellow-800 dark:text-yellow-200">
-                  Instructions importantes
+                  {t('quizPage.instructions.title')}
                 </p>
                 <ul className="mt-2 space-y-1 text-yellow-700 dark:text-yellow-300">
-                  <li>• Le quiz doit être complété en une seule session</li>
-                  <li>• Le temps commence dès que vous cliquez sur Commencer</li>
-                  <li>• Vous pouvez naviguer entre les questions</li>
-                  <li>• Vos réponses sont sauvegardées automatiquement</li>
+                  <li>• {t('quizPage.instructions.oneSession')}</li>
+                  <li>• {t('quizPage.instructions.timerStarts')}</li>
+                  <li>• {t('quizPage.instructions.canNavigate')}</li>
+                  <li>• {t('quizPage.instructions.autoSaved')}</li>
                   {quiz.time_limit_minutes && (
-                    <li>• Temps imparti : <span className="font-semibold">{quiz.time_limit_minutes} minutes</span></li>
+                    <li>• {t('quizPage.instructions.timeLimit', { minutes: quiz.time_limit_minutes })}</li>
                   )}
                 </ul>
               </div>
@@ -445,7 +447,7 @@ export default function QuizPage() {
           </CardContent>
           <CardFooter>
             <Button className="w-full" size="lg" onClick={handleStartQuiz}>
-              Commencer le quiz
+              {t('quizPage.startQuiz')}
             </Button>
           </CardFooter>
         </Card>
@@ -454,10 +456,10 @@ export default function QuizPage() {
         <Dialog open={showLeaveDialog} onOpenChange={setShowLeaveDialog}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Quitter le quiz ?</DialogTitle>
+              <DialogTitle>{t('quizPage.leaveDialog.title')}</DialogTitle>
               <DialogDescription>
-                Vous êtes sur le point de quitter le quiz. <br />
-                <span className="font-semibold">Vos réponses non soumises seront perdues.</span>
+                {t('quizPage.leaveDialog.description')} <br />
+                <span className="font-semibold">{t('quizPage.leaveDialog.warning')}</span>
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
@@ -465,7 +467,7 @@ export default function QuizPage() {
                 setShowLeaveDialog(false);
                 setPendingTx(null);
               }}>
-                Rester sur la page
+                {t('quizPage.leaveDialog.stay')}
               </Button>
               <Button variant="destructive" onClick={() => {
                 setShowLeaveDialog(false);
@@ -474,7 +476,7 @@ export default function QuizPage() {
                   setPendingTx(null);
                 }
               }}>
-                Quitter le quiz
+                {t('quizPage.leaveDialog.leave')}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -506,12 +508,12 @@ export default function QuizPage() {
               )}
             </div>
             <CardTitle className={`text-3xl font-bold animate-bounce-in ${result.passed ? 'text-green-600 dark:text-green-400' : ''}`} style={{ animationDelay: '0.2s' }}>
-              {result.passed ? '🎉 Félicitations ! 🎉' : 'Quiz non réussi'}
+              {result.passed ? t('quizPage.results.passedTitle') : t('quizPage.results.failedTitle')}
             </CardTitle>
             <CardDescription className="text-lg animate-bounce-in" style={{ animationDelay: '0.3s' }}>
               {result.passed
-                ? 'Vous avez brillamment réussi ce quiz !'
-                : `Le score minimum requis est de ${quiz.passing_score}%`}
+                ? t('quizPage.results.passedSubtitle')
+                : t('quizPage.results.failedSubtitle', { score: quiz.passing_score })}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6 relative z-10">
@@ -522,7 +524,7 @@ export default function QuizPage() {
                 </p>
                 <p className="text-muted-foreground flex items-center justify-center gap-2">
                   <CheckCircle className={`h-5 w-5 ${result.passed ? 'text-green-500' : 'text-gray-400'}`} />
-                  {result.correctAnswers} / {result.totalQuestions} réponses correctes
+                  {t('quizPage.results.correctAnswers', { correct: result.correctAnswers, total: result.totalQuestions })}
                 </p>
               </div>
               
@@ -542,7 +544,7 @@ export default function QuizPage() {
                 <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/30 rounded-lg border border-green-200 dark:border-green-800 animate-bounce-in" style={{ animationDelay: '0.8s' }}>
                   <p className="text-green-700 dark:text-green-300 flex items-center justify-center gap-2">
                     <Sparkles className="h-5 w-5" />
-                    Objectif atteint ! Vous maîtrisez ce sujet.
+                    {t('quizPage.results.goalReached')}
                     <Sparkles className="h-5 w-5" />
                   </p>
                 </div>
@@ -553,7 +555,7 @@ export default function QuizPage() {
                 <div className="mt-6 animate-bounce-in" style={{ animationDelay: '1s' }}>
                   <h4 className="font-medium text-center mb-4 flex items-center justify-center gap-2">
                     <Trophy className="h-5 w-5 text-yellow-500" />
-                    Récompenses obtenues !
+                    {t('quizPage.results.rewardsTitle')}
                   </h4>
                   <div className="flex flex-wrap justify-center gap-4">
                     {result.awardedBadges.map((badge: any, index: number) => (
@@ -574,7 +576,7 @@ export default function QuizPage() {
                         </p>
                         {badge.type === 'trophy' && (
                           <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
-                            Excellence absolue !
+                            {t('quizPage.results.excellence')}
                           </p>
                         )}
                       </div>
@@ -587,7 +589,7 @@ export default function QuizPage() {
             <div className="space-y-4">
               <h4 className="font-medium flex items-center gap-2">
                 <CheckCircle className="h-5 w-5 text-primary" />
-                Détail des réponses
+                {t('quizPage.results.answerDetailsTitle')}
               </h4>
               {quiz.questions.map((q, i) => {
                 const feedback = result.feedback?.find((f: any) => f.questionId === q.id)
@@ -608,11 +610,11 @@ export default function QuizPage() {
                         <XCircle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
                       )}
                       <div>
-                        <p className="font-medium">Question {i + 1}</p>
+                        <p className="font-medium">{t('quizPage.results.questionLabel', { number: i + 1 })}</p>
                         <p className="text-sm text-muted-foreground">{q.prompt}</p>
                         {!feedback?.correct && feedback?.correctAnswer && (
                           <p className="text-sm mt-2">
-                            <span className="text-muted-foreground">Bonne réponse: </span>
+                            <span className="text-muted-foreground">{t('quizPage.results.correctAnswerLabel')}</span>
                             <span className="font-medium">{feedback.correctAnswer}</span>
                           </p>
                         )}
@@ -625,18 +627,18 @@ export default function QuizPage() {
           </CardContent>
           <CardFooter className="flex gap-4 relative z-10">
             <Button variant="outline" onClick={() => navigate(-1)} className="flex-1">
-              Retour au cours
+              {t('quizPage.results.backToCourse')}
             </Button>
             {!result.passed && (
               <Button onClick={handleRetry} className="flex-1">
                 <RotateCcw className="h-4 w-4 mr-2" />
-                Réessayer
+                {t('quizPage.results.retry')}
               </Button>
             )}
             {result.passed && (
               <Button onClick={() => navigate('/dashboard')} className="flex-1 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600">
                 <Trophy className="h-4 w-4 mr-2" />
-                Continuer
+                {t('quizPage.results.continue')}
               </Button>
             )}
           </CardFooter>
@@ -653,7 +655,7 @@ export default function QuizPage() {
           <div className="flex justify-between items-center mb-4">
             <Button variant="ghost" onClick={() => navigate(-1)}>
               <ArrowLeft className="h-4 w-4 mr-2" />
-              Retour
+              {t('quizPage.back')}
             </Button>
             <div className="flex items-center gap-2">
               <Clock className="h-5 w-5 text-primary" />
@@ -665,7 +667,7 @@ export default function QuizPage() {
           {/* Quiz content rendering */}
           <Card>
             <CardHeader>
-              <CardTitle>Question {currentQuestion + 1} / {quiz.questions.length}</CardTitle>
+              <CardTitle>{t('quizPage.questionCounter', { current: currentQuestion + 1, total: quiz.questions.length })}</CardTitle>
               <Progress value={((currentQuestion + 1) / quiz.questions.length) * 100} />
             </CardHeader>
             <CardContent>
@@ -694,7 +696,7 @@ export default function QuizPage() {
                   rows={quiz.questions[currentQuestion].type === 'essay' ? 6 : 2}
                   value={answers.find(a => a.questionId === quiz.questions[currentQuestion].id)?.answer || ''}
                   onChange={e => handleAnswer(quiz.questions[currentQuestion].id, e.target.value)}
-                  placeholder={quiz.questions[currentQuestion].type === 'essay' ? 'Votre rédaction...' : 'Votre réponse...'}
+                  placeholder={quiz.questions[currentQuestion].type === 'essay' ? t('quizPage.essayPlaceholder') : t('quizPage.shortAnswerPlaceholder')}
                 />
               )}
             </CardContent>
@@ -704,17 +706,17 @@ export default function QuizPage() {
                 disabled={currentQuestion === 0}
                 onClick={() => setCurrentQuestion(q => Math.max(0, q - 1))}
               >
-                <ArrowLeft className="h-4 w-4 mr-2" /> Précédent
+                <ArrowLeft className="h-4 w-4 mr-2" /> {t('quizPage.previous')}
               </Button>
               {currentQuestion < quiz.questions.length - 1 ? (
                 <Button
                   onClick={() => setCurrentQuestion(q => Math.min(quiz.questions.length - 1, q + 1))}
                 >
-                  Suivant <ArrowRight className="h-4 w-4 ml-2" />
+                  {t('quizPage.next')} <ArrowRight className="h-4 w-4 ml-2" />
                 </Button>
               ) : (
                 <Button onClick={handleSubmit}>
-                  Soumettre
+                  {t('quizPage.submit')}
                 </Button>
               )}
             </CardFooter>
@@ -740,7 +742,7 @@ export default function QuizPage() {
       {/* Progress */}
       <div className="space-y-2">
         <div className="flex justify-between text-sm">
-          <span>Question {currentQuestion + 1} sur {quiz.questions.length}</span>
+          <span>{t('quizPage.questionCounterOf', { current: currentQuestion + 1, total: quiz.questions.length })}</span>
           <span>{Math.round(progress)}%</span>
         </div>
         <Progress value={progress} />
@@ -750,12 +752,12 @@ export default function QuizPage() {
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
-            <Badge variant="outline">{currentQ.points} points</Badge>
+            <Badge variant="outline">{t('quizPage.pointsLabel', { count: currentQ.points })}</Badge>
             <Badge>
-              {currentQ.type === 'mcq' ? 'Choix multiple' : 
-               currentQ.type === 'true_false' ? 'Vrai/Faux' : 
-               currentQ.type === 'short_text' ? 'Réponse courte' : 
-               'Rédaction'}
+              {currentQ.type === 'mcq' ? t('quizPage.questionTypes.mcq') :
+               currentQ.type === 'true_false' ? t('quizPage.questionTypes.trueFalse') :
+               currentQ.type === 'short_text' ? t('quizPage.questionTypes.shortText') :
+               t('quizPage.questionTypes.essay')}
             </Badge>
           </div>
           <CardTitle className="text-lg mt-4">{currentQ.prompt}</CardTitle>
@@ -793,18 +795,18 @@ export default function QuizPage() {
             disabled={currentQuestion === 0}
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
-            Précédent
+            {t('quizPage.previous')}
           </Button>
           {currentQuestion === quiz.questions.length - 1 ? (
             <Button
               onClick={handleSubmit}
               disabled={submitMutation.isPending || answers.length < quiz.questions.length}
             >
-              {submitMutation.isPending ? 'Envoi...' : 'Terminer le quiz'}
+              {submitMutation.isPending ? t('quizPage.submitting') : t('quizPage.finishQuiz')}
             </Button>
           ) : (
             <Button onClick={() => setCurrentQuestion((prev) => prev + 1)}>
-              Suivant
+              {t('quizPage.next')}
               <ArrowRight className="h-4 w-4 ml-2" />
             </Button>
           )}
@@ -814,7 +816,7 @@ export default function QuizPage() {
       {/* Question navigation */}
       <Card>
         <CardContent className="p-4">
-          <p className="text-sm font-medium mb-3">Navigation rapide</p>
+          <p className="text-sm font-medium mb-3">{t('quizPage.quickNav')}</p>
           <div className="flex flex-wrap gap-2">
             {quiz.questions.map((q, i) => {
               const hasAnswer = answers.some((a) => a.questionId === q.id)

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -24,6 +25,8 @@ const EMPTY_SETTINGS: LiveKitSettings = {
 }
 
 export default function AdminLiveKitSettingsPage() {
+  const { t } = useTranslation('admin')
+  const { t: tCommon } = useTranslation('common')
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const [formData, setFormData] = useState<LiveKitSettings>(EMPTY_SETTINGS)
@@ -41,12 +44,12 @@ export default function AdminLiveKitSettingsPage() {
     mutationFn: (data: LiveKitSettings) => api.settings.updateLiveKit(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['livekit-settings'] })
-      toast({ title: 'Succès', description: 'Paramètres LiveKit enregistrés' })
+      toast({ title: tCommon('status.success'), description: t('liveKitSettings.toasts.savedDescription') })
     },
     onError: (error: any) => {
       toast({
-        title: 'Erreur',
-        description: error.response?.data?.error?.message || "Impossible d'enregistrer les paramètres",
+        title: tCommon('status.error'),
+        description: error.response?.data?.error?.message || t('liveKitSettings.toasts.saveErrorDescription'),
         variant: 'destructive',
       })
     },
@@ -55,12 +58,12 @@ export default function AdminLiveKitSettingsPage() {
   const testMutation = useMutation({
     mutationFn: () => api.settings.testLiveKit(),
     onSuccess: () => {
-      toast({ title: 'Succès', description: 'Connexion LiveKit réussie' })
+      toast({ title: tCommon('status.success'), description: t('liveKitSettings.toasts.testSuccessDescription') })
     },
     onError: (error: any) => {
       toast({
-        title: 'Erreur',
-        description: error.response?.data?.error?.message || 'Impossible de se connecter à LiveKit',
+        title: tCommon('status.error'),
+        description: error.response?.data?.error?.message || t('liveKitSettings.toasts.testErrorDescription'),
         variant: 'destructive',
       })
     },
@@ -77,10 +80,9 @@ export default function AdminLiveKitSettingsPage() {
   return (
     <div className="space-y-6 max-w-3xl">
       <div>
-        <h1 className="text-3xl font-bold">Visioconférence (LiveKit)</h1>
+        <h1 className="text-3xl font-bold">{t('liveKitSettings.title')}</h1>
         <p className="text-muted-foreground">
-          Configurez les identifiants LiveKit utilisés pour la visioconférence intégrée des sessions live.
-          Laissez désactivé pour utiliser la configuration globale du serveur (si définie).
+          {t('liveKitSettings.subtitle')}
         </p>
       </div>
 
@@ -88,22 +90,22 @@ export default function AdminLiveKitSettingsPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Video className="h-5 w-5" />
-            Configuration LiveKit
+            {t('liveKitSettings.config.title')}
           </CardTitle>
           <CardDescription>
-            Un compte gratuit peut être créé sur{' '}
+            {t('liveKitSettings.config.descriptionPrefix')}{' '}
             <a href="https://cloud.livekit.io" target="_blank" rel="noopener noreferrer" className="underline">
               cloud.livekit.io
             </a>
-            . Ces identifiants remplacent, pour ce tenant uniquement, la configuration par défaut du serveur.
+            {t('liveKitSettings.config.descriptionSuffix')}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
             <div>
-              <p className="font-medium text-sm">Utiliser ces identifiants pour ce tenant</p>
+              <p className="font-medium text-sm">{t('liveKitSettings.config.useForTenant')}</p>
               <p className="text-xs text-muted-foreground">
-                Si désactivé, la configuration globale du serveur (variables d'environnement) est utilisée à la place.
+                {t('liveKitSettings.config.useForTenantHint')}
               </p>
             </div>
             <input
@@ -115,8 +117,9 @@ export default function AdminLiveKitSettingsPage() {
           </div>
 
           <div className="space-y-2">
-            <Label>URL du projet (WebSocket)</Label>
+            <Label htmlFor="livekit-project-url">{t('liveKitSettings.config.projectUrl')}</Label>
             <Input
+              id="livekit-project-url"
               placeholder="wss://votre-projet-xxxxx.livekit.cloud"
               value={formData.url}
               onChange={(e) => setFormData({ ...formData, url: e.target.value })}
@@ -125,16 +128,18 @@ export default function AdminLiveKitSettingsPage() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>API Key</Label>
+              <Label htmlFor="livekit-api-key">{t('liveKitSettings.config.apiKey')}</Label>
               <Input
+                id="livekit-api-key"
                 placeholder="APIxxxxxxxxxxxx"
                 value={formData.apiKey}
                 onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
               />
             </div>
             <div className="space-y-2">
-              <Label>API Secret</Label>
+              <Label htmlFor="livekit-api-secret">{t('liveKitSettings.config.apiSecret')}</Label>
               <Input
+                id="livekit-api-secret"
                 type="password"
                 placeholder="••••••••"
                 value={formData.apiSecret}
@@ -154,7 +159,7 @@ export default function AdminLiveKitSettingsPage() {
               ) : (
                 <PlugZap className="h-4 w-4 mr-2" />
               )}
-              Tester la connexion
+              {t('liveKitSettings.config.testConnection')}
             </Button>
             <Button onClick={handleSave} disabled={saveMutation.isPending}>
               {saveMutation.isPending ? (
@@ -162,7 +167,7 @@ export default function AdminLiveKitSettingsPage() {
               ) : (
                 <Save className="h-4 w-4 mr-2" />
               )}
-              Enregistrer
+              {t('liveKitSettings.config.save')}
             </Button>
           </div>
         </CardContent>

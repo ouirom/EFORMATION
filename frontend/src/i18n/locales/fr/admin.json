@@ -1,0 +1,1456 @@
+{
+  "analytics": {
+    "title": "Analytics",
+    "subtitle": "Vue d'ensemble des performances de la plateforme",
+    "periods": {
+      "7": "7 derniers jours",
+      "30": "30 derniers jours",
+      "90": "90 derniers jours",
+      "365": "Cette année"
+    },
+    "export": "Exporter",
+    "exporting": "Génération en cours...",
+    "csv": {
+      "metric": "Indicateur",
+      "value": "Valeur",
+      "totalUsers": "Utilisateurs totaux",
+      "activeUsers": "Utilisateurs actifs",
+      "newUsers": "Nouveaux utilisateurs (ce mois)",
+      "totalCourses": "Cours totaux",
+      "newCourses": "Nouveaux cours (ce mois)",
+      "completedCourses": "Cours complétés",
+      "avgProgress": "Progression moyenne (%)",
+      "sections": {
+        "keyMetrics": "Indicateurs clés",
+        "categoryDistribution": "Distribution des cours par catégorie",
+        "popularCourses": "Cours les plus populaires",
+        "usersByRole": "Utilisateurs par rôle",
+        "dailyActivity": "Activité quotidienne",
+        "dropoffFunnel": "Funnel d'abandon par leçon"
+      },
+      "columns": {
+        "category": "Catégorie",
+        "count": "Nombre",
+        "percent": "Pourcentage",
+        "course": "Cours",
+        "enrollments": "Inscrits",
+        "completions": "Complétions",
+        "completionPercent": "Taux de complétion (%)",
+        "role": "Rôle",
+        "date": "Date",
+        "logins": "Connexions",
+        "lesson": "Leçon",
+        "module": "Module",
+        "reachRate": "Taux d'atteinte (%)",
+        "dropFromPrevious": "Décrochage depuis la leçon précédente"
+      }
+    },
+    "stats": {
+      "activeUsers": "Utilisateurs actifs",
+      "totalSuffix": "{{count}} total",
+      "completedCourses": "Cours complétés",
+      "coursesAvailable": "{{count}} cours disponibles",
+      "learningHours": "Heures d'apprentissage",
+      "thisMonth": "Ce mois-ci",
+      "completionRate": "Taux de complétion",
+      "globalAverage": "Moyenne globale"
+    },
+    "activityChart": {
+      "title": "Activité des utilisateurs",
+      "description": "Connexions quotidiennes sur les {{days}} derniers jours",
+      "byActionType": "Répartition par type d'action",
+      "noActivity": "Aucune activité sur cette période.",
+      "mostActiveUsers": "Utilisateurs les plus actifs",
+      "mostActiveSubtitle": "Sur les 30 derniers jours",
+      "actionsSuffix_one": "{{count}} action",
+      "actionsSuffix_other": "{{count}} actions",
+      "viewDailyDetail": "Voir le détail jour par jour",
+      "hideDailyDetail": "Masquer le détail jour par jour",
+      "dailyDetailDate": "Date",
+      "dailyDetailCount": "Connexions",
+      "actions": {
+        "USER_REGISTERED": "Inscription utilisateur",
+        "LOGIN_FAILED": "Échec de connexion",
+        "USER_LOGIN": "Connexion",
+        "SUPER_ADMIN_SWITCHED_TENANT": "Changement de tenant (super admin)",
+        "LDAP_LOGIN": "Connexion LDAP",
+        "PASSWORD_CHANGED": "Mot de passe modifié",
+        "USER_LOGOUT": "Déconnexion",
+        "COURSE_ASSIGNMENT_CREATED": "Attribution de cours créée",
+        "COURSE_ASSIGNMENT_DELETED": "Attribution de cours supprimée",
+        "USER_AUTO_SUSPENDED": "Suspension automatique",
+        "COURSE_CREATED": "Cours créé",
+        "COURSE_UPDATED": "Cours modifié",
+        "COURSE_DELETED": "Cours supprimé",
+        "COURSE_PUBLISHED": "Cours publié",
+        "COURSE_UNPUBLISHED": "Cours dépublié",
+        "COURSE_CLONED": "Cours dupliqué",
+        "COURSE_ENROLLED": "Inscription à un cours",
+        "COURSE_RESUMED": "Cours repris",
+        "COURSE_STARTED": "Cours démarré",
+        "COURSE_COMPLETED": "Cours terminé",
+        "ORGANIZATION_IMPORTED": "Organisation importée",
+        "COURSES_IMPORTED": "Cours importés",
+        "LESSONS_IMPORTED": "Leçons importées",
+        "QUIZZES_IMPORTED": "Quiz importés",
+        "TENANT_CREATED": "Tenant créé",
+        "USER_CREATED": "Utilisateur créé",
+        "USERS_IMPORTED": "Utilisateurs importés",
+        "USER_UPDATED": "Utilisateur modifié",
+        "USER_STATUS_CHANGED": "Statut utilisateur modifié",
+        "USER_DELETED": "Utilisateur supprimé"
+      }
+    },
+    "distribution": {
+      "title": "Distribution des cours",
+      "description": "Par catégorie",
+      "uncategorized": "Non catégorisé"
+    },
+    "tabs": {
+      "users": "Utilisateurs",
+      "courses": "Cours",
+      "engagement": "Engagement",
+      "dropoff": "Abandon par leçon"
+    },
+    "newUsers": {
+      "title": "Nouveaux utilisateurs",
+      "thisMonth": "Ce mois-ci"
+    },
+    "usersByRole": {
+      "title": "Utilisateurs par rôle"
+    },
+    "popularCourses": {
+      "title": "Cours les plus populaires",
+      "noData": "Aucune inscription pour l'instant.",
+      "enrollments": "{{count}} inscrits",
+      "completion": "{{percent}}% complétion"
+    },
+    "engagement": {
+      "quizAttempts": "Tentatives de quiz",
+      "avgScore": "Score moyen aux quiz",
+      "passRate": "Taux de réussite"
+    },
+    "dropoff": {
+      "title": "Où les apprenants décrochent",
+      "description": "Pourcentage des apprenants inscrits ayant atteint chaque leçon, dans l'ordre du cours",
+      "choosePlaceholder": "Choisir un cours",
+      "selectPrompt": "Sélectionnez un cours pour voir le funnel de progression.",
+      "noLessons": "Ce cours n'a pas encore de leçons.",
+      "enrolledTotal": "{{count}} apprenant(s) inscrit(s)"
+    }
+  },
+  "emailQueue": {
+    "title": "File d'attente emails",
+    "subtitle": "Notifications en attente de validation avant envoi",
+    "system": "Système",
+    "empty": "Aucune notification en attente",
+    "approve": "Approuver",
+    "reject": "Rejeter",
+    "approveAll": "Tout approuver",
+    "rejectAll": "Tout rejeter",
+    "approvedToast": "Email envoyé",
+    "rejectedToast": "Notification rejetée",
+    "errorToast": "Une erreur est survenue",
+    "columns": {
+      "recipient": "Destinataire",
+      "subject": "Sujet",
+      "eventType": "Type",
+      "triggeredBy": "Déclenché par",
+      "createdAt": "Date",
+      "actions": "Actions"
+    },
+    "eventTypes": {
+      "account_created": "Création de compte",
+      "password_changed": "Changement de mot de passe",
+      "account_suspended": "Suspension de compte",
+      "course_assigned": "Attribution de cours",
+      "quiz_result": "Résultat de quiz",
+      "live_session_reminder": "Rappel de session live",
+      "certificate_expiring": "Expiration de certificat"
+    }
+  },
+  "users": {
+    "roles": {
+      "superAdmin": "Super administrateur",
+      "admin": "Administrateur",
+      "director": "Directeur",
+      "manager": "Manager",
+      "supervisor": "Superviseur",
+      "agent": "Agent",
+      "externe": "Externe",
+      "stagiaire": "Stagiaire"
+    },
+    "statuses": {
+      "pending": "En attente",
+      "active": "Actif",
+      "suspended": "Suspendu",
+      "deactivated": "Désactivé",
+      "inactive": "Inactif"
+    },
+    "inactivityPolicy": {
+      "title": "Suspension automatique pour inactivité",
+      "description": "Un compte est suspendu automatiquement s'il n'y a eu aucune connexion depuis ce nombre de jours. Laissez vide pour désactiver la suspension automatique de ce type de compte.",
+      "disabledPlaceholder": "Désactivé",
+      "save": "Enregistrer",
+      "updatedTitle": "Politique mise à jour",
+      "updateErrorDescription": "Impossible de mettre à jour la politique"
+    },
+    "toasts": {
+      "createdTitle": "Utilisateur créé",
+      "createdDescription": "Le compte a été créé avec succès",
+      "createErrorDescription": "Impossible de créer l'utilisateur",
+      "deletedTitle": "Utilisateur supprimé",
+      "deletedDescription": "L'utilisateur a été supprimé avec succès",
+      "deleteErrorDescription": "Impossible de supprimer",
+      "updatedTitle": "Utilisateur modifié",
+      "updatedDescription": "Les modifications ont été enregistrées",
+      "updateErrorDescription": "Impossible de modifier l'utilisateur",
+      "statusUpdatedTitle": "Statut mis à jour",
+      "statusUpdateErrorDescription": "Impossible de changer le statut",
+      "importCompleteTitle": "Import terminé",
+      "importCompleteDescription": "{{count}} utilisateur(s) créé(s)",
+      "importErrorDescription": "Impossible d'importer le fichier",
+      "fillRequiredFields": "Veuillez remplir tous les champs obligatoires"
+    },
+    "confirmDelete": "Êtes-vous sûr de vouloir supprimer {{name}} ?",
+    "loadError": "Impossible de charger la liste des utilisateurs. Veuillez réessayer.",
+    "title": "Gestion des utilisateurs",
+    "totalUsers": "{{count}} utilisateurs au total",
+    "pendingActivation": "{{count}} en attente d'activation",
+    "import": "Importer",
+    "export": "Exporter",
+    "add": "Ajouter",
+    "addDialog": {
+      "title": "Nouvel utilisateur",
+      "description": "Créez un nouveau compte utilisateur",
+      "firstName": "Prénom *",
+      "lastName": "Nom *",
+      "email": "Email *",
+      "password": "Mot de passe *",
+      "passwordPlaceholder": "Minimum 8 caractères",
+      "role": "Rôle *",
+      "rolePlaceholder": "Sélectionner un rôle",
+      "jobTitle": "Libellé de poste",
+      "jobTitlePlaceholder": "Ex: Chargé de clientèle",
+      "enterprise": "Entreprise",
+      "enterprisePlaceholder": "Sélectionner une entreprise",
+      "direction": "Direction",
+      "directionPlaceholder": "Sélectionner une direction",
+      "service": "Service",
+      "servicePlaceholder": "Sélectionner un service",
+      "supervisor": "Superviseur direct",
+      "none": "Aucun",
+      "cancel": "Annuler",
+      "creating": "Création...",
+      "create": "Créer"
+    },
+    "filters": {
+      "searchPlaceholder": "Rechercher par nom ou email...",
+      "allRoles": "Tous les rôles",
+      "allStatuses": "Tous les statuts"
+    },
+    "table": {
+      "user": "Utilisateur",
+      "enterprise": "Entreprise",
+      "direction": "Direction",
+      "service": "Service",
+      "supervisor": "Superviseur",
+      "role": "Rôle",
+      "status": "Statut",
+      "lastLogin": "Dernière connexion",
+      "actions": "Actions",
+      "noResults": "Aucun utilisateur ne correspond à ces critères.",
+      "defaultJobTitle": "Défaut"
+    },
+    "rowActions": {
+      "edit": "Modifier",
+      "sendEmail": "Envoyer un email",
+      "activate": "Activer",
+      "reactivate": "Réactiver",
+      "suspend": "Suspendre",
+      "deactivate": "Désactiver",
+      "delete": "Supprimer"
+    },
+    "pagination": {
+      "pageOf": "Page {{page}} sur {{totalPages}} ({{total}} utilisateurs)",
+      "previous": "Précédent",
+      "next": "Suivant"
+    },
+    "editDialog": {
+      "title": "Modifier l'utilisateur",
+      "description": "Modifier les informations de {{name}}",
+      "fullName": "Nom complet",
+      "role": "Rôle",
+      "jobTitle": "Libellé de poste",
+      "enterprise": "Entreprise",
+      "direction": "Direction",
+      "service": "Service",
+      "supervisor": "Superviseur direct",
+      "none": "Aucune",
+      "activeAccount": "Compte actif",
+      "cancel": "Annuler",
+      "saving": "Enregistrement...",
+      "save": "Enregistrer"
+    },
+    "importDialog": {
+      "title": "Importer des utilisateurs (CSV)",
+      "description": "Colonnes attendues : email, displayName, role, enterpriseCode, directionCode, serviceCode, supervisorEmail (toutes facultatives sauf email/displayName/role). Un mot de passe temporaire est généré et envoyé par email.",
+      "fileLabel": "Fichier CSV",
+      "resultSummary": "{{created}} créé(s), {{skipped}} ignoré(s), {{errors}} erreur(s) sur {{total}} ligne(s)",
+      "lineLabel": "Ligne {{line}} — {{email}}",
+      "missingEmail": "(email manquant)",
+      "alreadyExists": "déjà existant",
+      "close": "Fermer",
+      "importing": "Import en cours...",
+      "importButton": "Importer"
+    },
+    "jobTitles": {
+      "manageButton": "Gérer les libellés",
+      "manageDialog": {
+        "title": "Libellés de poste",
+        "description": "Ajoutez, renommez ou supprimez les libellés proposés lors de la création ou modification d'un utilisateur.",
+        "none": "Aucun libellé pour le moment",
+        "addPlaceholder": "Nouveau libellé...",
+        "confirmDelete": "Supprimer le libellé \"{{label}}\" ? Les utilisateurs qui le portent déjà le conservent.",
+        "close": "Fermer"
+      },
+      "toasts": {
+        "createdDescription": "Libellé ajouté",
+        "createErrorDescription": "Erreur lors de l'ajout du libellé",
+        "updatedDescription": "Libellé mis à jour",
+        "updateErrorDescription": "Erreur lors de la mise à jour",
+        "deletedDescription": "Libellé supprimé",
+        "deleteErrorDescription": "Erreur lors de la suppression"
+      }
+    }
+  },
+  "courses": {
+    "categories": {
+      "technology": "Technologie",
+      "management": "Management",
+      "marketing": "Marketing",
+      "finance": "Finance",
+      "hr": "Ressources Humaines",
+      "soft-skills": "Soft Skills",
+      "compliance": "Conformité",
+      "other": "Autre",
+      "undefined": "Non défini"
+    },
+    "levels": {
+      "beginner": "Débutant",
+      "intermediate": "Intermédiaire",
+      "advanced": "Avancé",
+      "expert": "Expert"
+    },
+    "audienceScope": {
+      "label": "Portée d'audience",
+      "hint": "Qui peut voir et accéder à ce cours. « Général » = tout le monde dans l'organisation.",
+      "noItemsFound": "Aucun élément disponible",
+      "levels": {
+        "general": "Général",
+        "enterprise": "Entreprise",
+        "direction": "Direction",
+        "service": "Service",
+        "role": "Rôle"
+      }
+    },
+    "statuses": {
+      "published": "Publié",
+      "draft": "Brouillon",
+      "archived": "Archivé"
+    },
+    "toasts": {
+      "createdDescription": "Formation créée avec succès",
+      "createErrorDescription": "Impossible de créer la formation",
+      "updatedDescription": "Formation mise à jour avec succès",
+      "updateErrorDescription": "Impossible de mettre à jour la formation",
+      "deletedDescription": "Formation supprimée avec succès",
+      "deleteErrorDescription": "Impossible de supprimer la formation",
+      "unpublishedDescription": "Formation dépubliée",
+      "publishedDescription": "Formation publiée avec succès",
+      "publishErrorDescription": "Impossible de changer le statut de publication",
+      "clonedDescription": "Formation dupliquée avec succès",
+      "cloneErrorDescription": "Impossible de dupliquer la formation",
+      "titleRequired": "Le titre est obligatoire"
+    },
+    "confirmDelete": "Êtes-vous sûr de vouloir supprimer \"{{title}}\" ?",
+    "title": "Gestion des cours",
+    "totalCourses": "{{count}} cours au total",
+    "newCourse": "Nouveau cours",
+    "stats": {
+      "total": "Total cours",
+      "published": "Publiés",
+      "drafts": "Brouillons",
+      "totalEnrolled": "Total inscrits"
+    },
+    "filters": {
+      "searchPlaceholder": "Rechercher un cours...",
+      "allStatuses": "Tous les statuts",
+      "allCategories": "Toutes catégories"
+    },
+    "table": {
+      "course": "Cours",
+      "category": "Catégorie",
+      "level": "Niveau",
+      "status": "Statut",
+      "modules": "Modules",
+      "rating": "Note",
+      "actions": "Actions",
+      "noDescription": "Pas de description",
+      "noResults": "Aucun cours trouvé. Cliquez sur \"Nouveau cours\" pour en créer un."
+    },
+    "rowActions": {
+      "view": "Voir",
+      "manageContent": "Gérer le contenu",
+      "editInfo": "Modifier les infos",
+      "unpublish": "Dépublier",
+      "publish": "Publier",
+      "duplicate": "Dupliquer",
+      "delete": "Supprimer"
+    },
+    "addDialog": {
+      "title": "Nouvelle formation",
+      "description": "Créez une nouvelle formation pour vos apprenants",
+      "titleLabel": "Titre *",
+      "titlePlaceholder": "Ex: Introduction au Machine Learning",
+      "descriptionLabel": "Description",
+      "descriptionPlaceholder": "Décrivez le contenu de la formation...",
+      "category": "Catégorie",
+      "categoryPlaceholder": "Sélectionner une catégorie",
+      "level": "Niveau",
+      "levelPlaceholder": "Sélectionner un niveau",
+      "duration": "Durée estimée",
+      "durationPlaceholder": "Ex: 8h 30min",
+      "cancel": "Annuler",
+      "creating": "Création...",
+      "create": "Créer la formation"
+    },
+    "editDialog": {
+      "title": "Modifier la formation",
+      "description": "Modifiez les informations de la formation",
+      "status": "Statut",
+      "cancel": "Annuler",
+      "saving": "Enregistrement...",
+      "save": "Enregistrer"
+    }
+  },
+  "courseEdit": {
+    "genericCreateError": "Erreur lors de la création",
+    "genericUpdateError": "Erreur lors de la mise à jour",
+    "genericDeleteError": "Erreur lors de la suppression",
+    "toasts": {
+      "moduleCreated": "Module créé avec succès",
+      "moduleUpdated": "Module mis à jour",
+      "moduleDeleted": "Module supprimé",
+      "lessonCreated": "Leçon créée avec succès",
+      "lessonUpdated": "Leçon mise à jour",
+      "lessonDeleted": "Leçon supprimée",
+      "quizCreated": "Quiz créé avec succès",
+      "quizUpdated": "Quiz mis à jour",
+      "quizDeleted": "Quiz supprimé",
+      "questionAdded": "Question ajoutée",
+      "questionUpdated": "Question mise à jour",
+      "questionDeleted": "Question supprimée",
+      "documentUploadError": "Impossible de télécharger le document. Veuillez réessayer.",
+      "videoUploadError": "Impossible de télécharger la vidéo. Veuillez réessayer."
+    },
+    "confirmDeleteModule": "Supprimer ce module ?",
+    "confirmDeleteLesson": "Supprimer cette leçon ?",
+    "confirmDeleteQuiz": "Supprimer ce quiz ?",
+    "confirmDeleteQuestion": "Supprimer cette question ?",
+    "notFound": {
+      "title": "Cours non trouvé",
+      "backButton": "Retour aux cours"
+    },
+    "header": {
+      "back": "Retour",
+      "manageContent": "Gérer le contenu du cours"
+    },
+    "tabs": {
+      "content": "Contenu",
+      "settings": "Paramètres"
+    },
+    "addModule": "Ajouter un module",
+    "lessonsCount": "({{count}} leçons)",
+    "noLessonsInModule": "Aucune leçon dans ce module",
+    "addLesson": "Ajouter une leçon",
+    "quizButton": "Quiz",
+    "passingScoreInfo": "(Score requis: {{score}}% · {{count}} questions)",
+    "questionsButton": "Questions",
+    "noModules": {
+      "title": "Aucun module",
+      "description": "Commencez par ajouter un module pour structurer votre cours"
+    },
+    "settingsTab": {
+      "title": "Paramètres du cours",
+      "description": "Configuration générale du cours",
+      "hint": "Utilisez la page de gestion des cours pour modifier les paramètres généraux."
+    },
+    "moduleDialog": {
+      "addTitle": "Ajouter un module",
+      "editTitle": "Modifier le module",
+      "addDescription": "Créez un nouveau module pour structurer votre cours",
+      "editDescription": "Modifiez les informations du module",
+      "titleLabel": "Titre du module",
+      "titlePlaceholder": "Ex: Introduction au sujet",
+      "cancel": "Annuler",
+      "create": "Créer",
+      "update": "Mettre à jour"
+    },
+    "lessonDialog": {
+      "addTitle": "Ajouter une leçon",
+      "editTitle": "Modifier la leçon",
+      "addDescription": "Créez une nouvelle leçon",
+      "editDescription": "Modifiez les informations de la leçon",
+      "titleLabel": "Titre de la leçon",
+      "titlePlaceholder": "Ex: Comprendre les bases",
+      "contentType": "Type de contenu",
+      "video": "Vidéo",
+      "document": "Document",
+      "link": "Lien externe",
+      "videoSourceUrl": "Lien (YouTube, Vimeo...)",
+      "videoSourceUpload": "Fichier vidéo",
+      "videoUrl": "URL de la vidéo",
+      "videoUrlPlaceholder": "Ex: https://youtube.com/watch?v=... ou https://vimeo.com/...",
+      "videoUrlHint": "Supporte YouTube, Vimeo et autres liens vidéo directs",
+      "videoToUpload": "Vidéo à uploader",
+      "videoToUploadHint": "Formats MP4 ou WebM, 100 Mo maximum",
+      "documentToUpload": "Document à uploader",
+      "uploadProgress": "Téléchargement: {{percent}}%",
+      "uploadReady": "✓ Fichier prêt à être uploadé lors de la création",
+      "linkUrl": "URL du lien",
+      "linkUrlPlaceholder": "Ex: https://example.com/ressource",
+      "linkUrlHint": "Lien vers une ressource externe",
+      "duration": "Durée estimée (minutes)",
+      "mandatory": "Obligatoire",
+      "presenceCheckPercent": "Vérifier la présence à (%)",
+      "presenceCheckPercentPlaceholder": "Désactivé",
+      "presenceCheckPercentHint": "Affiche une invite \"êtes-vous toujours là ?\" une fois ce pourcentage de la durée de la leçon atteint. Laisser vide pour désactiver.",
+      "resetTimeOnReopen": "Réinitialiser le temps passé à la réouverture",
+      "allowDownload": "Autoriser le téléchargement du document",
+      "cancel": "Annuler",
+      "uploading": "Téléchargement...",
+      "create": "Créer",
+      "update": "Mettre à jour"
+    },
+    "quizDialog": {
+      "addTitle": "Ajouter un quiz",
+      "editTitle": "Modifier le quiz",
+      "addDescription": "Créez un quiz pour évaluer les connaissances des apprenants",
+      "editDescription": "Modifiez les informations du quiz",
+      "titleLabel": "Titre du quiz",
+      "titlePlaceholder": "Ex: Quiz de fin de chapitre",
+      "description": "Description",
+      "descriptionPlaceholder": "Description du quiz (optionnel)",
+      "instructions": "Instructions",
+      "instructionsPlaceholder": "Instructions pour les participants (optionnel)",
+      "passingScore": "Score de réussite (%)",
+      "timeLimit": "Durée limite (minutes)",
+      "timeLimitPlaceholder": "Ex: 30",
+      "maxAttempts": "Nombre d'essais max",
+      "maxAttemptsPlaceholder": "Ex: 3",
+      "questionsToDraw": "Questions tirées au hasard (sur la banque de questions)",
+      "questionsToDrawPlaceholder": "Laisser vide pour utiliser toutes les questions",
+      "questionsToDrawHint": "Chaque tentative tirera aléatoirement ce nombre de questions parmi celles du quiz.",
+      "expiresAt": "Date d'expiration",
+      "badge": "Badge associé",
+      "noBadge": "Aucun",
+      "certificateEnabled": "Délivrer un certificat si réussi",
+      "showCorrectAnswers": "Afficher les bonnes réponses après soumission",
+      "shuffleChoices": "Mélanger l'ordre des choix",
+      "randomized": "Randomiser les questions",
+      "cancel": "Annuler",
+      "create": "Créer le quiz",
+      "update": "Mettre à jour"
+    },
+    "quizQuestionsDialog": {
+      "title": "Questions du quiz: {{title}}",
+      "description": "Gérez les questions de ce quiz",
+      "noQuestions": "Aucune question dans ce quiz",
+      "addQuestion": "Ajouter une question",
+      "close": "Fermer",
+      "types": {
+        "mcq": "QCM",
+        "trueFalse": "Vrai/Faux",
+        "shortText": "Réponse courte",
+        "essay": "Rédaction"
+      }
+    },
+    "questionDialog": {
+      "addTitle": "Ajouter une question",
+      "editTitle": "Modifier la question",
+      "addDescription": "Créez une nouvelle question pour le quiz",
+      "editDescription": "Modifiez les informations de la question",
+      "questionType": "Type de question",
+      "types": {
+        "mcq": "QCM (Choix multiples)",
+        "trueFalse": "Vrai / Faux",
+        "shortText": "Réponse courte",
+        "essay": "Rédaction"
+      },
+      "question": "Question",
+      "questionPlaceholder": "Entrez votre question...",
+      "choicesLabel": "Choix de réponses",
+      "choicePlaceholder": "Choix {{number}}",
+      "addChoice": "Ajouter un choix",
+      "selectCorrectHint": "Sélectionnez le bouton radio pour indiquer la bonne réponse",
+      "correctAnswerLabel": "Bonne réponse",
+      "cancel": "Annuler",
+      "add": "Ajouter la question",
+      "update": "Mettre à jour",
+      "trueLabel": "Vrai",
+      "falseLabel": "Faux"
+    }
+  },
+  "assignments": {
+    "toasts": {
+      "createdDescription": "Attribution créée avec succès",
+      "createErrorDescription": "Impossible de créer l'attribution",
+      "deletedDescription": "Attribution supprimée",
+      "deleteErrorDescription": "Impossible de supprimer l'attribution",
+      "categoryCreatedDescription": "Catégorie créée avec succès",
+      "categoryCreateErrorDescription": "Impossible de créer la catégorie",
+      "categoryDeletedDescription": "Catégorie supprimée",
+      "categoryDeleteErrorDescription": "Impossible de supprimer la catégorie",
+      "selectTargetDescription": "Sélectionnez au moins une cible"
+    },
+    "title": "Attributions des formations",
+    "subtitle": "Gérez les attributions de formations aux utilisateurs et groupes",
+    "tabs": {
+      "assignments": "Attributions",
+      "categories": "Catégories"
+    },
+    "courses": {
+      "title": "Formations",
+      "none": "Aucune formation",
+      "published": "Publié",
+      "draft": "Brouillon"
+    },
+    "assignmentsPanel": {
+      "titleWithCourse": "Attributions: {{title}}",
+      "selectCourse": "Sélectionnez une formation",
+      "assign": "Attribuer",
+      "selectCoursePrompt": "Sélectionnez une formation pour voir ses attributions",
+      "noAssignments": "Aucune attribution pour cette formation",
+      "createAssignment": "Créer une attribution",
+      "confirmDelete": "Supprimer cette attribution ?",
+      "types": {
+        "user": "Utilisateur",
+        "enterprise": "Entreprise",
+        "direction": "Direction",
+        "service": "Service",
+        "role": "Rôle",
+        "team": "Équipe"
+      },
+      "mandatory": "Obligatoire",
+      "idFallback": "ID: {{id}}"
+    },
+    "categoriesPanel": {
+      "title": "Catégories de formations",
+      "newCategory": "Nouvelle catégorie",
+      "none": "Aucune catégorie",
+      "confirmDelete": "Supprimer la catégorie \"{{name}}\" ?"
+    },
+    "assignDialog": {
+      "title": "Attribuer la formation",
+      "description": "Attribuez \"{{title}}\" à des utilisateurs ou groupes",
+      "content": "Contenu à attribuer",
+      "wholeCourse": "Cours entier",
+      "assignmentType": "Type d'attribution",
+      "types": {
+        "user": "Utilisateurs",
+        "enterprise": "Entreprise",
+        "direction": "Direction",
+        "service": "Service",
+        "team": "Équipe"
+      },
+      "searchUsers": "Rechercher des utilisateurs",
+      "searchPlaceholder": "Rechercher par nom ou email...",
+      "selectTargets": "Sélectionner les cibles ({{count}} sélectionnés)",
+      "noItemsFound": "Aucun élément trouvé",
+      "mandatory": "Obligatoire",
+      "yes": "Oui",
+      "no": "Non",
+      "dueDate": "Date limite (optionnel)",
+      "cancel": "Annuler",
+      "assigning": "Attribution...",
+      "assignButton": "Attribuer"
+    },
+    "categoryDialog": {
+      "title": "Nouvelle catégorie",
+      "description": "Créez une nouvelle catégorie pour organiser vos formations",
+      "nameLabel": "Nom de la catégorie",
+      "namePlaceholder": "Ex: Management, Technologie, Soft Skills...",
+      "cancel": "Annuler",
+      "creating": "Création...",
+      "create": "Créer"
+    }
+  },
+  "teamsAdmin": {
+    "title": "Équipes",
+    "subtitle": "Créez des équipes à partir de directions, services, entreprises ou utilisateurs sélectionnés",
+    "newTeam": "Nouvelle équipe",
+    "none": "Aucune équipe pour le moment",
+    "card": {
+      "userCount_one": "{{count}} utilisateur",
+      "userCount_other": "{{count}} utilisateurs",
+      "edit": "Modifier",
+      "confirmDelete": "Supprimer l'équipe \"{{name}}\" ?"
+    },
+    "form": {
+      "name": "Nom de l'équipe",
+      "namePlaceholder": "Ex: Équipe commerciale Nord",
+      "description": "Description",
+      "descriptionPlaceholder": "Description de l'équipe...",
+      "addMembers": "Ajouter des membres",
+      "searchUsersPlaceholder": "Rechercher un utilisateur...",
+      "noItemsFound": "Aucun élément trouvé",
+      "selectedMembers": "Membres sélectionnés ({{count}})",
+      "noMembersYet": "Aucun membre sélectionné pour le moment",
+      "types": {
+        "user": "Utilisateur",
+        "direction": "Direction",
+        "service": "Service",
+        "enterprise": "Entreprise"
+      }
+    },
+    "createDialog": {
+      "title": "Nouvelle équipe",
+      "description": "Sélectionnez un mélange de directions, services, entreprises et utilisateurs. L'équipe reste à jour automatiquement : ajouter un service inclut ses futurs arrivants.",
+      "cancel": "Annuler",
+      "create": "Créer",
+      "save": "Enregistrer",
+      "saving": "Enregistrement..."
+    },
+    "editDialog": {
+      "title": "Modifier l'équipe"
+    },
+    "toasts": {
+      "createdDescription": "Équipe créée avec succès",
+      "createErrorDescription": "Erreur lors de la création de l'équipe",
+      "updatedDescription": "Équipe mise à jour",
+      "updateErrorDescription": "Erreur lors de la mise à jour de l'équipe",
+      "deletedDescription": "Équipe supprimée",
+      "deleteErrorDescription": "Erreur lors de la suppression de l'équipe"
+    }
+  },
+  "badges": {
+    "types": {
+      "trophy": "Trophée",
+      "quiz_completion": "Quiz complété",
+      "perfect_score": "Score parfait",
+      "course_start": "Début de cours",
+      "course_completion": "Cours terminé"
+    },
+    "toasts": {
+      "createdDescription": "Badge créé avec succès",
+      "createErrorDescription": "Erreur lors de la création",
+      "updatedDescription": "Badge mis à jour avec succès",
+      "updateErrorDescription": "Erreur lors de la mise à jour",
+      "deletedDescription": "Badge supprimé",
+      "deleteErrorDescription": "Erreur lors de la suppression"
+    },
+    "invalidCriteriaJson": "Le critère doit être un JSON valide, ex: {\"type\": \"quiz_pass\"}",
+    "title": "Gestion des badges",
+    "subtitle": "Créez et gérez les badges de gamification",
+    "newBadge": "Nouveau badge",
+    "createDialog": {
+      "title": "Créer un badge",
+      "description": "Définissez les caractéristiques et critères d'obtention du badge",
+      "cancel": "Annuler",
+      "creating": "Création...",
+      "create": "Créer le badge"
+    },
+    "editDialog": {
+      "title": "Modifier le badge",
+      "description": "Mettez à jour les informations du badge",
+      "cancel": "Annuler",
+      "saving": "Mise à jour...",
+      "save": "Enregistrer"
+    },
+    "form": {
+      "code": "Code (identifiant unique)",
+      "codePlaceholder": "Ex: EXPERT_REACT",
+      "name": "Nom du badge",
+      "namePlaceholder": "Ex: Expert React",
+      "type": "Type",
+      "typePlaceholder": "Sélectionner un type (optionnel)",
+      "description": "Description",
+      "descriptionPlaceholder": "Description du badge...",
+      "criteria": "Critère d'obtention (JSON)"
+    },
+    "stats": {
+      "total": "Total badges",
+      "trophies": "Trophées",
+      "awarded": "Badges attribués",
+      "types": "Types"
+    },
+    "searchPlaceholder": "Rechercher un badge...",
+    "empty": {
+      "title": "Aucun badge trouvé",
+      "description": "Créez votre premier badge pour motiver vos apprenants"
+    },
+    "awardedCount": "{{count}} attribués"
+  },
+  "certificatesAdmin": {
+    "toasts": {
+      "templateCreatedDescription": "Template créé avec succès",
+      "templateCreateErrorDescription": "Erreur lors de la création",
+      "templateUpdatedDescription": "Template mis à jour",
+      "templateUpdateErrorDescription": "Erreur lors de la mise à jour",
+      "templateDeletedDescription": "Template supprimé",
+      "templateDeleteErrorDescription": "Erreur lors de la suppression",
+      "revokedDescription": "Certificat révoqué",
+      "revokeErrorDescription": "Erreur lors de la révocation",
+      "viewErrorDescription": "Impossible d'afficher le certificat",
+      "downloadErrorDescription": "Impossible de télécharger le certificat",
+      "watermarkCreatedDescription": "Filigrane ajouté avec succès",
+      "watermarkCreateErrorDescription": "Erreur lors de l'ajout du filigrane",
+      "watermarkUpdatedDescription": "Filigrane mis à jour",
+      "watermarkUpdateErrorDescription": "Erreur lors de la mise à jour",
+      "watermarkDeletedDescription": "Filigrane supprimé",
+      "watermarkDeleteErrorDescription": "Erreur lors de la suppression"
+    },
+    "pdfPreviewDialog": {
+      "title": "Aperçu du certificat",
+      "iframeTitle": "Aperçu du certificat PDF",
+      "close": "Fermer"
+    },
+    "previewSampleCourseName": "Nom du cours",
+    "title": "Gestion des certificats",
+    "subtitle": "Gérez les certificats et les templates",
+    "stats": {
+      "total": "Total certificats",
+      "valid": "Valides",
+      "revoked": "Révoqués",
+      "templates": "Templates"
+    },
+    "tabs": {
+      "certificates": "Certificats ({{count}})",
+      "templates": "Templates ({{count}})",
+      "watermarks": "Filigranes ({{count}})"
+    },
+    "searchPlaceholder": "Rechercher un certificat...",
+    "table": {
+      "certificateNumber": "N° Certificat",
+      "user": "Utilisateur",
+      "course": "Cours",
+      "issuedOn": "Émis le",
+      "expires": "Expire",
+      "status": "Statut",
+      "actions": "Actions",
+      "userFallback": "User #{{id}}",
+      "courseFallback": "Course #{{id}}",
+      "valid": "Valide",
+      "revoked": "Révoqué",
+      "noResults": "Aucun certificat trouvé"
+    },
+    "newTemplate": "Nouveau template",
+    "createDialog": {
+      "title": "Créer un template",
+      "description": "Définissez le design et le contenu du certificat",
+      "cancel": "Annuler",
+      "creating": "Création...",
+      "create": "Créer"
+    },
+    "editDialog": {
+      "title": "Modifier le template",
+      "cancel": "Annuler",
+      "saving": "Mise à jour...",
+      "save": "Enregistrer"
+    },
+    "previewDialog": {
+      "title": "Aperçu — {{name}}",
+      "description": "Rendu avec des données d'exemple. Ceci ne reflète pas encore la mise en page du PDF généré.",
+      "iframeTitle": "Aperçu du template",
+      "noContent": "Ce template n'a pas encore de contenu HTML.",
+      "close": "Fermer"
+    },
+    "form": {
+      "name": "Nom du template",
+      "namePlaceholder": "Ex: Certificat Standard",
+      "description": "Description",
+      "descriptionPlaceholder": "Description du template...",
+      "html": "Template HTML",
+      "availableVariables": "Variables disponibles: {userName}, {courseName}, {date}, {certificateNumber}",
+      "dimensionsHint": "Format du certificat : A4 paysage (297 × 210 mm). Concevez votre HTML sur un canevas de 1122 × 794 px (96 ppp) pour que l'aperçu corresponde aux proportions réelles du PDF.",
+      "isDefault": "Template par défaut"
+    },
+    "templateCard": {
+      "default": "Par défaut",
+      "edit": "Modifier",
+      "preview": "Aperçu",
+      "setDefault": "Définir par défaut"
+    },
+    "watermarks": {
+      "add": "Ajouter un filigrane",
+      "none": "Aucun filigrane pour le moment",
+      "addDialog": {
+        "title": "Ajouter un filigrane",
+        "description": "Le filigrane par défaut apparaît en fond, discret, sur les certificats générés à partir de maintenant.",
+        "uploading": "Envoi en cours..."
+      },
+      "form": {
+        "name": "Nom",
+        "namePlaceholder": "Ex: Logo entreprise",
+        "image": "Image",
+        "dimensionsHint": "Utilisez une image au format 4:3 (ex: 800 × 600 px) pour remplir exactement la zone du filigrane (400 × 300 pt) sans marge ni déformation. Toute image plus large sera centrée et redimensionnée automatiquement."
+      }
+    }
+  },
+  "liveSessionsAdmin": {
+    "toasts": {
+      "createdDescription": "Session créée avec succès",
+      "createErrorFallback": "Erreur lors de la création",
+      "updatedDescription": "Session mise à jour",
+      "updateErrorFallback": "Erreur lors de la mise à jour",
+      "deletedDescription": "Session supprimée",
+      "deleteErrorDescription": "Erreur lors de la suppression",
+      "canceledDescription": "Session annulée",
+      "startedDescription": "Session démarrée",
+      "startErrorDescription": "Impossible de démarrer la session",
+      "endedDescription": "Session terminée",
+      "endErrorDescription": "Impossible de terminer la session",
+      "dateRequiredDescription": "La date et l'heure sont requises",
+      "linkCopiedTitle": "Lien copié",
+      "linkCopiedDescription": "Le lien a été copié dans le presse-papier"
+    },
+    "statuses": {
+      "scheduled": "Planifiée",
+      "live": "En cours",
+      "ended": "Terminée",
+      "canceled": "Annulée"
+    },
+    "form": {
+      "title": "Titre de la session",
+      "titlePlaceholder": "Ex: Introduction à React - Session Live",
+      "description": "Description",
+      "descriptionPlaceholder": "Description de la session...",
+      "instructor": "Instructeur",
+      "instructorPlaceholder": "Sélectionner un instructeur",
+      "associatedCourse": "Cours associé (optionnel)",
+      "noCourse": "Aucun cours",
+      "none": "Aucun",
+      "visibility": "Visibilité",
+      "visibilityPublic": "Publique (tous les utilisateurs)",
+      "visibilityPrivate": "Privée (cours associé et/ou invités)",
+      "explicitInvitees": "Invités explicites (en plus des inscrits au cours associé)",
+      "noUsersAvailable": "Aucun utilisateur disponible",
+      "dateTime": "Date et heure",
+      "duration": "Durée (minutes)",
+      "meetingUrl": "URL de la réunion",
+      "maxParticipants": "Participants max"
+    },
+    "title": "Sessions en direct",
+    "subtitle": "Gérez les sessions de formation en direct",
+    "newSession": "Nouvelle session",
+    "createDialog": {
+      "title": "Créer une session",
+      "description": "Planifiez une nouvelle session de formation en direct",
+      "cancel": "Annuler",
+      "creating": "Création...",
+      "create": "Créer la session"
+    },
+    "editDialog": {
+      "title": "Modifier la session",
+      "cancel": "Annuler",
+      "saving": "Mise à jour...",
+      "save": "Enregistrer"
+    },
+    "stats": {
+      "total": "Total sessions",
+      "scheduled": "Planifiées",
+      "live": "En cours",
+      "completed": "Terminées"
+    },
+    "searchPlaceholder": "Rechercher une session...",
+    "allStatuses": "Tous les statuts",
+    "empty": {
+      "title": "Aucune session trouvée",
+      "description": "Créez votre première session de formation en direct"
+    },
+    "liveNow": "EN DIRECT",
+    "instructorFallback": "Instructeur #{{id}}",
+    "durationMinutes": "{{count}} min",
+    "start": "Démarrer",
+    "cancel": "Annuler",
+    "end": "Terminer"
+  },
+  "notificationsAdmin": {
+    "channels": {
+      "in_app": "Application",
+      "email": "Email",
+      "sms": "SMS",
+      "whatsapp": "WhatsApp",
+      "push": "Notification push"
+    },
+    "roles": {
+      "admin": "Administrateur",
+      "director": "Directeur",
+      "manager": "Manager",
+      "supervisor": "Superviseur",
+      "agent": "Agent",
+      "externe": "Externe",
+      "stagiaire": "Stagiaire"
+    },
+    "toasts": {
+      "sentDescription": "Notification envoyée avec succès",
+      "sendErrorDescription": "Erreur lors de l'envoi",
+      "deletedDescription": "Notification supprimée"
+    },
+    "title": "Centre de notifications",
+    "subtitle": "Envoyez et gérez les notifications aux utilisateurs",
+    "sendButton": "Envoyer une notification",
+    "createDialog": {
+      "title": "Nouvelle notification",
+      "description": "Envoyez une notification à vos utilisateurs",
+      "cancel": "Annuler",
+      "sending": "Envoi...",
+      "send": "Envoyer"
+    },
+    "form": {
+      "channel": "Canal",
+      "subject": "Sujet",
+      "subjectPlaceholder": "Sujet de la notification",
+      "message": "Message",
+      "messagePlaceholder": "Contenu de la notification...",
+      "recipients": "Destinataires",
+      "allUsers": "Tous les utilisateurs",
+      "specificUser": "Utilisateur spécifique",
+      "byRole": "Par rôle",
+      "selectUser": "Sélectionner l'utilisateur",
+      "chooseUser": "Choisir un utilisateur",
+      "selectRole": "Sélectionner le rôle",
+      "chooseRole": "Choisir un rôle"
+    },
+    "stats": {
+      "totalSent": "Total envoyées",
+      "read": "Lues",
+      "unread": "Non lues",
+      "users": "Utilisateurs"
+    },
+    "searchPlaceholder": "Rechercher une notification...",
+    "allChannels": "Tous les canaux",
+    "empty": {
+      "title": "Aucune notification trouvée",
+      "description": "Envoyez votre première notification aux utilisateurs"
+    },
+    "defaultSubject": "Notification",
+    "readStatus": "Lu",
+    "unreadStatus": "Non lu",
+    "userFallback": "User #{{id}}"
+  },
+  "blogAdmin": {
+    "statuses": {
+      "draft": "Brouillon",
+      "published": "Publié",
+      "archived": "Archivé"
+    },
+    "toasts": {
+      "createdDescription": "Article créé avec succès",
+      "createErrorDescription": "Erreur lors de la création",
+      "updatedDescription": "Article mis à jour",
+      "updateErrorDescription": "Erreur lors de la mise à jour",
+      "deletedDescription": "Article supprimé",
+      "deleteErrorDescription": "Erreur lors de la suppression",
+      "publishedDescription": "Article publié",
+      "categoryErrorDescription": "Erreur lors de la création de la catégorie",
+      "tagErrorDescription": "Erreur lors de la création du tag"
+    },
+    "form": {
+      "title": "Titre",
+      "titlePlaceholder": "Titre de l'article",
+      "content": "Contenu",
+      "contentPlaceholder": "Contenu de l'article...",
+      "category": "Catégorie",
+      "categoryPlaceholder": "Sélectionner une catégorie",
+      "newCategoryPlaceholder": "Nouvelle catégorie...",
+      "status": "Statut",
+      "tags": "Tags",
+      "newTagPlaceholder": "Nouveau tag...",
+      "add": "Ajouter"
+    },
+    "title": "Gestion du blog",
+    "subtitle": "Créez et gérez les articles du blog",
+    "newPost": "Nouvel article",
+    "createDialog": {
+      "title": "Créer un article",
+      "description": "Rédigez un nouvel article pour le blog",
+      "cancel": "Annuler",
+      "creating": "Création...",
+      "create": "Créer"
+    },
+    "editDialog": {
+      "title": "Modifier l'article",
+      "cancel": "Annuler",
+      "saving": "Mise à jour...",
+      "save": "Enregistrer"
+    },
+    "stats": {
+      "total": "Total articles",
+      "published": "Publiés",
+      "drafts": "Brouillons",
+      "totalViews": "Total vues"
+    },
+    "searchPlaceholder": "Rechercher un article...",
+    "allStatuses": "Tous les statuts",
+    "drafts": "Brouillons",
+    "published": "Publiés",
+    "archived": "Archivés",
+    "empty": {
+      "title": "Aucun article trouvé",
+      "description": "Créez votre premier article de blog"
+    },
+    "authorFallback": "Auteur #{{id}}",
+    "publish": "Publier"
+  },
+  "reports": {
+    "types": {
+      "user_progress": {
+        "label": "Progression des utilisateurs",
+        "description": "Rapport détaillé sur la progression des apprenants"
+      },
+      "course_completion": {
+        "label": "Complétion des cours",
+        "description": "Taux de complétion et statistiques par cours"
+      },
+      "quiz_performance": {
+        "label": "Performance aux quiz",
+        "description": "Résultats et statistiques des quiz"
+      },
+      "enrollment_summary": {
+        "label": "Résumé des inscriptions",
+        "description": "Tendances et statistiques d'inscription"
+      },
+      "badge_awards": {
+        "label": "Badges décernés",
+        "description": "Répartition des badges et meilleurs élèves"
+      },
+      "certificate_issuance": {
+        "label": "Certifications",
+        "description": "Rapport sur les certifications délivrées"
+      },
+      "activity_log": {
+        "label": "Journal d'activité",
+        "description": "Historique d'activité des utilisateurs"
+      },
+      "organization_overview": {
+        "label": "Vue d'ensemble de l'organisation",
+        "description": "Statistiques par entreprise/direction/service"
+      }
+    },
+    "toasts": {
+      "generatedDescription": "Rapport généré et téléchargé",
+      "generateErrorDescription": "Erreur lors de la génération"
+    },
+    "title": "Rapports et analyses",
+    "subtitle": "Générez et téléchargez les rapports de la plateforme",
+    "generateButton": "Générer un rapport",
+    "generateDialog": {
+      "title": "Générer un rapport",
+      "description": "Sélectionnez le type de rapport, le format et la période",
+      "reportType": "Type de rapport",
+      "selectType": "Sélectionner un type",
+      "format": "Format",
+      "formats": {
+        "pdf": "PDF",
+        "excel": "Excel",
+        "csv": "CSV"
+      },
+      "startDate": "Date de début",
+      "endDate": "Date de fin",
+      "cancel": "Annuler",
+      "generating": "Génération...",
+      "generate": "Générer"
+    },
+    "stats": {
+      "users": "Utilisateurs",
+      "courses": "Cours",
+      "enrollments": "Inscriptions",
+      "completion": "Complétion",
+      "avgTime": "Temps moyen",
+      "certificates": "Certificats"
+    },
+    "availableTypes": "Types de rapports disponibles"
+  },
+  "organization": {
+    "toasts": {
+      "updatedDescription": "Organisation mise à jour",
+      "updateErrorDescription": "Erreur lors de la mise à jour",
+      "settingsUpdatedDescription": "Paramètres mis à jour",
+      "settingsUpdateErrorDescription": "Erreur lors de la mise à jour",
+      "selectImageDescription": "Veuillez sélectionner une image",
+      "imageTooLargeDescription": "L'image ne doit pas dépasser 5 Mo",
+      "logoUploadErrorDescription": "Impossible d'uploader le logo"
+    },
+    "title": "Configuration de l'organisation",
+    "subtitle": "Gérez les paramètres de votre organisation",
+    "settingsButton": "Paramètres",
+    "edit": "Modifier",
+    "stats": {
+      "users": "Utilisateurs",
+      "courses": "Cours",
+      "activeThisMonth": "Actifs ce mois",
+      "enrollments": "Inscriptions"
+    },
+    "generalInfo": {
+      "title": "Informations générales",
+      "createdOn": "Créé le {{date}}"
+    },
+    "customization": {
+      "title": "Personnalisation",
+      "primaryColor": "Couleur principale",
+      "secondaryColor": "Couleur secondaire",
+      "preview": "Aperçu",
+      "primaryButton": "Bouton principal",
+      "secondaryButton": "Bouton secondaire"
+    },
+    "platformSettings": {
+      "title": "Paramètres de la plateforme",
+      "selfRegistration": {
+        "title": "Inscription libre",
+        "description": "Les utilisateurs peuvent créer un compte"
+      },
+      "notifications": {
+        "title": "Notifications",
+        "description": "Notifications push et email"
+      },
+      "chat": {
+        "title": "Chat",
+        "description": "Messagerie entre utilisateurs"
+      },
+      "liveSessions": {
+        "title": "Sessions live",
+        "description": "Webinaires et sessions en direct"
+      },
+      "language": {
+        "title": "Langue",
+        "description": "Langue par défaut"
+      },
+      "timezone": {
+        "title": "Fuseau horaire",
+        "description": "Pour les sessions planifiées"
+      },
+      "enabled": "Activé",
+      "disabled": "Désactivé"
+    },
+    "editDialog": {
+      "title": "Modifier l'organisation",
+      "logo": "Logo",
+      "changeLogo": "Changer le logo",
+      "uploadLogo": "Uploader un logo",
+      "name": "Nom",
+      "description": "Description",
+      "contactEmail": "Email de contact",
+      "phone": "Téléphone",
+      "address": "Adresse",
+      "website": "Site web",
+      "primaryColor": "Couleur principale",
+      "secondaryColor": "Couleur secondaire",
+      "cancel": "Annuler",
+      "saving": "Mise à jour...",
+      "save": "Enregistrer"
+    },
+    "settingsDialog": {
+      "title": "Paramètres de la plateforme",
+      "selfRegistration": "Inscription libre",
+      "notifications": "Notifications",
+      "chat": "Chat",
+      "liveSessions": "Sessions live",
+      "maxUsersPerGroup": "Max utilisateurs par groupe",
+      "certificateValidity": "Validité certificats (jours)",
+      "cancel": "Annuler",
+      "saving": "Mise à jour...",
+      "save": "Enregistrer"
+    }
+  },
+  "import": {
+    "sections": {
+      "organization": {
+        "title": "Hiérarchie de l'organisation",
+        "description": "Entreprises, directions et services — une ligne par service (ou par niveau supérieur si les colonnes suivantes sont laissées vides)."
+      },
+      "users": {
+        "title": "Utilisateurs",
+        "description": "Comptes utilisateurs avec rôle et rattachement organisationnel."
+      },
+      "courses": {
+        "title": "Cours",
+        "description": "Fiches de cours (titre, description, catégorie, niveau)."
+      },
+      "lessons": {
+        "title": "Leçons",
+        "description": "Leçons rattachées à un cours déjà existant — le module est créé automatiquement s'il n'existe pas."
+      },
+      "quizzes": {
+        "title": "Quiz",
+        "description": "Questions de quiz rattachées à une leçon déjà existante — une ligne par question."
+      }
+    },
+    "toasts": {
+      "templateDownloadErrorDescription": "Impossible de télécharger le modèle",
+      "importCompleteTitle": "Import terminé",
+      "importCompleteDescription": "{{count}} ligne(s) créée(s)",
+      "importErrorDescription": "Impossible d'importer le fichier"
+    },
+    "downloadTemplate": "Télécharger le modèle",
+    "importButton": "Importer",
+    "resultSummary": "{{created}} créé(s)",
+    "skippedCount": ", {{count}} ignoré(s)",
+    "errorsCount": ", {{count}} erreur(s)",
+    "outOfRows": " sur {{count}} ligne(s)",
+    "lineFallback": "Ligne {{line}}",
+    "title": "Import de données",
+    "subtitle": "Téléchargez un modèle Excel, remplissez-le puis importez-le. Les imports sont rejouables : les éléments déjà existants sont automatiquement ignorés.",
+    "noneAvailable": "Aucun import n'est disponible pour votre rôle."
+  },
+  "platform": {
+    "toasts": {
+      "createdTitle": "Organisation créée",
+      "createdDescription": "La nouvelle organisation est prête.",
+      "createErrorDescription": "Impossible de créer l'organisation",
+      "switchedTitle": "Organisation active",
+      "switchedDescription": "Vous agissez maintenant dans « {{name}} »",
+      "switchErrorDescription": "Impossible de basculer vers cette organisation"
+    },
+    "title": "Plateforme",
+    "subtitle": "Toutes les organisations gérées sur cette instance — réservé au super administrateur",
+    "newOrganization": "Nouvelle organisation",
+    "createDialog": {
+      "title": "Créer une organisation",
+      "description": "Un nouveau tenant isolé, avec son propre catalogue et ses propres utilisateurs.",
+      "nameLabel": "Nom de l'organisation",
+      "namePlaceholder": "Ex: Acme Corp",
+      "cancel": "Annuler",
+      "creating": "Création...",
+      "create": "Créer"
+    },
+    "active": "Active",
+    "createdOn": "Créée le {{date}}",
+    "activeOrganization": "Organisation active",
+    "switching": "Bascule...",
+    "switchTo": "Basculer vers",
+    "empty": "Aucune organisation pour l'instant."
+  },
+  "emailSettings": {
+    "toasts": {
+      "savedDescription": "Paramètres email enregistrés",
+      "saveErrorDescription": "Impossible d'enregistrer les paramètres",
+      "testSentDescription": "Email de test envoyé à {{email}}",
+      "testErrorDescription": "Impossible d'envoyer l'email de test",
+      "enterEmailDescription": "Veuillez entrer une adresse email"
+    },
+    "title": "Notifications par email",
+    "subtitle": "Configurez le serveur SMTP utilisé pour envoyer les notifications",
+    "smtpConfig": {
+      "title": "Configuration SMTP",
+      "description": "Les emails (notifications, mots de passe oubliés, alertes) seront envoyés via ce serveur",
+      "enableSending": "Activer l'envoi d'emails",
+      "enableSendingHint": "Si désactivé, aucune notification email ne sera envoyée",
+      "smtpServer": "Serveur SMTP",
+      "port": "Port",
+      "secureConnection": "Connexion sécurisée (TLS/SSL)",
+      "smtpUsername": "Nom d'utilisateur SMTP",
+      "smtpPassword": "Mot de passe SMTP",
+      "fromEmail": "Email d'expédition",
+      "fromName": "Nom d'expéditeur",
+      "save": "Enregistrer"
+    },
+    "testConfig": {
+      "title": "Tester la configuration",
+      "description": "Envoyez un email de test pour vérifier que la configuration fonctionne",
+      "sendTest": "Envoyer un test"
+    }
+  },
+  "liveKitSettings": {
+    "toasts": {
+      "savedDescription": "Paramètres LiveKit enregistrés",
+      "saveErrorDescription": "Impossible d'enregistrer les paramètres",
+      "testSuccessDescription": "Connexion LiveKit réussie",
+      "testErrorDescription": "Impossible de se connecter à LiveKit"
+    },
+    "title": "Visioconférence (LiveKit)",
+    "subtitle": "Configurez les identifiants LiveKit utilisés pour la visioconférence intégrée des sessions live. Laissez désactivé pour utiliser la configuration globale du serveur (si définie).",
+    "config": {
+      "title": "Configuration LiveKit",
+      "descriptionPrefix": "Un compte gratuit peut être créé sur",
+      "descriptionSuffix": ". Ces identifiants remplacent, pour ce tenant uniquement, la configuration par défaut du serveur.",
+      "useForTenant": "Utiliser ces identifiants pour ce tenant",
+      "useForTenantHint": "Si désactivé, la configuration globale du serveur (variables d'environnement) est utilisée à la place.",
+      "projectUrl": "URL du projet (WebSocket)",
+      "apiKey": "API Key",
+      "apiSecret": "API Secret",
+      "testConnection": "Tester la connexion",
+      "save": "Enregistrer"
+    }
+  },
+  "recordingSettings": {
+    "toasts": {
+      "savedDescription": "Paramètres de stockage enregistrés",
+      "saveErrorDescription": "Impossible d'enregistrer les paramètres"
+    },
+    "title": "Enregistrement des sessions live",
+    "subtitle": "Configurez le bucket de stockage S3-compatible utilisé pour enregistrer les sessions live via LiveKit Egress. Contrairement à la visioconférence, il n'y a pas de configuration globale de secours : sans bucket configuré et activé ici, l'enregistrement reste indisponible pour ce tenant.",
+    "storage": {
+      "title": "Stockage S3-compatible",
+      "description": "Compatible avec AWS S3, MinIO, Cloudflare R2, Backblaze B2, etc. (endpoint personnalisé optionnel).",
+      "enableForTenant": "Activer l'enregistrement pour ce tenant",
+      "enableForTenantHint": "Si désactivé, le bouton d'enregistrement affiche un message clair au lieu de démarrer.",
+      "bucket": "Bucket",
+      "region": "Région",
+      "endpoint": "Endpoint (optionnel, pour un stockage S3-compatible non-AWS)",
+      "accessKey": "Access Key",
+      "secretKey": "Secret Key",
+      "save": "Enregistrer"
+    }
+  },
+  "logs": {
+    "title": "Journaux",
+    "subtitle": "Connexions, actions d'administration et suivi des formations",
+    "tabs": {
+      "connections": "Connexions",
+      "processing": "Traitement",
+      "training": "Formations"
+    },
+    "exporting": "Export...",
+    "exportCsv": "Exporter en CSV",
+    "toasts": {
+      "exportErrorDescription": "Impossible d'exporter les logs"
+    },
+    "filters": {
+      "title": "Filtres",
+      "reset": "Réinitialiser",
+      "userId": "ID Utilisateur",
+      "action": "Action",
+      "allActions": "Toutes",
+      "from": "Du",
+      "to": "Au",
+      "courseId": "ID Formation",
+      "lastAccessFrom": "Dernier accès du",
+      "lastAccessTo": "au"
+    },
+    "eventTable": {
+      "entriesCount": "{{count}} entrée(s)",
+      "noResults": "Aucun log trouvé pour ces filtres",
+      "date": "Date",
+      "user": "Utilisateur",
+      "action": "Action",
+      "entity": "Entité",
+      "details": "Détails",
+      "system": "Système",
+      "pageOf": "Page {{page}} / {{totalPages}}"
+    },
+    "trainingTable": {
+      "pathsCount": "{{count}} parcours de formation",
+      "noResults": "Aucune donnée de formation pour ces filtres",
+      "user": "Utilisateur",
+      "training": "Formation",
+      "totalTime": "Temps total",
+      "progress": "Progression",
+      "resumes": "Reprises",
+      "lastAccess": "Dernier accès",
+      "durationMinutes": "{{count}} min",
+      "durationHoursMinutes": "{{hours}}h {{minutes}}min"
+    }
+  }
+}

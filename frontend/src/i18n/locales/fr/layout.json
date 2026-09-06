@@ -1,0 +1,50 @@
+{
+  "nav": {
+    "dashboard": "Tableau de bord",
+    "courses": "Formations",
+    "lessons": "Leçons",
+    "live": "Sessions live",
+    "chat": "Chat",
+    "badges": "Badges",
+    "certificates": "Certificats",
+    "notifications": "Notifications",
+    "blog": "Blog",
+    "aiTutor": "Assistant IA",
+    "search": "Recherche",
+    "myTeam": "Mon équipe"
+  },
+  "adminNav": {
+    "analytics": "Analytics",
+    "users": "Utilisateurs",
+    "courses": "Cours",
+    "assignments": "Attributions",
+    "teams": "Équipes",
+    "badges": "Badges",
+    "certificates": "Certificats",
+    "liveSessions": "Sessions live",
+    "notifications": "Notifications",
+    "emailQueue": "File d'attente emails",
+    "blog": "Blog",
+    "reports": "Rapports",
+    "organization": "Organisation",
+    "import": "Import de données",
+    "email": "Email",
+    "videoConferencing": "Visioconférence",
+    "recording": "Enregistrement",
+    "logs": "Journaux d'audit",
+    "platform": "Plateforme"
+  },
+  "sectionToggle": {
+    "userSpace": "Espace utilisateur",
+    "administration": "Administration"
+  },
+  "header": {
+    "helpTooltip": "Aide de cette page (F1)",
+    "tourTooltip": "Lancer la visite guidée"
+  },
+  "userMenu": {
+    "profile": "Mon profil",
+    "settings": "Paramètres",
+    "logout": "Déconnexion"
+  }
+}

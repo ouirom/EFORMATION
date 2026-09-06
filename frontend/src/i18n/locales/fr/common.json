@@ -1,0 +1,57 @@
+{
+  "language": "Langue",
+  "actions": {
+    "save": "Enregistrer",
+    "cancel": "Annuler",
+    "edit": "Modifier",
+    "delete": "Supprimer",
+    "create": "Créer",
+    "close": "Fermer",
+    "confirm": "Confirmer",
+    "search": "Rechercher",
+    "back": "Retour",
+    "next": "Suivant",
+    "previous": "Précédent",
+    "submit": "Envoyer",
+    "download": "Télécharger",
+    "upload": "Téléverser",
+    "view": "Voir",
+    "add": "Ajouter",
+    "remove": "Retirer",
+    "export": "Exporter",
+    "import": "Importer",
+    "filter": "Filtrer",
+    "reset": "Réinitialiser",
+    "continue": "Continuer",
+    "loading": "Chargement...",
+    "copy": "Copier",
+    "refresh": "Actualiser"
+  },
+  "status": {
+    "success": "Succès",
+    "error": "Erreur",
+    "warning": "Attention",
+    "info": "Information",
+    "active": "Actif",
+    "inactive": "Inactif",
+    "pending": "En attente",
+    "suspended": "Suspendu",
+    "disabled": "Désactivé"
+  },
+  "misc": {
+    "yes": "Oui",
+    "no": "Non",
+    "none": "Aucun",
+    "all": "Tous",
+    "optional": "optionnel",
+    "required": "requis",
+    "noResults": "Aucun résultat",
+    "somethingWentWrong": "Une erreur est survenue"
+  },
+  "time": {
+    "justNow": "À l'instant",
+    "minutesAgo": "Il y a {{count}} min",
+    "hoursAgo": "Il y a {{count}}h",
+    "daysAgo": "Il y a {{count}}j"
+  }
+}

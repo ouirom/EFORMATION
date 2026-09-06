@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -21,9 +22,7 @@ import {
   User,
   Tag,
   MessageSquare,
-  Heart,
   ExternalLink,
-  Image as ImageIcon,
 } from 'lucide-react'
 import { api } from '@/services/api'
 import { formatDate } from '@/lib/utils'
@@ -32,138 +31,283 @@ interface BlogPost {
   id: number
   title: string
   slug: string
-  content: string
-  excerpt: string
-  featuredImage: string | null
-  authorId: number
-  authorName?: string
-  category: string
-  tags: string[]
-  status: 'draft' | 'published' | 'archived'
-  viewCount: number
-  likeCount: number
-  commentCount: number
-  publishedAt: string | null
-  createdAt: string
+  body: string
+  author_id: number
+  author_name?: string
+  category_id: number | null
+  category_name?: string
+  tags: { id: number; name: string }[]
+  status: 'draft' | 'published'
+  view_count: number
+  comment_count: number
+  published_at: string | null
+  created_at: string
 }
 
-const categories = [
-  'Développement',
-  'Design',
-  'Management',
-  'Soft Skills',
-  'Tutoriels',
-  'Actualités',
-  'Événements',
-]
+interface PostFormValues {
+  title: string
+  body: string
+  categoryId: string
+  tagIds: number[]
+  status: string
+}
+
+const emptyForm: PostFormValues = { title: '', body: '', categoryId: '', tagIds: [], status: 'draft' }
+
+// Defined at module scope so its identity stays stable across parent
+// re-renders -- a component defined inside another component's render body
+// gets recreated as a new type on every render, which makes React unmount
+// and remount its inputs on every keystroke, resetting cursor position.
+function PostForm({
+  t,
+  formData,
+  onChange,
+  isEditing,
+  categories,
+  tags,
+  onCreateCategory,
+  onCreateTag,
+}: {
+  t: (key: string) => string
+  formData: PostFormValues
+  onChange: (data: PostFormValues) => void
+  isEditing: boolean
+  categories: { id: number; name: string }[]
+  tags: { id: number; name: string }[]
+  onCreateCategory: (name: string) => void
+  onCreateTag: (name: string) => void
+}) {
+  const idPrefix = isEditing ? 'edit-post' : 'add-post'
+  const [newCategory, setNewCategory] = useState('')
+  const [newTag, setNewTag] = useState('')
+
+  const toggleTag = (tagId: number) => {
+    onChange({
+      ...formData,
+      tagIds: formData.tagIds.includes(tagId)
+        ? formData.tagIds.filter((id) => id !== tagId)
+        : [...formData.tagIds, tagId],
+    })
+  }
+
+  return (
+    <div className="space-y-4 max-h-[70vh] overflow-y-auto">
+      <div className="space-y-2">
+        <Label htmlFor={`${idPrefix}-title`}>{t('blogAdmin.form.title')}</Label>
+        <Input
+          id={`${idPrefix}-title`}
+          value={formData.title}
+          onChange={(e) => onChange({ ...formData, title: e.target.value })}
+          placeholder={t('blogAdmin.form.titlePlaceholder')}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor={`${idPrefix}-body`}>{t('blogAdmin.form.content')}</Label>
+        <Textarea
+          id={`${idPrefix}-body`}
+          value={formData.body}
+          onChange={(e) => onChange({ ...formData, body: e.target.value })}
+          placeholder={t('blogAdmin.form.contentPlaceholder')}
+          rows={10}
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor={`${idPrefix}-category`}>{t('blogAdmin.form.category')}</Label>
+          <Select value={formData.categoryId} onValueChange={(v) => onChange({ ...formData, categoryId: v })}>
+            <SelectTrigger id={`${idPrefix}-category`}>
+              <SelectValue placeholder={t('blogAdmin.form.categoryPlaceholder')} />
+            </SelectTrigger>
+            <SelectContent>
+              {categories.map((cat) => (
+                <SelectItem key={cat.id} value={String(cat.id)}>{cat.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <div className="flex gap-2">
+            <Input
+              value={newCategory}
+              onChange={(e) => setNewCategory(e.target.value)}
+              placeholder={t('blogAdmin.form.newCategoryPlaceholder')}
+              className="h-8 text-sm"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={!newCategory.trim()}
+              onClick={() => { onCreateCategory(newCategory.trim()); setNewCategory('') }}
+            >
+              {t('blogAdmin.form.add')}
+            </Button>
+          </div>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor={`${idPrefix}-status`}>{t('blogAdmin.form.status')}</Label>
+          <Select value={formData.status} onValueChange={(v) => onChange({ ...formData, status: v })}>
+            <SelectTrigger id={`${idPrefix}-status`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="draft">{t('blogAdmin.statuses.draft')}</SelectItem>
+              <SelectItem value="published">{t('blogAdmin.statuses.published')}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label>{t('blogAdmin.form.tags')}</Label>
+        <div className="flex flex-wrap gap-2">
+          {tags.map((tag) => (
+            <Badge
+              key={tag.id}
+              variant={formData.tagIds.includes(tag.id) ? 'default' : 'outline'}
+              className="cursor-pointer"
+              onClick={() => toggleTag(tag.id)}
+            >
+              {tag.name}
+            </Badge>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <Input
+            value={newTag}
+            onChange={(e) => setNewTag(e.target.value)}
+            placeholder={t('blogAdmin.form.newTagPlaceholder')}
+            className="h-8 text-sm"
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={!newTag.trim()}
+            onClick={() => { onCreateTag(newTag.trim()); setNewTag('') }}
+          >
+            {t('blogAdmin.form.add')}
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export default function AdminBlogPage() {
+  const { t } = useTranslation('admin')
+  const { t: tCommon } = useTranslation('common')
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [editingPost, setEditingPost] = useState<BlogPost | null>(null)
-  const [formData, setFormData] = useState({
-    title: '',
-    content: '',
-    excerpt: '',
-    featuredImage: '',
-    category: '',
-    tags: '',
-    status: 'draft',
+  const [formData, setFormData] = useState<PostFormValues>(emptyForm)
+
+  const { data: postsResult, isLoading } = useQuery({
+    queryKey: ['admin-blog-posts', statusFilter],
+    queryFn: () => api.blog.getPosts({ status: statusFilter !== 'all' ? statusFilter : undefined, limit: 50 }),
+  })
+  const posts: BlogPost[] = postsResult?.data || []
+
+  const { data: categories = [] } = useQuery({
+    queryKey: ['blog-categories'],
+    queryFn: () => api.blog.getCategories(),
   })
 
-  const { data: posts = [], isLoading } = useQuery<BlogPost[]>({
-    queryKey: ['admin-blog-posts'],
-    queryFn: async () => {
-      const response = await api.get('/blog')
-      return response.data.data || []
-    },
+  const { data: tags = [] } = useQuery({
+    queryKey: ['blog-tags'],
+    queryFn: () => api.blog.getTags(),
   })
+
+  const invalidatePosts = () => queryClient.invalidateQueries({ queryKey: ['admin-blog-posts'] })
 
   const createMutation = useMutation({
-    mutationFn: async (data: any) => {
-      await api.post('/blog', data)
-    },
+    mutationFn: (data: any) => api.blog.createPost(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-blog-posts'] })
+      invalidatePosts()
       setIsCreateDialogOpen(false)
-      resetForm()
-      toast({ title: 'Succès', description: 'Article créé avec succès' })
+      setFormData(emptyForm)
+      toast({ title: tCommon('status.success'), description: t('blogAdmin.toasts.createdDescription') })
     },
     onError: () => {
-      toast({ title: 'Erreur', description: 'Erreur lors de la création', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: t('blogAdmin.toasts.createErrorDescription'), variant: 'destructive' })
     },
   })
 
   const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: number; data: any }) => {
-      await api.put(`/blog/${id}`, data)
-    },
+    mutationFn: ({ id, data }: { id: number; data: any }) => api.blog.updatePost(id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-blog-posts'] })
+      invalidatePosts()
       setEditingPost(null)
-      resetForm()
-      toast({ title: 'Succès', description: 'Article mis à jour' })
+      setFormData(emptyForm)
+      toast({ title: tCommon('status.success'), description: t('blogAdmin.toasts.updatedDescription') })
     },
     onError: () => {
-      toast({ title: 'Erreur', description: 'Erreur lors de la mise à jour', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: t('blogAdmin.toasts.updateErrorDescription'), variant: 'destructive' })
     },
   })
 
   const deleteMutation = useMutation({
-    mutationFn: async (id: number) => {
-      await api.delete(`/blog/${id}`)
-    },
+    mutationFn: (id: number) => api.blog.deletePost(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-blog-posts'] })
-      toast({ title: 'Succès', description: 'Article supprimé' })
+      invalidatePosts()
+      toast({ title: tCommon('status.success'), description: t('blogAdmin.toasts.deletedDescription') })
     },
     onError: () => {
-      toast({ title: 'Erreur', description: 'Erreur lors de la suppression', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: t('blogAdmin.toasts.deleteErrorDescription'), variant: 'destructive' })
     },
   })
 
   const publishMutation = useMutation({
-    mutationFn: async (id: number) => {
-      await api.put(`/blog/${id}/publish`)
-    },
+    mutationFn: (id: number) => api.blog.updatePost(id, { status: 'published' }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-blog-posts'] })
-      toast({ title: 'Succès', description: 'Article publié' })
+      invalidatePosts()
+      toast({ title: tCommon('status.success'), description: t('blogAdmin.toasts.publishedDescription') })
     },
   })
 
-  const resetForm = () => {
-    setFormData({
-      title: '',
-      content: '',
-      excerpt: '',
-      featuredImage: '',
-      category: '',
-      tags: '',
-      status: 'draft',
-    })
-  }
+  const createCategoryMutation = useMutation({
+    mutationFn: (name: string) => api.blog.createCategory(name),
+    onSuccess: (category) => {
+      queryClient.invalidateQueries({ queryKey: ['blog-categories'] })
+      setFormData((f) => ({ ...f, categoryId: String(category.id) }))
+    },
+    onError: () => {
+      toast({ title: tCommon('status.error'), description: t('blogAdmin.toasts.categoryErrorDescription'), variant: 'destructive' })
+    },
+  })
+
+  const createTagMutation = useMutation({
+    mutationFn: (name: string) => api.blog.createTag(name),
+    onSuccess: (tag) => {
+      queryClient.invalidateQueries({ queryKey: ['blog-tags'] })
+      setFormData((f) => ({ ...f, tagIds: [...f.tagIds, tag.id] }))
+    },
+    onError: () => {
+      toast({ title: tCommon('status.error'), description: t('blogAdmin.toasts.tagErrorDescription'), variant: 'destructive' })
+    },
+  })
 
   const handleEdit = (post: BlogPost) => {
     setEditingPost(post)
     setFormData({
       title: post.title,
-      content: post.content,
-      excerpt: post.excerpt,
-      featuredImage: post.featuredImage || '',
-      category: post.category,
-      tags: post.tags?.join(', ') || '',
+      body: post.body,
+      categoryId: post.category_id ? String(post.category_id) : '',
+      tagIds: post.tags?.map((tg) => tg.id) || [],
       status: post.status,
     })
   }
 
   const handleSubmit = () => {
     const data = {
-      ...formData,
-      tags: formData.tags.split(',').map((t) => t.trim()).filter(Boolean),
+      title: formData.title,
+      body: formData.body,
+      categoryId: formData.categoryId ? parseInt(formData.categoryId, 10) : null,
+      tagIds: formData.tagIds,
+      status: formData.status,
     }
     if (editingPost) {
       updateMutation.mutate({ id: editingPost.id, data })
@@ -173,21 +317,18 @@ export default function AdminBlogPage() {
   }
 
   const getStatusBadge = (status: string) => {
-    const styles: Record<string, { variant: 'default' | 'secondary' | 'destructive' | 'outline'; label: string }> = {
-      draft: { variant: 'secondary', label: 'Brouillon' },
-      published: { variant: 'default', label: 'Publié' },
-      archived: { variant: 'outline', label: 'Archivé' },
+    const styles: Record<string, { variant: 'default' | 'secondary'; label: string }> = {
+      draft: { variant: 'secondary', label: t('blogAdmin.statuses.draft') },
+      published: { variant: 'default', label: t('blogAdmin.statuses.published') },
     }
-    const style = styles[status] || { variant: 'outline', label: status }
+    const style = styles[status] || { variant: 'outline' as const, label: status }
     return <Badge variant={style.variant}>{style.label}</Badge>
   }
 
-  const filteredPosts = posts
-    .filter((post) =>
-      post.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      post.content.toLowerCase().includes(searchTerm.toLowerCase())
-    )
-    .filter((post) => statusFilter === 'all' || post.status === statusFilter)
+  const filteredPosts = posts.filter((post) =>
+    post.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    post.body.toLowerCase().includes(searchTerm.toLowerCase())
+  )
 
   if (isLoading) {
     return <PageLoading />
@@ -195,117 +336,46 @@ export default function AdminBlogPage() {
 
   const publishedCount = posts.filter((p) => p.status === 'published').length
   const draftCount = posts.filter((p) => p.status === 'draft').length
-  const totalViews = posts.reduce((sum, p) => sum + p.viewCount, 0)
-
-  const PostForm = () => (
-    <div className="space-y-4 max-h-[70vh] overflow-y-auto">
-      <div className="space-y-2">
-        <Label>Titre</Label>
-        <Input
-          value={formData.title}
-          onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-          placeholder="Titre de l'article"
-        />
-      </div>
-
-      <div className="space-y-2">
-        <Label>Extrait</Label>
-        <Textarea
-          value={formData.excerpt}
-          onChange={(e) => setFormData({ ...formData, excerpt: e.target.value })}
-          placeholder="Court résumé de l'article..."
-          rows={2}
-        />
-      </div>
-
-      <div className="space-y-2">
-        <Label>Contenu</Label>
-        <Textarea
-          value={formData.content}
-          onChange={(e) => setFormData({ ...formData, content: e.target.value })}
-          placeholder="Contenu de l'article (supporte le Markdown)..."
-          rows={10}
-        />
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label>Catégorie</Label>
-          <Select value={formData.category} onValueChange={(v) => setFormData({ ...formData, category: v })}>
-            <SelectTrigger>
-              <SelectValue placeholder="Sélectionner une catégorie" />
-            </SelectTrigger>
-            <SelectContent>
-              {categories.map((cat) => (
-                <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <Label>Statut</Label>
-          <Select value={formData.status} onValueChange={(v) => setFormData({ ...formData, status: v })}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="draft">Brouillon</SelectItem>
-              <SelectItem value="published">Publié</SelectItem>
-              <SelectItem value="archived">Archivé</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <Label>Image à la une (URL)</Label>
-        <Input
-          value={formData.featuredImage}
-          onChange={(e) => setFormData({ ...formData, featuredImage: e.target.value })}
-          placeholder="https://example.com/image.jpg"
-        />
-      </div>
-
-      <div className="space-y-2">
-        <Label>Tags (séparés par des virgules)</Label>
-        <Input
-          value={formData.tags}
-          onChange={(e) => setFormData({ ...formData, tags: e.target.value })}
-          placeholder="react, javascript, tutoriel"
-        />
-      </div>
-    </div>
-  )
+  const totalViews = posts.reduce((sum, p) => sum + (p.view_count || 0), 0)
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Gestion du blog</h1>
-          <p className="text-muted-foreground">Créez et gérez les articles du blog</p>
+          <h1 className="text-3xl font-bold">{t('blogAdmin.title')}</h1>
+          <p className="text-muted-foreground">{t('blogAdmin.subtitle')}</p>
         </div>
         <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
           <DialogTrigger asChild>
-            <Button onClick={resetForm}>
+            <Button onClick={() => setFormData(emptyForm)}>
               <Plus className="h-4 w-4 mr-2" />
-              Nouvel article
+              {t('blogAdmin.newPost')}
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>Créer un article</DialogTitle>
+              <DialogTitle>{t('blogAdmin.createDialog.title')}</DialogTitle>
               <DialogDescription>
-                Rédigez un nouvel article pour le blog
+                {t('blogAdmin.createDialog.description')}
               </DialogDescription>
             </DialogHeader>
-            <PostForm />
+            <PostForm
+              t={t}
+              formData={formData}
+              onChange={setFormData}
+              isEditing={false}
+              categories={categories}
+              tags={tags}
+              onCreateCategory={(name) => createCategoryMutation.mutate(name)}
+              onCreateTag={(name) => createTagMutation.mutate(name)}
+            />
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
-                Annuler
+                {t('blogAdmin.createDialog.cancel')}
               </Button>
-              <Button onClick={handleSubmit} disabled={createMutation.isPending}>
-                {createMutation.isPending ? 'Création...' : 'Créer'}
+              <Button onClick={handleSubmit} disabled={createMutation.isPending || !formData.title.trim() || !formData.body.trim()}>
+                {createMutation.isPending ? t('blogAdmin.createDialog.creating') : t('blogAdmin.createDialog.create')}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -322,7 +392,7 @@ export default function AdminBlogPage() {
               </div>
               <div>
                 <p className="text-2xl font-bold">{posts.length}</p>
-                <p className="text-sm text-muted-foreground">Total articles</p>
+                <p className="text-sm text-muted-foreground">{t('blogAdmin.stats.total')}</p>
               </div>
             </div>
           </CardContent>
@@ -335,7 +405,7 @@ export default function AdminBlogPage() {
               </div>
               <div>
                 <p className="text-2xl font-bold">{publishedCount}</p>
-                <p className="text-sm text-muted-foreground">Publiés</p>
+                <p className="text-sm text-muted-foreground">{t('blogAdmin.stats.published')}</p>
               </div>
             </div>
           </CardContent>
@@ -348,7 +418,7 @@ export default function AdminBlogPage() {
               </div>
               <div>
                 <p className="text-2xl font-bold">{draftCount}</p>
-                <p className="text-sm text-muted-foreground">Brouillons</p>
+                <p className="text-sm text-muted-foreground">{t('blogAdmin.stats.drafts')}</p>
               </div>
             </div>
           </CardContent>
@@ -361,7 +431,7 @@ export default function AdminBlogPage() {
               </div>
               <div>
                 <p className="text-2xl font-bold">{totalViews}</p>
-                <p className="text-sm text-muted-foreground">Total vues</p>
+                <p className="text-sm text-muted-foreground">{t('blogAdmin.stats.totalViews')}</p>
               </div>
             </div>
           </CardContent>
@@ -375,7 +445,7 @@ export default function AdminBlogPage() {
           <Input
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Rechercher un article..."
+            placeholder={t('blogAdmin.searchPlaceholder')}
             className="pl-9"
           />
         </div>
@@ -384,10 +454,9 @@ export default function AdminBlogPage() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Tous les statuts</SelectItem>
-            <SelectItem value="draft">Brouillons</SelectItem>
-            <SelectItem value="published">Publiés</SelectItem>
-            <SelectItem value="archived">Archivés</SelectItem>
+            <SelectItem value="all">{t('blogAdmin.allStatuses')}</SelectItem>
+            <SelectItem value="draft">{t('blogAdmin.drafts')}</SelectItem>
+            <SelectItem value="published">{t('blogAdmin.published')}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -397,9 +466,9 @@ export default function AdminBlogPage() {
         <Card>
           <CardContent className="py-12 text-center">
             <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">Aucun article trouvé</h3>
+            <h3 className="text-lg font-medium mb-2">{t('blogAdmin.empty.title')}</h3>
             <p className="text-muted-foreground">
-              Créez votre premier article de blog
+              {t('blogAdmin.empty.description')}
             </p>
           </CardContent>
         </Card>
@@ -409,12 +478,8 @@ export default function AdminBlogPage() {
             <Card key={post.id}>
               <CardContent className="p-4">
                 <div className="flex items-start gap-4">
-                  <div className="h-20 w-32 rounded-lg bg-muted flex items-center justify-center shrink-0 overflow-hidden">
-                    {post.featuredImage ? (
-                      <img src={post.featuredImage} alt={post.title} className="w-full h-full object-cover" />
-                    ) : (
-                      <ImageIcon className="h-8 w-8 text-muted-foreground" />
-                    )}
+                  <div className="h-20 w-32 rounded-lg bg-muted flex items-center justify-center shrink-0">
+                    <FileText className="h-8 w-8 text-muted-foreground" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between">
@@ -424,41 +489,39 @@ export default function AdminBlogPage() {
                           {getStatusBadge(post.status)}
                         </div>
                         <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
-                          {post.excerpt || post.content.substring(0, 150)}
+                          {post.body?.substring(0, 150)}
                         </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-4 mt-3 text-sm text-muted-foreground">
                       <span className="flex items-center gap-1">
                         <User className="h-4 w-4" />
-                        {post.authorName || `Auteur #${post.authorId}`}
+                        {post.author_name || t('blogAdmin.authorFallback', { id: post.author_id })}
                       </span>
-                      <span className="flex items-center gap-1">
-                        <Tag className="h-4 w-4" />
-                        {post.category}
-                      </span>
+                      {post.category_name && (
+                        <span className="flex items-center gap-1">
+                          <Tag className="h-4 w-4" />
+                          {post.category_name}
+                        </span>
+                      )}
                       <span className="flex items-center gap-1">
                         <Calendar className="h-4 w-4" />
-                        {formatDate(post.publishedAt || post.createdAt)}
+                        {formatDate(post.published_at || post.created_at)}
                       </span>
                       <span className="flex items-center gap-1">
                         <Eye className="h-4 w-4" />
-                        {post.viewCount}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Heart className="h-4 w-4" />
-                        {post.likeCount}
+                        {post.view_count || 0}
                       </span>
                       <span className="flex items-center gap-1">
                         <MessageSquare className="h-4 w-4" />
-                        {post.commentCount}
+                        {post.comment_count || 0}
                       </span>
                     </div>
                     {post.tags?.length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-2">
                         {post.tags.map((tag) => (
-                          <Badge key={tag} variant="outline" className="text-xs">
-                            {tag}
+                          <Badge key={tag.id} variant="outline" className="text-xs">
+                            {tag.name}
                           </Badge>
                         ))}
                       </div>
@@ -471,11 +534,11 @@ export default function AdminBlogPage() {
                         size="sm"
                         onClick={() => publishMutation.mutate(post.id)}
                       >
-                        Publier
+                        {t('blogAdmin.publish')}
                       </Button>
                     )}
                     <Button variant="outline" size="sm" asChild>
-                      <a href={`/blog/${post.slug}`} target="_blank" rel="noopener noreferrer">
+                      <a href={`/blog/${post.id}`} target="_blank" rel="noopener noreferrer">
                         <ExternalLink className="h-4 w-4" />
                       </a>
                     </Button>
@@ -501,15 +564,24 @@ export default function AdminBlogPage() {
       <Dialog open={!!editingPost} onOpenChange={(open) => !open && setEditingPost(null)}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Modifier l'article</DialogTitle>
+            <DialogTitle>{t('blogAdmin.editDialog.title')}</DialogTitle>
           </DialogHeader>
-          <PostForm />
+          <PostForm
+            t={t}
+            formData={formData}
+            onChange={setFormData}
+            isEditing={true}
+            categories={categories}
+            tags={tags}
+            onCreateCategory={(name) => createCategoryMutation.mutate(name)}
+            onCreateTag={(name) => createTagMutation.mutate(name)}
+          />
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingPost(null)}>
-              Annuler
+              {t('blogAdmin.editDialog.cancel')}
             </Button>
-            <Button onClick={handleSubmit} disabled={updateMutation.isPending}>
-              {updateMutation.isPending ? 'Mise à jour...' : 'Enregistrer'}
+            <Button onClick={handleSubmit} disabled={updateMutation.isPending || !formData.title.trim() || !formData.body.trim()}>
+              {updateMutation.isPending ? t('blogAdmin.editDialog.saving') : t('blogAdmin.editDialog.save')}
             </Button>
           </DialogFooter>
         </DialogContent>

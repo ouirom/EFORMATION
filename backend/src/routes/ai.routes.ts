@@ -5,6 +5,8 @@ import { DatabaseService } from '../services/database.service';
 import { BadRequestError, NotFoundError } from '../middleware/error.middleware';
 import { AIService } from '../services/ai.service';
 import { db, IS_PG } from '../database/db-helpers';
+import { SUPPORTED_LANGUAGES } from '../data/appUsageGuide';
+import { parsePagination } from '../utils/pagination';
 
 const router = Router();
 
@@ -161,7 +163,7 @@ router.post(
  */
 router.get('/recommendations/courses', authenticate, async (req: AuthRequest, res, next) => {
   try {
-    const limit = Math.min(parseInt(req.query.limit as string) || 5, 20);
+    const { limit } = parsePagination(req, { defaultLimit: 5, maxLimit: 20 });
 
     // Get user's learning history
     const completedCourses = await DatabaseService.query<any>(
@@ -187,23 +189,17 @@ router.get('/recommendations/courses', authenticate, async (req: AuthRequest, re
       limit,
     });
 
-    // Log recommendation (parameterized — reason/score come from the AI response,
-    // not safe to interpolate directly into SQL text)
+    // Log recommendation -- ai_recommendations only has a single JSONB
+    // `recommendation` column (see schema), not per-field columns.
     if (recommendations.length > 0) {
-      const rows = recommendations
-        .map((_: any, i: number) => `(@tenantId, @userId, 'course', @courseId${i}, @score${i}, @reason${i})`)
-        .join(', ');
-      const params: Record<string, any> = { tenantId: req.user!.tenantId, userId: req.user!.id };
-      recommendations.forEach((r: any, i: number) => {
-        params[`courseId${i}`] = r.courseId;
-        params[`score${i}`] = r.score;
-        params[`reason${i}`] = r.reason;
-      });
-
       await DatabaseService.execute(
-        `INSERT INTO ai_recommendations (tenant_id, user_id, recommendation_type, course_id, score, reason)
-         VALUES ${rows}`,
-        params
+        `INSERT INTO ai_recommendations (tenant_id, user_id, recommendation)
+         VALUES (@tenantId, @userId, @recommendation)`,
+        {
+          tenantId: req.user!.tenantId,
+          userId: req.user!.id,
+          recommendation: JSON.stringify(recommendations),
+        }
       ).catch(() => {/* Ignore logging errors */});
     }
 
@@ -284,11 +280,12 @@ router.post(
     body('question').notEmpty().trim(),
     body('courseId').optional().isInt(),
     body('lessonId').optional().isInt(),
+    body('language').optional().isIn(SUPPORTED_LANGUAGES),
   ],
   async (req: AuthRequest, res, next) => {
     try {
       validate(req);
-      const { question, courseId, lessonId } = req.body;
+      const { question, courseId, lessonId, language } = req.body;
 
       let context = '';
 
@@ -299,16 +296,16 @@ router.post(
            FROM lessons l
            JOIN modules m ON l.module_id = m.id
            JOIN courses c ON m.course_id = c.id
-           WHERE l.id = @lessonId`,
-          { lessonId }
+           WHERE l.id = @lessonId AND c.tenant_id = @tenantId`,
+          { lessonId, tenantId: req.user!.tenantId }
         );
         if (lessons.length > 0) {
           context = `Course: ${lessons[0].course_title}\nLesson: ${lessons[0].title}\n${lessons[0].description || ''}`;
         }
       } else if (courseId) {
         const courses = await DatabaseService.query<any>(
-          'SELECT title, description FROM courses WHERE id = @courseId',
-          { courseId }
+          'SELECT title, description FROM courses WHERE id = @courseId AND tenant_id = @tenantId',
+          { courseId, tenantId: req.user!.tenantId }
         );
         if (courses.length > 0) {
           context = `Course: ${courses[0].title}\n${courses[0].description || ''}`;
@@ -331,6 +328,8 @@ router.post(
         question,
         context,
         userId: req.user!.id,
+        role: req.user!.role,
+        language,
       });
 
       // Store AI response
@@ -357,7 +356,7 @@ router.post(
  */
 router.get('/tutor/history', authenticate, async (req: AuthRequest, res, next) => {
   try {
-    const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+    const { limit } = parsePagination(req, { defaultLimit: 50, maxLimit: 100 });
 
     const history = await DatabaseService.query<any>(
       IS_PG

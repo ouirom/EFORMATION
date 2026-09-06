@@ -1,0 +1,29 @@
+{
+  "title": "Blog Interne",
+  "subtitle": "Articles, actualités et partage de connaissances",
+  "writePost": "Écrire un article",
+  "searchPlaceholder": "Rechercher un article...",
+  "trending": "Tendances",
+  "viewsCount": "{{count}} vues",
+  "popularTags": "Tags populaires",
+  "featured": "À la une",
+  "readTimeMinutes": "{{count}} min",
+  "allCategories": "Tous",
+  "noPosts": "Aucun article trouvé",
+  "anonymousAuthor": "Anonyme",
+  "pagination": {
+    "pageOf": "Page {{page}} sur {{totalPages}}",
+    "previous": "Précédent",
+    "next": "Suivant"
+  },
+  "postNotFoundTitle": "Article introuvable",
+  "postNotFoundHint": "Cet article n'existe pas ou n'est plus disponible.",
+  "backToBlog": "Retour au blog",
+  "status": {
+    "draft": "Brouillon",
+    "published": "Publié"
+  },
+  "commentsTitle": "{{count}} commentaires",
+  "commentPlaceholder": "Écrire un commentaire...",
+  "noComments": "Aucun commentaire pour l'instant"
+}

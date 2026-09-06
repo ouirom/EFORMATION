@@ -244,7 +244,21 @@ CREATE TABLE dbo.certificate_templates (
   [template_html]         NVARCHAR(MAX) NULL,
   [background_file_id]    BIGINT NULL,
   [is_default]            BIT NULL DEFAULT (0),
-  [created_at]            DATETIME2(0) NULL DEFAULT (getdate())
+  [created_at]            DATETIME2(0) NULL DEFAULT (getdate()),
+  [updated_at]            DATETIME2(0) NULL
+);
+END;
+
+IF OBJECT_ID(N'[dbo].[certificate_watermarks]', N'U') IS NULL
+BEGIN
+CREATE TABLE dbo.certificate_watermarks (
+  [id]                    BIGINT IDENTITY(1,1) PRIMARY KEY,
+  [tenant_id]             BIGINT NOT NULL,
+  [file_id]               BIGINT NOT NULL,
+  [name]                  NVARCHAR(150) NULL,
+  [is_default]            BIT NOT NULL DEFAULT (0),
+  [created_by]            BIGINT NULL,
+  [created_at]            DATETIME2(0) NOT NULL DEFAULT (sysutcdatetime())
 );
 END;
 
@@ -285,7 +299,8 @@ CREATE TABLE dbo.chat_conversations (
   [scope]                 NVARCHAR(20) NOT NULL CHECK (([scope]='module' OR [scope]='course' OR [scope]='group' OR [scope]='direct')),
   [title]                 NVARCHAR(255) NULL,
   [created_by]            BIGINT NULL,
-  [created_at]            DATETIME2(0) NOT NULL DEFAULT (sysutcdatetime())
+  [created_at]            DATETIME2(0) NOT NULL DEFAULT (sysutcdatetime()),
+  [public_id]             UNIQUEIDENTIFIER NOT NULL DEFAULT (NEWID())
 );
 END;
 
@@ -297,6 +312,7 @@ CREATE TABLE dbo.chat_messages (
   [conversation_id]       BIGINT NOT NULL,
   [sender_id]             BIGINT NOT NULL,
   [body]                  NVARCHAR(MAX) NULL,
+  [reply_to_message_id]   BIGINT NULL,
   [created_at]            DATETIME2(0) NOT NULL DEFAULT (sysutcdatetime()),
   [deleted_at]            DATETIME2(0) NULL
 );
@@ -359,13 +375,14 @@ CREATE TABLE dbo.course_assignments (
   [id]                    BIGINT IDENTITY(1,1) PRIMARY KEY,
   [tenant_id]             BIGINT NOT NULL,
   [course_id]             BIGINT NOT NULL,
-  [assignment_type]       NVARCHAR(20) NOT NULL CHECK (([assignment_type]='role' OR [assignment_type]='service' OR [assignment_type]='direction' OR [assignment_type]='enterprise' OR [assignment_type]='user')),
+  [assignment_type]       NVARCHAR(20) NOT NULL CHECK (([assignment_type]='role' OR [assignment_type]='service' OR [assignment_type]='direction' OR [assignment_type]='enterprise' OR [assignment_type]='user' OR [assignment_type]='team')),
   [target_id]             BIGINT NULL,
   [target_role]           NVARCHAR(20) NULL,
   [is_mandatory]          BIT NOT NULL DEFAULT (0),
   [due_date]              DATETIME2(0) NULL,
   [assigned_by]           BIGINT NOT NULL,
-  [created_at]            DATETIME2(0) NOT NULL DEFAULT (sysutcdatetime())
+  [created_at]            DATETIME2(0) NOT NULL DEFAULT (sysutcdatetime()),
+  [lesson_id]             BIGINT NULL
 );
 END;
 
@@ -398,7 +415,9 @@ CREATE TABLE dbo.courses (
   [category]              NVARCHAR(50) NULL,
   [level]                 NVARCHAR(20) NULL DEFAULT ('beginner'),
   [duration]              INT NULL,
-  [category_id]           BIGINT NULL
+  [category_id]           BIGINT NULL,
+  [deleted_at]            DATETIME2(0) NULL,
+  [public_id]             UNIQUEIDENTIFIER NOT NULL DEFAULT (NEWID())
 );
 END;
 
@@ -481,6 +500,18 @@ CREATE TABLE dbo.enterprises (
 );
 END;
 
+IF OBJECT_ID(N'[dbo].[favorites]', N'U') IS NULL
+BEGIN
+CREATE TABLE dbo.favorites (
+  [id]                    BIGINT IDENTITY(1,1) PRIMARY KEY,
+  [tenant_id]             BIGINT NOT NULL,
+  [user_id]               BIGINT NOT NULL,
+  [favoritable_type]      NVARCHAR(20) NOT NULL CHECK (([favoritable_type]='course' OR [favoritable_type]='lesson')),
+  [favoritable_id]        BIGINT NOT NULL,
+  [created_at]            DATETIME2(0) NOT NULL DEFAULT (sysutcdatetime())
+);
+END;
+
 IF OBJECT_ID(N'[dbo].[file_assets]', N'U') IS NULL
 BEGIN
 CREATE TABLE dbo.file_assets (
@@ -550,7 +581,13 @@ CREATE TABLE dbo.lessons (
   [duration_min]          INT NULL,
   [created_at]            DATETIME2(0) NOT NULL DEFAULT (sysutcdatetime()),
   [updated_at]            DATETIME2(0) NOT NULL DEFAULT (sysutcdatetime()),
-  [type]                  NVARCHAR(50) NULL
+  [type]                  NVARCHAR(50) NULL,
+  [deleted_at]            DATETIME2(0) NULL,
+  [is_mandatory]          BIT NOT NULL DEFAULT (0),
+  [presence_check_percent] INT NULL CHECK ([presence_check_percent] IS NULL OR ([presence_check_percent] >= 0 AND [presence_check_percent] <= 100)),
+  [reset_time_on_reopen]  BIT NOT NULL DEFAULT (0),
+  [allow_document_download] BIT NOT NULL DEFAULT (1),
+  [public_id]             UNIQUEIDENTIFIER NOT NULL DEFAULT (NEWID())
 );
 END;
 
@@ -574,7 +611,12 @@ CREATE TABLE dbo.live_recordings (
   [session_id]            BIGINT NOT NULL,
   [file_id]               BIGINT NULL,
   [duration_sec]          INT NULL,
-  [created_at]            DATETIME2(0) NOT NULL DEFAULT (sysutcdatetime())
+  [created_at]            DATETIME2(0) NOT NULL DEFAULT (sysutcdatetime()),
+  [egress_id]             NVARCHAR(255) NULL,
+  [status]                NVARCHAR(20) NOT NULL DEFAULT ('recording') CHECK (([status]='recording' OR [status]='completed' OR [status]='failed')),
+  [started_at]            DATETIME2(0) NULL,
+  [ended_at]              DATETIME2(0) NULL,
+  [recording_url]         NVARCHAR(1000) NULL
 );
 END;
 
@@ -596,7 +638,34 @@ CREATE TABLE dbo.live_sessions (
   [created_at]            DATETIME2(0) NOT NULL DEFAULT (sysutcdatetime()),
   [description]           NVARCHAR(MAX) NULL,
   [duration]              INT NULL,
-  [max_participants]      INT NULL
+  [max_participants]      INT NULL,
+  [visibility]            NVARCHAR(20) NOT NULL DEFAULT ('public') CHECK (([visibility]='public' OR [visibility]='private'))
+);
+END;
+
+IF OBJECT_ID(N'[dbo].[live_session_invitees]', N'U') IS NULL
+BEGIN
+CREATE TABLE dbo.live_session_invitees (
+  [id]                    BIGINT IDENTITY(1,1) PRIMARY KEY,
+  [tenant_id]             BIGINT NOT NULL,
+  [session_id]            BIGINT NOT NULL,
+  [user_id]               BIGINT NOT NULL,
+  [created_at]            DATETIME2(0) NOT NULL DEFAULT (sysutcdatetime())
+);
+END;
+
+IF OBJECT_ID(N'[dbo].[recording_storage_settings]', N'U') IS NULL
+BEGIN
+CREATE TABLE dbo.recording_storage_settings (
+  [id]                    BIGINT IDENTITY(1,1) PRIMARY KEY,
+  [tenant_id]             BIGINT NOT NULL,
+  [enabled]               BIT NOT NULL DEFAULT (0),
+  [bucket]                NVARCHAR(255) NULL,
+  [region]                NVARCHAR(100) NULL,
+  [endpoint]              NVARCHAR(500) NULL,
+  [access_key]            NVARCHAR(255) NULL,
+  [secret_key]            NVARCHAR(500) NULL,
+  [updated_at]            DATETIME2(0) NOT NULL DEFAULT (sysutcdatetime())
 );
 END;
 
@@ -852,6 +921,41 @@ CREATE TABLE dbo.tags (
 );
 END;
 
+IF OBJECT_ID(N'[dbo].[job_titles]', N'U') IS NULL
+BEGIN
+CREATE TABLE dbo.job_titles (
+  [id]                    BIGINT IDENTITY(1,1) PRIMARY KEY,
+  [tenant_id]             BIGINT NOT NULL,
+  [label]                 NVARCHAR(150) NOT NULL,
+  [created_at]            DATETIME2(0) NOT NULL DEFAULT (sysutcdatetime()),
+  CONSTRAINT uq_job_titles_tenant_label UNIQUE ([tenant_id], [label])
+);
+END;
+
+IF OBJECT_ID(N'[dbo].[teams]', N'U') IS NULL
+BEGIN
+CREATE TABLE dbo.teams (
+  [id]                    BIGINT IDENTITY(1,1) PRIMARY KEY,
+  [tenant_id]             BIGINT NOT NULL,
+  [name]                  NVARCHAR(255) NOT NULL,
+  [description]           NVARCHAR(500) NULL,
+  [created_by]            BIGINT NULL,
+  [created_at]            DATETIME2(0) NOT NULL DEFAULT (sysutcdatetime()),
+  [updated_at]            DATETIME2(0) NULL
+);
+END;
+
+IF OBJECT_ID(N'[dbo].[team_members]', N'U') IS NULL
+BEGIN
+CREATE TABLE dbo.team_members (
+  [id]                    BIGINT IDENTITY(1,1) PRIMARY KEY,
+  [team_id]               BIGINT NOT NULL,
+  [member_type]           NVARCHAR(20) NOT NULL CHECK (([member_type]='user' OR [member_type]='enterprise' OR [member_type]='direction' OR [member_type]='service')),
+  [target_id]             BIGINT NOT NULL,
+  [created_at]            DATETIME2(0) NOT NULL DEFAULT (sysutcdatetime())
+);
+END;
+
 IF OBJECT_ID(N'[dbo].[team_report_subscriptions]', N'U') IS NULL
 BEGIN
 CREATE TABLE dbo.team_report_subscriptions (
@@ -959,7 +1063,9 @@ CREATE TABLE dbo.users (
   [supervisor_id]         BIGINT NULL,
   [status]                NVARCHAR(20) NOT NULL DEFAULT ('active') CHECK (([status]='deactivated' OR [status]='suspended' OR [status]='active' OR [status]='pending')),
   [last_login_at]         DATETIME2(0) NULL,
-  [phone]                 NVARCHAR(50) NULL
+  [phone]                 NVARCHAR(50) NULL,
+  [job_title]             NVARCHAR(150) NOT NULL DEFAULT ('Défaut'),
+  [token_version]         INT NOT NULL DEFAULT (0)
 );
 END;
 
@@ -1043,8 +1149,20 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UQ__email_se__D6F29F3F46
   ALTER TABLE dbo.email_settings ADD CONSTRAINT UQ__email_se__D6F29F3F469BE66D UNIQUE ([tenant_id]);
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'uq_livekit_settings_tenant' AND object_id = OBJECT_ID(N'[dbo].[livekit_settings]'))
   ALTER TABLE dbo.livekit_settings ADD CONSTRAINT uq_livekit_settings_tenant UNIQUE ([tenant_id]);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'uq_recording_storage_settings_tenant' AND object_id = OBJECT_ID(N'[dbo].[recording_storage_settings]'))
+  ALTER TABLE dbo.recording_storage_settings ADD CONSTRAINT uq_recording_storage_settings_tenant UNIQUE ([tenant_id]);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'uq_live_session_invitees' AND object_id = OBJECT_ID(N'[dbo].[live_session_invitees]'))
+  ALTER TABLE dbo.live_session_invitees ADD CONSTRAINT uq_live_session_invitees UNIQUE ([session_id], [user_id]);
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'uq_enrollment' AND object_id = OBJECT_ID(N'[dbo].[enrollments]'))
   ALTER TABLE dbo.enrollments ADD CONSTRAINT uq_enrollment UNIQUE ([user_id], [course_id]);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'uq_favorites_entry' AND object_id = OBJECT_ID(N'[dbo].[favorites]'))
+  ALTER TABLE dbo.favorites ADD CONSTRAINT uq_favorites_entry UNIQUE ([user_id], [favoritable_type], [favoritable_id]);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'uq_courses_public_id' AND object_id = OBJECT_ID(N'[dbo].[courses]'))
+  ALTER TABLE dbo.courses ADD CONSTRAINT uq_courses_public_id UNIQUE ([public_id]);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'uq_lessons_public_id' AND object_id = OBJECT_ID(N'[dbo].[lessons]'))
+  ALTER TABLE dbo.lessons ADD CONSTRAINT uq_lessons_public_id UNIQUE ([public_id]);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'uq_chat_conversations_public_id' AND object_id = OBJECT_ID(N'[dbo].[chat_conversations]'))
+  ALTER TABLE dbo.chat_conversations ADD CONSTRAINT uq_chat_conversations_public_id UNIQUE ([public_id]);
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UQ__enterpri__357D4CF94A2DB61D' AND object_id = OBJECT_ID(N'[dbo].[enterprises]'))
   ALTER TABLE dbo.enterprises ADD CONSTRAINT UQ__enterpri__357D4CF94A2DB61D UNIQUE ([code]);
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'uq_inactivity_policies_tenant_role' AND object_id = OBJECT_ID(N'[dbo].[inactivity_policies]'))
@@ -1131,6 +1249,8 @@ IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'fk_assignments_tena
   ALTER TABLE dbo.course_assignments ADD CONSTRAINT fk_assignments_tenant FOREIGN KEY ([tenant_id]) REFERENCES dbo.tenants ([id]);
 IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'fk_assignments_user')
   ALTER TABLE dbo.course_assignments ADD CONSTRAINT fk_assignments_user FOREIGN KEY ([assigned_by]) REFERENCES dbo.users ([id]);
+IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'fk_course_assignments_lesson')
+  ALTER TABLE dbo.course_assignments ADD CONSTRAINT fk_course_assignments_lesson FOREIGN KEY ([lesson_id]) REFERENCES dbo.lessons ([id]);
 IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'fk_attempts_quiz')
   ALTER TABLE dbo.attempts ADD CONSTRAINT fk_attempts_quiz FOREIGN KEY ([quiz_id]) REFERENCES dbo.quizzes ([id]);
 IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'fk_attempts_tenant')
@@ -1195,6 +1315,8 @@ IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'fk_chat_conv_user')
   ALTER TABLE dbo.chat_conversations ADD CONSTRAINT fk_chat_conv_user FOREIGN KEY ([created_by]) REFERENCES dbo.users ([id]);
 IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'fk_chat_msg_conv')
   ALTER TABLE dbo.chat_messages ADD CONSTRAINT fk_chat_msg_conv FOREIGN KEY ([conversation_id]) REFERENCES dbo.chat_conversations ([id]);
+IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'fk_chat_msg_reply_to')
+  ALTER TABLE dbo.chat_messages ADD CONSTRAINT fk_chat_msg_reply_to FOREIGN KEY ([reply_to_message_id]) REFERENCES dbo.chat_messages ([id]);
 IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'fk_chat_msg_sender')
   ALTER TABLE dbo.chat_messages ADD CONSTRAINT fk_chat_msg_sender FOREIGN KEY ([sender_id]) REFERENCES dbo.users ([id]);
 IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'fk_chat_msg_tenant')
@@ -1263,6 +1385,14 @@ IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'fk_live_rec_sess')
   ALTER TABLE dbo.live_recordings ADD CONSTRAINT fk_live_rec_sess FOREIGN KEY ([session_id]) REFERENCES dbo.live_sessions ([id]);
 IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'fk_live_rec_tenant')
   ALTER TABLE dbo.live_recordings ADD CONSTRAINT fk_live_rec_tenant FOREIGN KEY ([tenant_id]) REFERENCES dbo.tenants ([id]);
+IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'fk_live_sess_invitees_tenant')
+  ALTER TABLE dbo.live_session_invitees ADD CONSTRAINT fk_live_sess_invitees_tenant FOREIGN KEY ([tenant_id]) REFERENCES dbo.tenants ([id]);
+IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'fk_live_sess_invitees_sess')
+  ALTER TABLE dbo.live_session_invitees ADD CONSTRAINT fk_live_sess_invitees_sess FOREIGN KEY ([session_id]) REFERENCES dbo.live_sessions ([id]);
+IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'fk_live_sess_invitees_user')
+  ALTER TABLE dbo.live_session_invitees ADD CONSTRAINT fk_live_sess_invitees_user FOREIGN KEY ([user_id]) REFERENCES dbo.users ([id]);
+IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'fk_recording_storage_settings_tenant')
+  ALTER TABLE dbo.recording_storage_settings ADD CONSTRAINT fk_recording_storage_settings_tenant FOREIGN KEY ([tenant_id]) REFERENCES dbo.tenants ([id]);
 IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'fk_live_sess_course')
   ALTER TABLE dbo.live_sessions ADD CONSTRAINT fk_live_sess_course FOREIGN KEY ([course_id]) REFERENCES dbo.courses ([id]);
 IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'fk_live_sess_module')
@@ -1371,4 +1501,18 @@ IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'fk_whiteboards_sess
   ALTER TABLE dbo.whiteboards ADD CONSTRAINT fk_whiteboards_sess FOREIGN KEY ([session_id]) REFERENCES dbo.live_sessions ([id]);
 IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'fk_whiteboards_tenant')
   ALTER TABLE dbo.whiteboards ADD CONSTRAINT fk_whiteboards_tenant FOREIGN KEY ([tenant_id]) REFERENCES dbo.tenants ([id]);
+IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'fk_enrollments_tenant')
+  ALTER TABLE dbo.enrollments ADD CONSTRAINT fk_enrollments_tenant FOREIGN KEY ([tenant_id]) REFERENCES dbo.tenants ([id]);
+IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'fk_certificate_templates_tenant')
+  ALTER TABLE dbo.certificate_templates ADD CONSTRAINT fk_certificate_templates_tenant FOREIGN KEY ([tenant_id]) REFERENCES dbo.tenants ([id]);
+IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'fk_certificate_templates_bg_file')
+  ALTER TABLE dbo.certificate_templates ADD CONSTRAINT fk_certificate_templates_bg_file FOREIGN KEY ([background_file_id]) REFERENCES dbo.file_assets ([id]);
+IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'fk_lesson_progress_tenant')
+  ALTER TABLE dbo.lesson_progress ADD CONSTRAINT fk_lesson_progress_tenant FOREIGN KEY ([tenant_id]) REFERENCES dbo.tenants ([id]);
+IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'fk_lesson_progress_user')
+  ALTER TABLE dbo.lesson_progress ADD CONSTRAINT fk_lesson_progress_user FOREIGN KEY ([user_id]) REFERENCES dbo.users ([id]);
+IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'fk_lesson_progress_lesson')
+  ALTER TABLE dbo.lesson_progress ADD CONSTRAINT fk_lesson_progress_lesson FOREIGN KEY ([lesson_id]) REFERENCES dbo.lessons ([id]);
+IF NOT EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = N'fk_lesson_progress_course')
+  ALTER TABLE dbo.lesson_progress ADD CONSTRAINT fk_lesson_progress_course FOREIGN KEY ([course_id]) REFERENCES dbo.courses ([id]);
 

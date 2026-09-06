@@ -1,0 +1,1456 @@
+{
+  "analytics": {
+    "title": "Analytics",
+    "subtitle": "Overview of platform performance",
+    "periods": {
+      "7": "Last 7 days",
+      "30": "Last 30 days",
+      "90": "Last 90 days",
+      "365": "This year"
+    },
+    "export": "Export",
+    "exporting": "Generating…",
+    "csv": {
+      "metric": "Metric",
+      "value": "Value",
+      "totalUsers": "Total users",
+      "activeUsers": "Active users",
+      "newUsers": "New users (this month)",
+      "totalCourses": "Total courses",
+      "newCourses": "New courses (this month)",
+      "completedCourses": "Completed courses",
+      "avgProgress": "Average progress (%)",
+      "sections": {
+        "keyMetrics": "Key metrics",
+        "categoryDistribution": "Course distribution by category",
+        "popularCourses": "Most popular courses",
+        "usersByRole": "Users by role",
+        "dailyActivity": "Daily activity",
+        "dropoffFunnel": "Lesson drop-off funnel"
+      },
+      "columns": {
+        "category": "Category",
+        "count": "Count",
+        "percent": "Percent",
+        "course": "Course",
+        "enrollments": "Enrolled",
+        "completions": "Completions",
+        "completionPercent": "Completion rate (%)",
+        "role": "Role",
+        "date": "Date",
+        "logins": "Logins",
+        "lesson": "Lesson",
+        "module": "Module",
+        "reachRate": "Reach rate (%)",
+        "dropFromPrevious": "Drop from previous lesson"
+      }
+    },
+    "stats": {
+      "activeUsers": "Active users",
+      "totalSuffix": "{{count}} total",
+      "completedCourses": "Completed courses",
+      "coursesAvailable": "{{count}} courses available",
+      "learningHours": "Learning hours",
+      "thisMonth": "This month",
+      "completionRate": "Completion rate",
+      "globalAverage": "Global average"
+    },
+    "activityChart": {
+      "title": "User activity",
+      "description": "Daily logins over the last {{days}} days",
+      "byActionType": "Breakdown by action type",
+      "noActivity": "No activity in this period.",
+      "mostActiveUsers": "Most active users",
+      "mostActiveSubtitle": "Over the last 30 days",
+      "actionsSuffix_one": "{{count}} action",
+      "actionsSuffix_other": "{{count}} actions",
+      "viewDailyDetail": "View day-by-day detail",
+      "hideDailyDetail": "Hide day-by-day detail",
+      "dailyDetailDate": "Date",
+      "dailyDetailCount": "Logins",
+      "actions": {
+        "USER_REGISTERED": "User registration",
+        "LOGIN_FAILED": "Failed login",
+        "USER_LOGIN": "Login",
+        "SUPER_ADMIN_SWITCHED_TENANT": "Tenant switch (super admin)",
+        "LDAP_LOGIN": "LDAP login",
+        "PASSWORD_CHANGED": "Password changed",
+        "USER_LOGOUT": "Logout",
+        "COURSE_ASSIGNMENT_CREATED": "Course assignment created",
+        "COURSE_ASSIGNMENT_DELETED": "Course assignment deleted",
+        "USER_AUTO_SUSPENDED": "Auto-suspended",
+        "COURSE_CREATED": "Course created",
+        "COURSE_UPDATED": "Course updated",
+        "COURSE_DELETED": "Course deleted",
+        "COURSE_PUBLISHED": "Course published",
+        "COURSE_UNPUBLISHED": "Course unpublished",
+        "COURSE_CLONED": "Course cloned",
+        "COURSE_ENROLLED": "Course enrollment",
+        "COURSE_RESUMED": "Course resumed",
+        "COURSE_STARTED": "Course started",
+        "COURSE_COMPLETED": "Course completed",
+        "ORGANIZATION_IMPORTED": "Organization imported",
+        "COURSES_IMPORTED": "Courses imported",
+        "LESSONS_IMPORTED": "Lessons imported",
+        "QUIZZES_IMPORTED": "Quizzes imported",
+        "TENANT_CREATED": "Tenant created",
+        "USER_CREATED": "User created",
+        "USERS_IMPORTED": "Users imported",
+        "USER_UPDATED": "User updated",
+        "USER_STATUS_CHANGED": "User status changed",
+        "USER_DELETED": "User deleted"
+      }
+    },
+    "distribution": {
+      "title": "Course distribution",
+      "description": "By category",
+      "uncategorized": "Uncategorized"
+    },
+    "tabs": {
+      "users": "Users",
+      "courses": "Courses",
+      "engagement": "Engagement",
+      "dropoff": "Lesson drop-off"
+    },
+    "newUsers": {
+      "title": "New users",
+      "thisMonth": "This month"
+    },
+    "usersByRole": {
+      "title": "Users by role"
+    },
+    "popularCourses": {
+      "title": "Most popular courses",
+      "noData": "No enrollments yet.",
+      "enrollments": "{{count}} enrolled",
+      "completion": "{{percent}}% completion"
+    },
+    "engagement": {
+      "quizAttempts": "Quiz attempts",
+      "avgScore": "Average quiz score",
+      "passRate": "Pass rate"
+    },
+    "dropoff": {
+      "title": "Where learners drop off",
+      "description": "Percentage of enrolled learners who reached each lesson, in course order",
+      "choosePlaceholder": "Choose a course",
+      "selectPrompt": "Select a course to see the progress funnel.",
+      "noLessons": "This course doesn't have any lessons yet.",
+      "enrolledTotal": "{{count}} enrolled learner(s)"
+    }
+  },
+  "emailQueue": {
+    "title": "Email queue",
+    "subtitle": "Notifications awaiting approval before they're sent",
+    "system": "System",
+    "empty": "No pending notifications",
+    "approve": "Approve",
+    "reject": "Reject",
+    "approveAll": "Approve all",
+    "rejectAll": "Reject all",
+    "approvedToast": "Email sent",
+    "rejectedToast": "Notification rejected",
+    "errorToast": "Something went wrong",
+    "columns": {
+      "recipient": "Recipient",
+      "subject": "Subject",
+      "eventType": "Type",
+      "triggeredBy": "Triggered by",
+      "createdAt": "Date",
+      "actions": "Actions"
+    },
+    "eventTypes": {
+      "account_created": "Account created",
+      "password_changed": "Password changed",
+      "account_suspended": "Account suspended",
+      "course_assigned": "Course assigned",
+      "quiz_result": "Quiz result",
+      "live_session_reminder": "Live session reminder",
+      "certificate_expiring": "Certificate expiring"
+    }
+  },
+  "users": {
+    "roles": {
+      "superAdmin": "Super admin",
+      "admin": "Admin",
+      "director": "Director",
+      "manager": "Manager",
+      "supervisor": "Supervisor",
+      "agent": "Agent",
+      "externe": "External",
+      "stagiaire": "Intern"
+    },
+    "statuses": {
+      "pending": "Pending",
+      "active": "Active",
+      "suspended": "Suspended",
+      "deactivated": "Deactivated",
+      "inactive": "Inactive"
+    },
+    "inactivityPolicy": {
+      "title": "Automatic suspension for inactivity",
+      "description": "An account is automatically suspended if there has been no login for this number of days. Leave empty to disable automatic suspension for this account type.",
+      "disabledPlaceholder": "Disabled",
+      "save": "Save",
+      "updatedTitle": "Policy updated",
+      "updateErrorDescription": "Unable to update the policy"
+    },
+    "toasts": {
+      "createdTitle": "User created",
+      "createdDescription": "The account was created successfully",
+      "createErrorDescription": "Unable to create the user",
+      "deletedTitle": "User deleted",
+      "deletedDescription": "The user was deleted successfully",
+      "deleteErrorDescription": "Unable to delete",
+      "updatedTitle": "User updated",
+      "updatedDescription": "The changes have been saved",
+      "updateErrorDescription": "Unable to update the user",
+      "statusUpdatedTitle": "Status updated",
+      "statusUpdateErrorDescription": "Unable to change the status",
+      "importCompleteTitle": "Import complete",
+      "importCompleteDescription": "{{count}} user(s) created",
+      "importErrorDescription": "Unable to import the file",
+      "fillRequiredFields": "Please fill in all required fields"
+    },
+    "confirmDelete": "Are you sure you want to delete {{name}}?",
+    "loadError": "Unable to load the user list. Please try again.",
+    "title": "User management",
+    "totalUsers": "{{count}} users total",
+    "pendingActivation": "{{count}} pending activation",
+    "import": "Import",
+    "export": "Export",
+    "add": "Add",
+    "addDialog": {
+      "title": "New user",
+      "description": "Create a new user account",
+      "firstName": "First name *",
+      "lastName": "Last name *",
+      "email": "Email *",
+      "password": "Password *",
+      "passwordPlaceholder": "At least 8 characters",
+      "role": "Role *",
+      "rolePlaceholder": "Select a role",
+      "jobTitle": "Job title",
+      "jobTitlePlaceholder": "e.g. Account Manager",
+      "enterprise": "Company",
+      "enterprisePlaceholder": "Select a company",
+      "direction": "Division",
+      "directionPlaceholder": "Select a division",
+      "service": "Department",
+      "servicePlaceholder": "Select a department",
+      "supervisor": "Direct supervisor",
+      "none": "None",
+      "cancel": "Cancel",
+      "creating": "Creating...",
+      "create": "Create"
+    },
+    "filters": {
+      "searchPlaceholder": "Search by name or email...",
+      "allRoles": "All roles",
+      "allStatuses": "All statuses"
+    },
+    "table": {
+      "user": "User",
+      "enterprise": "Company",
+      "direction": "Division",
+      "service": "Department",
+      "supervisor": "Supervisor",
+      "role": "Role",
+      "status": "Status",
+      "lastLogin": "Last login",
+      "actions": "Actions",
+      "noResults": "No users match these criteria.",
+      "defaultJobTitle": "Défaut"
+    },
+    "rowActions": {
+      "edit": "Edit",
+      "sendEmail": "Send an email",
+      "activate": "Activate",
+      "reactivate": "Reactivate",
+      "suspend": "Suspend",
+      "deactivate": "Deactivate",
+      "delete": "Delete"
+    },
+    "pagination": {
+      "pageOf": "Page {{page}} of {{totalPages}} ({{total}} users)",
+      "previous": "Previous",
+      "next": "Next"
+    },
+    "editDialog": {
+      "title": "Edit user",
+      "description": "Edit the information for {{name}}",
+      "fullName": "Full name",
+      "role": "Role",
+      "jobTitle": "Job title",
+      "enterprise": "Company",
+      "direction": "Division",
+      "service": "Department",
+      "supervisor": "Direct supervisor",
+      "none": "None",
+      "activeAccount": "Active account",
+      "cancel": "Cancel",
+      "saving": "Saving...",
+      "save": "Save"
+    },
+    "importDialog": {
+      "title": "Import users (CSV)",
+      "description": "Expected columns: email, displayName, role, enterpriseCode, directionCode, serviceCode, supervisorEmail (all optional except email/displayName/role). A temporary password is generated and sent by email.",
+      "fileLabel": "CSV file",
+      "resultSummary": "{{created}} created, {{skipped}} skipped, {{errors}} error(s) out of {{total}} row(s)",
+      "lineLabel": "Row {{line}} — {{email}}",
+      "missingEmail": "(missing email)",
+      "alreadyExists": "already exists",
+      "close": "Close",
+      "importing": "Importing...",
+      "importButton": "Import"
+    },
+    "jobTitles": {
+      "manageButton": "Manage labels",
+      "manageDialog": {
+        "title": "Job title labels",
+        "description": "Add, rename or delete the labels offered when creating or editing a user.",
+        "none": "No labels yet",
+        "addPlaceholder": "New label...",
+        "confirmDelete": "Delete the \"{{label}}\" label? Users who already carry it keep it.",
+        "close": "Close"
+      },
+      "toasts": {
+        "createdDescription": "Label added",
+        "createErrorDescription": "Error while adding the label",
+        "updatedDescription": "Label updated",
+        "updateErrorDescription": "Error while updating",
+        "deletedDescription": "Label deleted",
+        "deleteErrorDescription": "Error while deleting"
+      }
+    }
+  },
+  "courses": {
+    "categories": {
+      "technology": "Technology",
+      "management": "Management",
+      "marketing": "Marketing",
+      "finance": "Finance",
+      "hr": "Human Resources",
+      "soft-skills": "Soft Skills",
+      "compliance": "Compliance",
+      "other": "Other",
+      "undefined": "Undefined"
+    },
+    "levels": {
+      "beginner": "Beginner",
+      "intermediate": "Intermediate",
+      "advanced": "Advanced",
+      "expert": "Expert"
+    },
+    "audienceScope": {
+      "label": "Audience scope",
+      "hint": "Who can see and access this course. \"General\" = everyone in the organization.",
+      "noItemsFound": "No items available",
+      "levels": {
+        "general": "General",
+        "enterprise": "Enterprise",
+        "direction": "Direction",
+        "service": "Service",
+        "role": "Role"
+      }
+    },
+    "statuses": {
+      "published": "Published",
+      "draft": "Draft",
+      "archived": "Archived"
+    },
+    "toasts": {
+      "createdDescription": "Course created successfully",
+      "createErrorDescription": "Unable to create the course",
+      "updatedDescription": "Course updated successfully",
+      "updateErrorDescription": "Unable to update the course",
+      "deletedDescription": "Course deleted successfully",
+      "deleteErrorDescription": "Unable to delete the course",
+      "unpublishedDescription": "Course unpublished",
+      "publishedDescription": "Course published successfully",
+      "publishErrorDescription": "Unable to change the publish status",
+      "clonedDescription": "Course duplicated successfully",
+      "cloneErrorDescription": "Unable to duplicate the course",
+      "titleRequired": "The title is required"
+    },
+    "confirmDelete": "Are you sure you want to delete \"{{title}}\"?",
+    "title": "Course management",
+    "totalCourses": "{{count}} courses total",
+    "newCourse": "New course",
+    "stats": {
+      "total": "Total courses",
+      "published": "Published",
+      "drafts": "Drafts",
+      "totalEnrolled": "Total enrolled"
+    },
+    "filters": {
+      "searchPlaceholder": "Search a course...",
+      "allStatuses": "All statuses",
+      "allCategories": "All categories"
+    },
+    "table": {
+      "course": "Course",
+      "category": "Category",
+      "level": "Level",
+      "status": "Status",
+      "modules": "Modules",
+      "rating": "Rating",
+      "actions": "Actions",
+      "noDescription": "No description",
+      "noResults": "No courses found. Click \"New course\" to create one."
+    },
+    "rowActions": {
+      "view": "View",
+      "manageContent": "Manage content",
+      "editInfo": "Edit info",
+      "unpublish": "Unpublish",
+      "publish": "Publish",
+      "duplicate": "Duplicate",
+      "delete": "Delete"
+    },
+    "addDialog": {
+      "title": "New course",
+      "description": "Create a new course for your learners",
+      "titleLabel": "Title *",
+      "titlePlaceholder": "e.g. Introduction to Machine Learning",
+      "descriptionLabel": "Description",
+      "descriptionPlaceholder": "Describe the course content...",
+      "category": "Category",
+      "categoryPlaceholder": "Select a category",
+      "level": "Level",
+      "levelPlaceholder": "Select a level",
+      "duration": "Estimated duration",
+      "durationPlaceholder": "e.g. 8h 30min",
+      "cancel": "Cancel",
+      "creating": "Creating...",
+      "create": "Create course"
+    },
+    "editDialog": {
+      "title": "Edit course",
+      "description": "Edit the course information",
+      "status": "Status",
+      "cancel": "Cancel",
+      "saving": "Saving...",
+      "save": "Save"
+    }
+  },
+  "courseEdit": {
+    "genericCreateError": "Error while creating",
+    "genericUpdateError": "Error while updating",
+    "genericDeleteError": "Error while deleting",
+    "toasts": {
+      "moduleCreated": "Module created successfully",
+      "moduleUpdated": "Module updated",
+      "moduleDeleted": "Module deleted",
+      "lessonCreated": "Lesson created successfully",
+      "lessonUpdated": "Lesson updated",
+      "lessonDeleted": "Lesson deleted",
+      "quizCreated": "Quiz created successfully",
+      "quizUpdated": "Quiz updated",
+      "quizDeleted": "Quiz deleted",
+      "questionAdded": "Question added",
+      "questionUpdated": "Question updated",
+      "questionDeleted": "Question deleted",
+      "documentUploadError": "Unable to upload the document. Please try again.",
+      "videoUploadError": "Unable to upload the video. Please try again."
+    },
+    "confirmDeleteModule": "Delete this module?",
+    "confirmDeleteLesson": "Delete this lesson?",
+    "confirmDeleteQuiz": "Delete this quiz?",
+    "confirmDeleteQuestion": "Delete this question?",
+    "notFound": {
+      "title": "Course not found",
+      "backButton": "Back to courses"
+    },
+    "header": {
+      "back": "Back",
+      "manageContent": "Manage course content"
+    },
+    "tabs": {
+      "content": "Content",
+      "settings": "Settings"
+    },
+    "addModule": "Add a module",
+    "lessonsCount": "({{count}} lessons)",
+    "noLessonsInModule": "No lessons in this module",
+    "addLesson": "Add a lesson",
+    "quizButton": "Quiz",
+    "passingScoreInfo": "(Required score: {{score}}% · {{count}} questions)",
+    "questionsButton": "Questions",
+    "noModules": {
+      "title": "No modules",
+      "description": "Start by adding a module to structure your course"
+    },
+    "settingsTab": {
+      "title": "Course settings",
+      "description": "General course configuration",
+      "hint": "Use the course management page to edit general settings."
+    },
+    "moduleDialog": {
+      "addTitle": "Add a module",
+      "editTitle": "Edit module",
+      "addDescription": "Create a new module to structure your course",
+      "editDescription": "Edit the module information",
+      "titleLabel": "Module title",
+      "titlePlaceholder": "e.g. Introduction to the topic",
+      "cancel": "Cancel",
+      "create": "Create",
+      "update": "Update"
+    },
+    "lessonDialog": {
+      "addTitle": "Add a lesson",
+      "editTitle": "Edit lesson",
+      "addDescription": "Create a new lesson",
+      "editDescription": "Edit the lesson information",
+      "titleLabel": "Lesson title",
+      "titlePlaceholder": "e.g. Understanding the basics",
+      "contentType": "Content type",
+      "video": "Video",
+      "document": "Document",
+      "link": "External link",
+      "videoSourceUrl": "Link (YouTube, Vimeo...)",
+      "videoSourceUpload": "Video file",
+      "videoUrl": "Video URL",
+      "videoUrlPlaceholder": "e.g. https://youtube.com/watch?v=... or https://vimeo.com/...",
+      "videoUrlHint": "Supports YouTube, Vimeo and other direct video links",
+      "videoToUpload": "Video to upload",
+      "videoToUploadHint": "MP4 or WebM formats, 100 MB maximum",
+      "documentToUpload": "Document to upload",
+      "uploadProgress": "Uploading: {{percent}}%",
+      "uploadReady": "✓ File ready to be uploaded on creation",
+      "linkUrl": "Link URL",
+      "linkUrlPlaceholder": "e.g. https://example.com/resource",
+      "linkUrlHint": "Link to an external resource",
+      "duration": "Estimated duration (minutes)",
+      "mandatory": "Mandatory",
+      "presenceCheckPercent": "Check presence at (%)",
+      "presenceCheckPercentPlaceholder": "Disabled",
+      "presenceCheckPercentHint": "Shows an \"are you still there?\" prompt once this percentage of the lesson's duration is reached. Leave empty to disable.",
+      "resetTimeOnReopen": "Reset time spent when reopened",
+      "allowDownload": "Allow downloading the document",
+      "cancel": "Cancel",
+      "uploading": "Uploading...",
+      "create": "Create",
+      "update": "Update"
+    },
+    "quizDialog": {
+      "addTitle": "Add a quiz",
+      "editTitle": "Edit quiz",
+      "addDescription": "Create a quiz to assess learners' knowledge",
+      "editDescription": "Edit the quiz information",
+      "titleLabel": "Quiz title",
+      "titlePlaceholder": "e.g. End-of-chapter quiz",
+      "description": "Description",
+      "descriptionPlaceholder": "Quiz description (optional)",
+      "instructions": "Instructions",
+      "instructionsPlaceholder": "Instructions for participants (optional)",
+      "passingScore": "Passing score (%)",
+      "timeLimit": "Time limit (minutes)",
+      "timeLimitPlaceholder": "e.g. 30",
+      "maxAttempts": "Max attempts",
+      "maxAttemptsPlaceholder": "e.g. 3",
+      "questionsToDraw": "Randomly drawn questions (from the question bank)",
+      "questionsToDrawPlaceholder": "Leave empty to use all questions",
+      "questionsToDrawHint": "Each attempt will randomly draw this number of questions from the quiz.",
+      "expiresAt": "Expiration date",
+      "badge": "Associated badge",
+      "noBadge": "None",
+      "certificateEnabled": "Issue a certificate if passed",
+      "showCorrectAnswers": "Show correct answers after submission",
+      "shuffleChoices": "Shuffle answer order",
+      "randomized": "Randomize questions",
+      "cancel": "Cancel",
+      "create": "Create quiz",
+      "update": "Update"
+    },
+    "quizQuestionsDialog": {
+      "title": "Quiz questions: {{title}}",
+      "description": "Manage this quiz's questions",
+      "noQuestions": "No questions in this quiz",
+      "addQuestion": "Add a question",
+      "close": "Close",
+      "types": {
+        "mcq": "MCQ",
+        "trueFalse": "True/False",
+        "shortText": "Short answer",
+        "essay": "Essay"
+      }
+    },
+    "questionDialog": {
+      "addTitle": "Add a question",
+      "editTitle": "Edit question",
+      "addDescription": "Create a new question for the quiz",
+      "editDescription": "Edit the question information",
+      "questionType": "Question type",
+      "types": {
+        "mcq": "MCQ (Multiple choice)",
+        "trueFalse": "True / False",
+        "shortText": "Short answer",
+        "essay": "Essay"
+      },
+      "question": "Question",
+      "questionPlaceholder": "Enter your question...",
+      "choicesLabel": "Answer choices",
+      "choicePlaceholder": "Choice {{number}}",
+      "addChoice": "Add a choice",
+      "selectCorrectHint": "Select the radio button to indicate the correct answer",
+      "correctAnswerLabel": "Correct answer",
+      "cancel": "Cancel",
+      "add": "Add question",
+      "update": "Update",
+      "trueLabel": "True",
+      "falseLabel": "False"
+    }
+  },
+  "assignments": {
+    "toasts": {
+      "createdDescription": "Assignment created successfully",
+      "createErrorDescription": "Unable to create the assignment",
+      "deletedDescription": "Assignment deleted",
+      "deleteErrorDescription": "Unable to delete the assignment",
+      "categoryCreatedDescription": "Category created successfully",
+      "categoryCreateErrorDescription": "Unable to create the category",
+      "categoryDeletedDescription": "Category deleted",
+      "categoryDeleteErrorDescription": "Unable to delete the category",
+      "selectTargetDescription": "Select at least one target"
+    },
+    "title": "Course assignments",
+    "subtitle": "Manage course assignments to users and groups",
+    "tabs": {
+      "assignments": "Assignments",
+      "categories": "Categories"
+    },
+    "courses": {
+      "title": "Courses",
+      "none": "No courses",
+      "published": "Published",
+      "draft": "Draft"
+    },
+    "assignmentsPanel": {
+      "titleWithCourse": "Assignments: {{title}}",
+      "selectCourse": "Select a course",
+      "assign": "Assign",
+      "selectCoursePrompt": "Select a course to see its assignments",
+      "noAssignments": "No assignments for this course",
+      "createAssignment": "Create an assignment",
+      "confirmDelete": "Delete this assignment?",
+      "types": {
+        "user": "User",
+        "enterprise": "Company",
+        "direction": "Division",
+        "service": "Department",
+        "role": "Role",
+        "team": "Team"
+      },
+      "mandatory": "Mandatory",
+      "idFallback": "ID: {{id}}"
+    },
+    "categoriesPanel": {
+      "title": "Course categories",
+      "newCategory": "New category",
+      "none": "No categories",
+      "confirmDelete": "Delete category \"{{name}}\"?"
+    },
+    "assignDialog": {
+      "title": "Assign the course",
+      "description": "Assign \"{{title}}\" to users or groups",
+      "content": "Content to assign",
+      "wholeCourse": "Whole course",
+      "assignmentType": "Assignment type",
+      "types": {
+        "user": "Users",
+        "enterprise": "Company",
+        "direction": "Division",
+        "service": "Department",
+        "team": "Team"
+      },
+      "searchUsers": "Search for users",
+      "searchPlaceholder": "Search by name or email...",
+      "selectTargets": "Select targets ({{count}} selected)",
+      "noItemsFound": "No items found",
+      "mandatory": "Mandatory",
+      "yes": "Yes",
+      "no": "No",
+      "dueDate": "Due date (optional)",
+      "cancel": "Cancel",
+      "assigning": "Assigning...",
+      "assignButton": "Assign"
+    },
+    "categoryDialog": {
+      "title": "New category",
+      "description": "Create a new category to organize your courses",
+      "nameLabel": "Category name",
+      "namePlaceholder": "e.g. Management, Technology, Soft Skills...",
+      "cancel": "Cancel",
+      "creating": "Creating...",
+      "create": "Create"
+    }
+  },
+  "teamsAdmin": {
+    "title": "Teams",
+    "subtitle": "Build teams from a mix of directions, services, enterprises or individual users",
+    "newTeam": "New team",
+    "none": "No teams yet",
+    "card": {
+      "userCount_one": "{{count}} user",
+      "userCount_other": "{{count}} users",
+      "edit": "Edit",
+      "confirmDelete": "Delete team \"{{name}}\"?"
+    },
+    "form": {
+      "name": "Team name",
+      "namePlaceholder": "e.g. North Sales Team",
+      "description": "Description",
+      "descriptionPlaceholder": "Team description...",
+      "addMembers": "Add members",
+      "searchUsersPlaceholder": "Search a user...",
+      "noItemsFound": "No items found",
+      "selectedMembers": "Selected members ({{count}})",
+      "noMembersYet": "No members selected yet",
+      "types": {
+        "user": "User",
+        "direction": "Direction",
+        "service": "Service",
+        "enterprise": "Enterprise"
+      }
+    },
+    "createDialog": {
+      "title": "New team",
+      "description": "Select a mix of directions, services, enterprises and users. The team stays up to date automatically: adding a service includes its future members.",
+      "cancel": "Cancel",
+      "create": "Create",
+      "save": "Save",
+      "saving": "Saving..."
+    },
+    "editDialog": {
+      "title": "Edit team"
+    },
+    "toasts": {
+      "createdDescription": "Team created successfully",
+      "createErrorDescription": "Error creating the team",
+      "updatedDescription": "Team updated",
+      "updateErrorDescription": "Error updating the team",
+      "deletedDescription": "Team deleted",
+      "deleteErrorDescription": "Error deleting the team"
+    }
+  },
+  "badges": {
+    "types": {
+      "trophy": "Trophy",
+      "quiz_completion": "Quiz completed",
+      "perfect_score": "Perfect score",
+      "course_start": "Course started",
+      "course_completion": "Course completed"
+    },
+    "toasts": {
+      "createdDescription": "Badge created successfully",
+      "createErrorDescription": "Error while creating",
+      "updatedDescription": "Badge updated successfully",
+      "updateErrorDescription": "Error while updating",
+      "deletedDescription": "Badge deleted",
+      "deleteErrorDescription": "Error while deleting"
+    },
+    "invalidCriteriaJson": "The criteria must be valid JSON, e.g. {\"type\": \"quiz_pass\"}",
+    "title": "Badge management",
+    "subtitle": "Create and manage gamification badges",
+    "newBadge": "New badge",
+    "createDialog": {
+      "title": "Create a badge",
+      "description": "Define the badge's characteristics and earning criteria",
+      "cancel": "Cancel",
+      "creating": "Creating...",
+      "create": "Create badge"
+    },
+    "editDialog": {
+      "title": "Edit badge",
+      "description": "Update the badge information",
+      "cancel": "Cancel",
+      "saving": "Updating...",
+      "save": "Save"
+    },
+    "form": {
+      "code": "Code (unique identifier)",
+      "codePlaceholder": "e.g. EXPERT_REACT",
+      "name": "Badge name",
+      "namePlaceholder": "e.g. React Expert",
+      "type": "Type",
+      "typePlaceholder": "Select a type (optional)",
+      "description": "Description",
+      "descriptionPlaceholder": "Badge description...",
+      "criteria": "Earning criteria (JSON)"
+    },
+    "stats": {
+      "total": "Total badges",
+      "trophies": "Trophies",
+      "awarded": "Badges awarded",
+      "types": "Types"
+    },
+    "searchPlaceholder": "Search a badge...",
+    "empty": {
+      "title": "No badges found",
+      "description": "Create your first badge to motivate your learners"
+    },
+    "awardedCount": "{{count}} awarded"
+  },
+  "certificatesAdmin": {
+    "toasts": {
+      "templateCreatedDescription": "Template created successfully",
+      "templateCreateErrorDescription": "Error while creating",
+      "templateUpdatedDescription": "Template updated",
+      "templateUpdateErrorDescription": "Error while updating",
+      "templateDeletedDescription": "Template deleted",
+      "templateDeleteErrorDescription": "Error while deleting",
+      "revokedDescription": "Certificate revoked",
+      "revokeErrorDescription": "Error while revoking",
+      "viewErrorDescription": "Unable to display the certificate",
+      "downloadErrorDescription": "Unable to download the certificate",
+      "watermarkCreatedDescription": "Watermark added successfully",
+      "watermarkCreateErrorDescription": "Error while adding the watermark",
+      "watermarkUpdatedDescription": "Watermark updated",
+      "watermarkUpdateErrorDescription": "Error while updating",
+      "watermarkDeletedDescription": "Watermark deleted",
+      "watermarkDeleteErrorDescription": "Error while deleting"
+    },
+    "pdfPreviewDialog": {
+      "title": "Certificate preview",
+      "iframeTitle": "Certificate PDF preview",
+      "close": "Close"
+    },
+    "previewSampleCourseName": "Course name",
+    "title": "Certificate management",
+    "subtitle": "Manage certificates and templates",
+    "stats": {
+      "total": "Total certificates",
+      "valid": "Valid",
+      "revoked": "Revoked",
+      "templates": "Templates"
+    },
+    "tabs": {
+      "certificates": "Certificates ({{count}})",
+      "templates": "Templates ({{count}})",
+      "watermarks": "Watermarks ({{count}})"
+    },
+    "searchPlaceholder": "Search a certificate...",
+    "table": {
+      "certificateNumber": "Certificate No.",
+      "user": "User",
+      "course": "Course",
+      "issuedOn": "Issued on",
+      "expires": "Expires",
+      "status": "Status",
+      "actions": "Actions",
+      "userFallback": "User #{{id}}",
+      "courseFallback": "Course #{{id}}",
+      "valid": "Valid",
+      "revoked": "Revoked",
+      "noResults": "No certificates found"
+    },
+    "newTemplate": "New template",
+    "createDialog": {
+      "title": "Create a template",
+      "description": "Define the certificate's design and content",
+      "cancel": "Cancel",
+      "creating": "Creating...",
+      "create": "Create"
+    },
+    "editDialog": {
+      "title": "Edit template",
+      "cancel": "Cancel",
+      "saving": "Updating...",
+      "save": "Save"
+    },
+    "previewDialog": {
+      "title": "Preview — {{name}}",
+      "description": "Rendered with sample data. This does not yet reflect the layout of the generated PDF.",
+      "iframeTitle": "Template preview",
+      "noContent": "This template doesn't have any HTML content yet.",
+      "close": "Close"
+    },
+    "form": {
+      "name": "Template name",
+      "namePlaceholder": "e.g. Standard Certificate",
+      "description": "Description",
+      "descriptionPlaceholder": "Template description...",
+      "html": "HTML template",
+      "availableVariables": "Available variables: {userName}, {courseName}, {date}, {certificateNumber}",
+      "dimensionsHint": "Certificate format: A4 landscape (297 x 210 mm). Design your HTML on a 1122 x 794 px canvas (96 dpi) so the preview matches the real PDF proportions.",
+      "isDefault": "Default template"
+    },
+    "templateCard": {
+      "default": "Default",
+      "edit": "Edit",
+      "preview": "Preview",
+      "setDefault": "Set as default"
+    },
+    "watermarks": {
+      "add": "Add a watermark",
+      "none": "No watermarks yet",
+      "addDialog": {
+        "title": "Add a watermark",
+        "description": "The default watermark appears faintly in the background of certificates generated from now on.",
+        "uploading": "Uploading..."
+      },
+      "form": {
+        "name": "Name",
+        "namePlaceholder": "e.g. Company logo",
+        "image": "Image",
+        "dimensionsHint": "Use a 4:3 image (e.g. 800 x 600 px) to exactly fill the watermark area (400 x 300 pt) with no letterboxing or distortion. Any other ratio will be centered and scaled down automatically."
+      }
+    }
+  },
+  "liveSessionsAdmin": {
+    "toasts": {
+      "createdDescription": "Session created successfully",
+      "createErrorFallback": "Error while creating",
+      "updatedDescription": "Session updated",
+      "updateErrorFallback": "Error while updating",
+      "deletedDescription": "Session deleted",
+      "deleteErrorDescription": "Error while deleting",
+      "canceledDescription": "Session canceled",
+      "startedDescription": "Session started",
+      "startErrorDescription": "Unable to start the session",
+      "endedDescription": "Session ended",
+      "endErrorDescription": "Unable to end the session",
+      "dateRequiredDescription": "Date and time are required",
+      "linkCopiedTitle": "Link copied",
+      "linkCopiedDescription": "The link was copied to the clipboard"
+    },
+    "statuses": {
+      "scheduled": "Scheduled",
+      "live": "Live",
+      "ended": "Ended",
+      "canceled": "Canceled"
+    },
+    "form": {
+      "title": "Session title",
+      "titlePlaceholder": "e.g. Introduction to React - Live Session",
+      "description": "Description",
+      "descriptionPlaceholder": "Session description...",
+      "instructor": "Instructor",
+      "instructorPlaceholder": "Select an instructor",
+      "associatedCourse": "Associated course (optional)",
+      "noCourse": "No course",
+      "none": "None",
+      "visibility": "Visibility",
+      "visibilityPublic": "Public (all users)",
+      "visibilityPrivate": "Private (associated course and/or invitees)",
+      "explicitInvitees": "Explicit invitees (in addition to those enrolled in the associated course)",
+      "noUsersAvailable": "No users available",
+      "dateTime": "Date and time",
+      "duration": "Duration (minutes)",
+      "meetingUrl": "Meeting URL",
+      "maxParticipants": "Max participants"
+    },
+    "title": "Live sessions",
+    "subtitle": "Manage live training sessions",
+    "newSession": "New session",
+    "createDialog": {
+      "title": "Create a session",
+      "description": "Schedule a new live training session",
+      "cancel": "Cancel",
+      "creating": "Creating...",
+      "create": "Create session"
+    },
+    "editDialog": {
+      "title": "Edit session",
+      "cancel": "Cancel",
+      "saving": "Updating...",
+      "save": "Save"
+    },
+    "stats": {
+      "total": "Total sessions",
+      "scheduled": "Scheduled",
+      "live": "Live",
+      "completed": "Completed"
+    },
+    "searchPlaceholder": "Search a session...",
+    "allStatuses": "All statuses",
+    "empty": {
+      "title": "No sessions found",
+      "description": "Create your first live training session"
+    },
+    "liveNow": "LIVE",
+    "instructorFallback": "Instructor #{{id}}",
+    "durationMinutes": "{{count}} min",
+    "start": "Start",
+    "cancel": "Cancel",
+    "end": "End"
+  },
+  "notificationsAdmin": {
+    "channels": {
+      "in_app": "In-app",
+      "email": "Email",
+      "sms": "SMS",
+      "whatsapp": "WhatsApp",
+      "push": "Push notification"
+    },
+    "roles": {
+      "admin": "Admin",
+      "director": "Director",
+      "manager": "Manager",
+      "supervisor": "Supervisor",
+      "agent": "Agent",
+      "externe": "External",
+      "stagiaire": "Intern"
+    },
+    "toasts": {
+      "sentDescription": "Notification sent successfully",
+      "sendErrorDescription": "Error while sending",
+      "deletedDescription": "Notification deleted"
+    },
+    "title": "Notification center",
+    "subtitle": "Send and manage notifications to users",
+    "sendButton": "Send a notification",
+    "createDialog": {
+      "title": "New notification",
+      "description": "Send a notification to your users",
+      "cancel": "Cancel",
+      "sending": "Sending...",
+      "send": "Send"
+    },
+    "form": {
+      "channel": "Channel",
+      "subject": "Subject",
+      "subjectPlaceholder": "Notification subject",
+      "message": "Message",
+      "messagePlaceholder": "Notification content...",
+      "recipients": "Recipients",
+      "allUsers": "All users",
+      "specificUser": "Specific user",
+      "byRole": "By role",
+      "selectUser": "Select the user",
+      "chooseUser": "Choose a user",
+      "selectRole": "Select the role",
+      "chooseRole": "Choose a role"
+    },
+    "stats": {
+      "totalSent": "Total sent",
+      "read": "Read",
+      "unread": "Unread",
+      "users": "Users"
+    },
+    "searchPlaceholder": "Search a notification...",
+    "allChannels": "All channels",
+    "empty": {
+      "title": "No notifications found",
+      "description": "Send your first notification to users"
+    },
+    "defaultSubject": "Notification",
+    "readStatus": "Read",
+    "unreadStatus": "Unread",
+    "userFallback": "User #{{id}}"
+  },
+  "blogAdmin": {
+    "statuses": {
+      "draft": "Draft",
+      "published": "Published",
+      "archived": "Archived"
+    },
+    "toasts": {
+      "createdDescription": "Post created successfully",
+      "createErrorDescription": "Error while creating",
+      "updatedDescription": "Post updated",
+      "updateErrorDescription": "Error while updating",
+      "deletedDescription": "Post deleted",
+      "deleteErrorDescription": "Error while deleting",
+      "publishedDescription": "Post published",
+      "categoryErrorDescription": "Error while creating the category",
+      "tagErrorDescription": "Error while creating the tag"
+    },
+    "form": {
+      "title": "Title",
+      "titlePlaceholder": "Post title",
+      "content": "Content",
+      "contentPlaceholder": "Post content...",
+      "category": "Category",
+      "categoryPlaceholder": "Select a category",
+      "newCategoryPlaceholder": "New category...",
+      "status": "Status",
+      "tags": "Tags",
+      "newTagPlaceholder": "New tag...",
+      "add": "Add"
+    },
+    "title": "Blog management",
+    "subtitle": "Create and manage blog posts",
+    "newPost": "New post",
+    "createDialog": {
+      "title": "Create a post",
+      "description": "Write a new post for the blog",
+      "cancel": "Cancel",
+      "creating": "Creating...",
+      "create": "Create"
+    },
+    "editDialog": {
+      "title": "Edit post",
+      "cancel": "Cancel",
+      "saving": "Updating...",
+      "save": "Save"
+    },
+    "stats": {
+      "total": "Total posts",
+      "published": "Published",
+      "drafts": "Drafts",
+      "totalViews": "Total views"
+    },
+    "searchPlaceholder": "Search a post...",
+    "allStatuses": "All statuses",
+    "drafts": "Drafts",
+    "published": "Published",
+    "archived": "Archived",
+    "empty": {
+      "title": "No posts found",
+      "description": "Create your first blog post"
+    },
+    "authorFallback": "Author #{{id}}",
+    "publish": "Publish"
+  },
+  "reports": {
+    "types": {
+      "user_progress": {
+        "label": "User progress",
+        "description": "Detailed report on learner progress"
+      },
+      "course_completion": {
+        "label": "Course completion",
+        "description": "Completion rates and stats by course"
+      },
+      "quiz_performance": {
+        "label": "Quiz performance",
+        "description": "Quiz results and statistics"
+      },
+      "enrollment_summary": {
+        "label": "Enrollment summary",
+        "description": "Enrollment trends and statistics"
+      },
+      "badge_awards": {
+        "label": "Badge awards",
+        "description": "Badge distribution and top earners"
+      },
+      "certificate_issuance": {
+        "label": "Certifications",
+        "description": "Report on issued certifications"
+      },
+      "activity_log": {
+        "label": "Activity log",
+        "description": "User activity audit trail"
+      },
+      "organization_overview": {
+        "label": "Organization overview",
+        "description": "Stats by enterprise/direction/service"
+      }
+    },
+    "toasts": {
+      "generatedDescription": "Report generated and downloaded",
+      "generateErrorDescription": "Error while generating"
+    },
+    "title": "Reports & analytics",
+    "subtitle": "Generate and download platform reports",
+    "generateButton": "Generate a report",
+    "generateDialog": {
+      "title": "Generate a report",
+      "description": "Select the report type, format, and period",
+      "reportType": "Report type",
+      "selectType": "Select a type",
+      "format": "Format",
+      "formats": {
+        "pdf": "PDF",
+        "excel": "Excel",
+        "csv": "CSV"
+      },
+      "startDate": "Start date",
+      "endDate": "End date",
+      "cancel": "Cancel",
+      "generating": "Generating...",
+      "generate": "Generate"
+    },
+    "stats": {
+      "users": "Users",
+      "courses": "Courses",
+      "enrollments": "Enrollments",
+      "completion": "Completion",
+      "avgTime": "Average time",
+      "certificates": "Certificates"
+    },
+    "availableTypes": "Available report types"
+  },
+  "organization": {
+    "toasts": {
+      "updatedDescription": "Organization updated",
+      "updateErrorDescription": "Error while updating",
+      "settingsUpdatedDescription": "Settings updated",
+      "settingsUpdateErrorDescription": "Error while updating",
+      "selectImageDescription": "Please select an image",
+      "imageTooLargeDescription": "The image must not exceed 5 MB",
+      "logoUploadErrorDescription": "Unable to upload the logo"
+    },
+    "title": "Organization settings",
+    "subtitle": "Manage your organization's settings",
+    "settingsButton": "Settings",
+    "edit": "Edit",
+    "stats": {
+      "users": "Users",
+      "courses": "Courses",
+      "activeThisMonth": "Active this month",
+      "enrollments": "Enrollments"
+    },
+    "generalInfo": {
+      "title": "General information",
+      "createdOn": "Created on {{date}}"
+    },
+    "customization": {
+      "title": "Customization",
+      "primaryColor": "Primary color",
+      "secondaryColor": "Secondary color",
+      "preview": "Preview",
+      "primaryButton": "Primary button",
+      "secondaryButton": "Secondary button"
+    },
+    "platformSettings": {
+      "title": "Platform settings",
+      "selfRegistration": {
+        "title": "Self-registration",
+        "description": "Users can create an account"
+      },
+      "notifications": {
+        "title": "Notifications",
+        "description": "Push and email notifications"
+      },
+      "chat": {
+        "title": "Chat",
+        "description": "Messaging between users"
+      },
+      "liveSessions": {
+        "title": "Live sessions",
+        "description": "Webinars and live sessions"
+      },
+      "language": {
+        "title": "Language",
+        "description": "Default language"
+      },
+      "timezone": {
+        "title": "Timezone",
+        "description": "For scheduled sessions"
+      },
+      "enabled": "Enabled",
+      "disabled": "Disabled"
+    },
+    "editDialog": {
+      "title": "Edit organization",
+      "logo": "Logo",
+      "changeLogo": "Change logo",
+      "uploadLogo": "Upload a logo",
+      "name": "Name",
+      "description": "Description",
+      "contactEmail": "Contact email",
+      "phone": "Phone",
+      "address": "Address",
+      "website": "Website",
+      "primaryColor": "Primary color",
+      "secondaryColor": "Secondary color",
+      "cancel": "Cancel",
+      "saving": "Updating...",
+      "save": "Save"
+    },
+    "settingsDialog": {
+      "title": "Platform settings",
+      "selfRegistration": "Self-registration",
+      "notifications": "Notifications",
+      "chat": "Chat",
+      "liveSessions": "Live sessions",
+      "maxUsersPerGroup": "Max users per group",
+      "certificateValidity": "Certificate validity (days)",
+      "cancel": "Cancel",
+      "saving": "Updating...",
+      "save": "Save"
+    }
+  },
+  "import": {
+    "sections": {
+      "organization": {
+        "title": "Organization hierarchy",
+        "description": "Companies, divisions, and departments — one row per department (or per higher level if the following columns are left empty)."
+      },
+      "users": {
+        "title": "Users",
+        "description": "User accounts with role and organizational affiliation."
+      },
+      "courses": {
+        "title": "Courses",
+        "description": "Course records (title, description, category, level)."
+      },
+      "lessons": {
+        "title": "Lessons",
+        "description": "Lessons attached to an already existing course — the module is created automatically if it doesn't exist."
+      },
+      "quizzes": {
+        "title": "Quizzes",
+        "description": "Quiz questions attached to an already existing lesson — one row per question."
+      }
+    },
+    "toasts": {
+      "templateDownloadErrorDescription": "Unable to download the template",
+      "importCompleteTitle": "Import complete",
+      "importCompleteDescription": "{{count}} row(s) created",
+      "importErrorDescription": "Unable to import the file"
+    },
+    "downloadTemplate": "Download the template",
+    "importButton": "Import",
+    "resultSummary": "{{created}} created",
+    "skippedCount": ", {{count}} skipped",
+    "errorsCount": ", {{count}} error(s)",
+    "outOfRows": " out of {{count}} row(s)",
+    "lineFallback": "Row {{line}}",
+    "title": "Data import",
+    "subtitle": "Download an Excel template, fill it in, then import it. Imports are safe to re-run: items that already exist are automatically skipped.",
+    "noneAvailable": "No import is available for your role."
+  },
+  "platform": {
+    "toasts": {
+      "createdTitle": "Organization created",
+      "createdDescription": "The new organization is ready.",
+      "createErrorDescription": "Unable to create the organization",
+      "switchedTitle": "Active organization",
+      "switchedDescription": "You are now acting within \"{{name}}\"",
+      "switchErrorDescription": "Unable to switch to this organization"
+    },
+    "title": "Platform",
+    "subtitle": "All organizations managed on this instance — super admin only",
+    "newOrganization": "New organization",
+    "createDialog": {
+      "title": "Create an organization",
+      "description": "A new isolated tenant, with its own catalog and its own users.",
+      "nameLabel": "Organization name",
+      "namePlaceholder": "e.g. Acme Corp",
+      "cancel": "Cancel",
+      "creating": "Creating...",
+      "create": "Create"
+    },
+    "active": "Active",
+    "createdOn": "Created on {{date}}",
+    "activeOrganization": "Active organization",
+    "switching": "Switching...",
+    "switchTo": "Switch to",
+    "empty": "No organizations yet."
+  },
+  "emailSettings": {
+    "toasts": {
+      "savedDescription": "Email settings saved",
+      "saveErrorDescription": "Unable to save the settings",
+      "testSentDescription": "Test email sent to {{email}}",
+      "testErrorDescription": "Unable to send the test email",
+      "enterEmailDescription": "Please enter an email address"
+    },
+    "title": "Email notifications",
+    "subtitle": "Configure the SMTP server used to send notifications",
+    "smtpConfig": {
+      "title": "SMTP configuration",
+      "description": "Emails (notifications, forgotten passwords, alerts) will be sent through this server",
+      "enableSending": "Enable email sending",
+      "enableSendingHint": "If disabled, no email notification will be sent",
+      "smtpServer": "SMTP server",
+      "port": "Port",
+      "secureConnection": "Secure connection (TLS/SSL)",
+      "smtpUsername": "SMTP username",
+      "smtpPassword": "SMTP password",
+      "fromEmail": "From email",
+      "fromName": "From name",
+      "save": "Save"
+    },
+    "testConfig": {
+      "title": "Test the configuration",
+      "description": "Send a test email to verify the configuration works",
+      "sendTest": "Send a test"
+    }
+  },
+  "liveKitSettings": {
+    "toasts": {
+      "savedDescription": "LiveKit settings saved",
+      "saveErrorDescription": "Unable to save the settings",
+      "testSuccessDescription": "LiveKit connection successful",
+      "testErrorDescription": "Unable to connect to LiveKit"
+    },
+    "title": "Video conferencing (LiveKit)",
+    "subtitle": "Configure the LiveKit credentials used for the integrated video conferencing of live sessions. Leave disabled to use the server's global configuration (if defined).",
+    "config": {
+      "title": "LiveKit configuration",
+      "descriptionPrefix": "A free account can be created at",
+      "descriptionSuffix": ". These credentials replace, for this tenant only, the server's default configuration.",
+      "useForTenant": "Use these credentials for this tenant",
+      "useForTenantHint": "If disabled, the server's global configuration (environment variables) is used instead.",
+      "projectUrl": "Project URL (WebSocket)",
+      "apiKey": "API Key",
+      "apiSecret": "API Secret",
+      "testConnection": "Test the connection",
+      "save": "Save"
+    }
+  },
+  "recordingSettings": {
+    "toasts": {
+      "savedDescription": "Storage settings saved",
+      "saveErrorDescription": "Unable to save the settings"
+    },
+    "title": "Live session recording",
+    "subtitle": "Configure the S3-compatible storage bucket used to record live sessions via LiveKit Egress. Unlike video conferencing, there is no global fallback configuration: without a bucket configured and enabled here, recording remains unavailable for this tenant.",
+    "storage": {
+      "title": "S3-compatible storage",
+      "description": "Compatible with AWS S3, MinIO, Cloudflare R2, Backblaze B2, etc. (custom endpoint optional).",
+      "enableForTenant": "Enable recording for this tenant",
+      "enableForTenantHint": "If disabled, the recording button shows a clear message instead of starting.",
+      "bucket": "Bucket",
+      "region": "Region",
+      "endpoint": "Endpoint (optional, for non-AWS S3-compatible storage)",
+      "accessKey": "Access Key",
+      "secretKey": "Secret Key",
+      "save": "Save"
+    }
+  },
+  "logs": {
+    "title": "Logs",
+    "subtitle": "Logins, admin actions, and training tracking",
+    "tabs": {
+      "connections": "Logins",
+      "processing": "Processing",
+      "training": "Training"
+    },
+    "exporting": "Exporting...",
+    "exportCsv": "Export as CSV",
+    "toasts": {
+      "exportErrorDescription": "Unable to export the logs"
+    },
+    "filters": {
+      "title": "Filters",
+      "reset": "Reset",
+      "userId": "User ID",
+      "action": "Action",
+      "allActions": "All",
+      "from": "From",
+      "to": "To",
+      "courseId": "Course ID",
+      "lastAccessFrom": "Last access from",
+      "lastAccessTo": "to"
+    },
+    "eventTable": {
+      "entriesCount": "{{count}} entries",
+      "noResults": "No logs found for these filters",
+      "date": "Date",
+      "user": "User",
+      "action": "Action",
+      "entity": "Entity",
+      "details": "Details",
+      "system": "System",
+      "pageOf": "Page {{page}} / {{totalPages}}"
+    },
+    "trainingTable": {
+      "pathsCount": "{{count}} training path(s)",
+      "noResults": "No training data for these filters",
+      "user": "User",
+      "training": "Training",
+      "totalTime": "Total time",
+      "progress": "Progress",
+      "resumes": "Resumes",
+      "lastAccess": "Last access",
+      "durationMinutes": "{{count}} min",
+      "durationHoursMinutes": "{{hours}}h {{minutes}}min"
+    }
+  }
+}

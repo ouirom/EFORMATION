@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { useQuery } from '@tanstack/react-query'
@@ -9,7 +10,9 @@ import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { PageLoading } from '@/components/ui/loading'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { getInitials } from '@/lib/utils'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { getInitials, formatDateTime, dateLocale } from '@/lib/utils'
+import { LessonRow } from '@/components/LessonRow'
 import {
   BookOpen,
   Clock,
@@ -23,10 +26,14 @@ import {
   Star,
   Zap,
   BarChart3,
+  History,
+  Library,
+  Heart,
 } from 'lucide-react'
 import { api } from '@/services/api'
 
 export default function DashboardPage() {
+  const { t } = useTranslation('dashboard')
   const { user } = useAuth()
   const [activeTab, setActiveTab] = useState('general')
 
@@ -43,6 +50,12 @@ export default function DashboardPage() {
     staleTime: 10 * 1000,
     refetchOnWindowFocus: true,
     refetchInterval: 30 * 1000,
+  })
+
+  const { data: leaderboard = [] } = useQuery({
+    queryKey: ['leaderboard'],
+    queryFn: () => api.analytics.getLeaderboard(5),
+    staleTime: 60 * 1000,
   })
 
   // Récupérer uniquement les cours attribués à l'utilisateur
@@ -127,11 +140,45 @@ export default function DashboardPage() {
     refetchInterval: 30 * 1000,
   })
 
-  if (loadingStats || loadingCourses || loadingBadges || loadingAttempts) {
+  const { data: liveSessions, isLoading: loadingLiveSessions } = useQuery({
+    queryKey: ['live-sessions'],
+    queryFn: () => api.liveSessions.list(),
+  })
+
+  const { data: lessonCatalogData, isLoading: loadingLessonCatalog } = useQuery({
+    queryKey: ['lesson-catalog-dashboard'],
+    queryFn: () => api.lessons.catalog({ limit: 100 }),
+    staleTime: 10 * 1000,
+  })
+
+  const [lessonCatalogTab, setLessonCatalogTab] = useState('inProgress')
+  const [lessonCatalogCourseFilter, setLessonCatalogCourseFilter] = useState('all')
+
+  const { data: favorites = [], isLoading: loadingFavorites } = useQuery({
+    queryKey: ['favorites'],
+    queryFn: () => api.favorites.list(),
+  })
+
+  if (loadingStats || loadingCourses || loadingBadges || loadingAttempts || loadingLiveSessions || loadingLessonCatalog || loadingFavorites) {
     return <PageLoading />
   }
 
+  const upcomingLiveSessions = (liveSessions || [])
+    .filter((s: any) => s.status === 'scheduled' && s.scheduledAt)
+    .sort((a: any, b: any) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime())
+    .slice(0, 2)
+
   const allCourses = Array.isArray(courses) ? courses : []
+
+  const allLessons = lessonCatalogData?.data || []
+  const lessonsInProgress = allLessons.filter((l: any) => l.progress_status === 'in_progress')
+  const lessonsMandatory = allLessons.filter((l: any) => l.is_mandatory === true)
+  const lessonCoursesForFilter = Array.from(
+    new Map(allLessons.map((l: any) => [l.course_id, l.course_title])).entries()
+  ) as [number, string][]
+  const lessonsFilteredByCourse = lessonCatalogCourseFilter === 'all'
+    ? allLessons
+    : allLessons.filter((l: any) => String(l.course_id) === lessonCatalogCourseFilter)
 
   // Grouper les cours par type
   const groupedCourses = {
@@ -140,6 +187,28 @@ export default function DashboardPage() {
     recommended: allCourses.filter((c: any) => c.recommended === true && c.isCompleted !== true && c.required !== true),
     general: allCourses.filter((c: any) => c.isCompleted !== true && c.required !== true && c.recommended !== true),
   }
+
+  // Favoris -- indépendants des cours attribués/assignés (un favori peut porter sur
+  // n'importe quel cours/leçon accessible, pas seulement ceux déjà attribués à
+  // l'utilisateur), donc dérivés directement de GET /favorites plutôt que filtrés
+  // depuis allCourses/allLessons.
+  const favoriteCourses = favorites
+    .filter((f: any) => f.type === 'course')
+    .map((f: any) => ({ id: f.itemId, publicId: f.publicId, title: f.title }))
+  const favoriteLessons = favorites
+    .filter((f: any) => f.type === 'lesson')
+    .map((f: any) => ({
+      id: f.itemId,
+      public_id: f.publicId,
+      course_id: f.courseId,
+      course_public_id: f.coursePublicId,
+      title: f.title,
+      type: f.lessonType,
+      duration_min: f.durationMin,
+      is_mandatory: f.isMandatory,
+      course_title: f.courseTitle,
+      module_title: f.moduleTitle,
+    }))
 
   const dashboardStats = {
     coursesEnrolled: groupedCourses.general.length + groupedCourses.required.length + groupedCourses.recommended.length,
@@ -164,16 +233,16 @@ export default function DashboardPage() {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold">
-            Bonjour, {user?.displayName?.split(' ')[0] || 'Utilisateur'}! 👋
+            {t('greeting', { name: user?.displayName?.split(' ')[0] || t('defaultUser') })}
           </h1>
           <p className="text-muted-foreground">
-            Bienvenue sur votre espace d'apprentissage
+            {t('subtitle')}
           </p>
         </div>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-orange-500/10">
             <Flame className="h-5 w-5 text-orange-500" />
-            <span className="font-semibold text-orange-500">{dashboardStats.streak} jours</span>
+            <span className="font-semibold text-orange-500">{t('streakDays', { count: dashboardStats.streak })}</span>
           </div>
           <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary/10">
             <Target className="h-5 w-5 text-primary" />
@@ -186,43 +255,43 @@ export default function DashboardPage() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Cours</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('stats.courses')}</CardTitle>
             <BookOpen className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{dashboardStats.coursesEnrolled}</div>
             <p className="text-xs text-muted-foreground">
-              {dashboardStats.coursesCompleted} terminé{dashboardStats.coursesCompleted > 1 ? 's' : ''}
+              {t('stats.coursesCompleted', { count: dashboardStats.coursesCompleted })}
             </p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Leçons</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('stats.lessons')}</CardTitle>
             <CheckCircle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{dashboardStats.lessonsCompleted}</div>
             <p className="text-xs text-muted-foreground">
-              sur {dashboardStats.lessonsStarted} commencée{dashboardStats.lessonsStarted > 1 ? 's' : ''}
+              {t('stats.lessonsStarted', { count: dashboardStats.lessonsStarted })}
             </p>
           </CardContent>
         </Card>
         <div className="text-2xl font-bold">{dashboardStats.quizzesPassed}/{dashboardStats.quizzesTaken}</div>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Temps d'apprentissage</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('stats.learningTime')}</CardTitle>
             <Clock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {dashboardStats.totalHours > 0 
+              {dashboardStats.totalHours > 0
                 ? `${dashboardStats.totalHours}h ${dashboardStats.totalMinutes % 60}min`
                 : `${dashboardStats.totalMinutes}min`
               }
             </div>
             <p className="text-xs text-muted-foreground">
-              {dashboardStats.badges} badge{dashboardStats.badges > 1 ? 's' : ''} obtenu{dashboardStats.badges > 1 ? 's' : ''}
+              {t('stats.badgesEarned', { count: dashboardStats.badges })}
             </p>
           </CardContent>
         </Card>
@@ -233,27 +302,30 @@ export default function DashboardPage() {
         {/* Course Catalog with Tabs */}
         <div className="lg:col-span-2 space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold">Catalogue des Formations</h2>
+            <h2 className="text-xl font-semibold">{t('catalog.title')}</h2>
             <Link to="/courses">
               <Button variant="ghost" size="sm">
-                Voir tout <ArrowRight className="ml-2 h-4 w-4" />
+                {t('catalog.viewAll')} <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             </Link>
           </div>
-          
+
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-5">
               <TabsTrigger value="general" className="text-xs sm:text-sm">
-                Général ({groupedCourses.general.length})
+                {t('catalog.general')} ({groupedCourses.general.length})
               </TabsTrigger>
               <TabsTrigger value="required" className="text-xs sm:text-sm">
-                Obligatoire ({groupedCourses.required.length})
+                {t('catalog.required')} ({groupedCourses.required.length})
               </TabsTrigger>
               <TabsTrigger value="recommended" className="text-xs sm:text-sm">
-                Recommandé ({groupedCourses.recommended.length})
+                {t('catalog.recommended')} ({groupedCourses.recommended.length})
               </TabsTrigger>
               <TabsTrigger value="completed" className="text-xs sm:text-sm">
-                Terminée ({groupedCourses.completed.length})
+                {t('catalog.completed')} ({groupedCourses.completed.length})
+              </TabsTrigger>
+              <TabsTrigger value="favorites" className="text-xs sm:text-sm">
+                {t('catalog.favorites')} ({favoriteCourses.length})
               </TabsTrigger>
             </TabsList>
 
@@ -267,7 +339,7 @@ export default function DashboardPage() {
               ) : (
                 <Card className="p-6 text-center">
                   <BookOpen className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
-                  <p className="text-muted-foreground">Aucun cours général disponible</p>
+                  <p className="text-muted-foreground">{t('catalog.noGeneral')}</p>
                 </Card>
               )}
             </TabsContent>
@@ -282,7 +354,7 @@ export default function DashboardPage() {
               ) : (
                 <Card className="p-6 text-center">
                   <CheckCircle className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
-                  <p className="text-muted-foreground">Aucun cours obligatoire</p>
+                  <p className="text-muted-foreground">{t('catalog.noRequired')}</p>
                 </Card>
               )}
             </TabsContent>
@@ -297,7 +369,7 @@ export default function DashboardPage() {
               ) : (
                 <Card className="p-6 text-center">
                   <Star className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
-                  <p className="text-muted-foreground">Aucun cours recommandé</p>
+                  <p className="text-muted-foreground">{t('catalog.noRecommended')}</p>
                 </Card>
               )}
             </TabsContent>
@@ -312,23 +384,138 @@ export default function DashboardPage() {
               ) : (
                 <Card className="p-6 text-center">
                   <Trophy className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
-                  <p className="text-muted-foreground">Aucun cours terminé pour l'instant</p>
-                  <p className="text-xs text-muted-foreground mt-2">Complétez des formations pour les voir ici</p>
+                  <p className="text-muted-foreground">{t('catalog.noCompleted')}</p>
+                  <p className="text-xs text-muted-foreground mt-2">{t('catalog.noCompletedHint')}</p>
+                </Card>
+              )}
+            </TabsContent>
+
+            <TabsContent value="favorites" className="space-y-3 mt-4">
+              {favoriteCourses.length > 0 ? (
+                <div className="grid gap-3">
+                  {favoriteCourses.slice(0, 6).map((course: any) => (
+                    <CourseCard key={course.id} course={course} />
+                  ))}
+                </div>
+              ) : (
+                <Card className="p-6 text-center">
+                  <Heart className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
+                  <p className="text-muted-foreground">{t('catalog.noFavorites')}</p>
                 </Card>
               )}
             </TabsContent>
           </Tabs>
+
+          {/* Catalogue des leçons */}
+          <div className="mt-8 space-y-4">
+            <h2 className="text-xl font-semibold flex items-center gap-2">
+              <Library className="h-5 w-5" />
+              {t('lessonCatalog.title')}
+            </h2>
+
+            <Tabs value={lessonCatalogTab} onValueChange={setLessonCatalogTab} className="w-full">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <TabsList>
+                  <TabsTrigger value="inProgress">
+                    {t('lessonCatalog.inProgress')} ({lessonsInProgress.length})
+                  </TabsTrigger>
+                  <TabsTrigger value="mandatory">
+                    {t('lessonCatalog.mandatory')} ({lessonsMandatory.length})
+                  </TabsTrigger>
+                  <TabsTrigger value="all">
+                    {t('lessonCatalog.all')} ({allLessons.length})
+                  </TabsTrigger>
+                  <TabsTrigger value="favorites">
+                    {t('lessonCatalog.favorites')} ({favoriteLessons.length})
+                  </TabsTrigger>
+                </TabsList>
+                {lessonCatalogTab === 'all' && lessonCoursesForFilter.length > 1 && (
+                  <Select value={lessonCatalogCourseFilter} onValueChange={setLessonCatalogCourseFilter}>
+                    <SelectTrigger className="w-full sm:w-[220px]">
+                      <SelectValue placeholder={t('lessonCatalog.filterByCourse')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{t('lessonCatalog.allCourses')}</SelectItem>
+                      {lessonCoursesForFilter.map(([courseId, courseTitle]) => (
+                        <SelectItem key={courseId} value={String(courseId)}>{courseTitle}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+
+              <TabsContent value="inProgress" className="space-y-2 mt-4">
+                {lessonsInProgress.length > 0 ? (
+                  <div className="grid gap-2">
+                    {lessonsInProgress.slice(0, 6).map((lesson: any) => (
+                      <LessonRow key={lesson.id} lesson={lesson} />
+                    ))}
+                  </div>
+                ) : (
+                  <Card className="p-6 text-center">
+                    <History className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
+                    <p className="text-muted-foreground">{t('lessonCatalog.noInProgress')}</p>
+                  </Card>
+                )}
+              </TabsContent>
+
+              <TabsContent value="mandatory" className="space-y-2 mt-4">
+                {lessonsMandatory.length > 0 ? (
+                  <div className="grid gap-2">
+                    {lessonsMandatory.slice(0, 10).map((lesson: any) => (
+                      <LessonRow key={lesson.id} lesson={lesson} />
+                    ))}
+                  </div>
+                ) : (
+                  <Card className="p-6 text-center">
+                    <Target className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
+                    <p className="text-muted-foreground">{t('lessonCatalog.noMandatory')}</p>
+                  </Card>
+                )}
+              </TabsContent>
+
+              <TabsContent value="all" className="space-y-2 mt-4">
+                {lessonsFilteredByCourse.length > 0 ? (
+                  <div className="grid gap-2">
+                    {lessonsFilteredByCourse.slice(0, 10).map((lesson: any) => (
+                      <LessonRow key={lesson.id} lesson={lesson} />
+                    ))}
+                  </div>
+                ) : (
+                  <Card className="p-6 text-center">
+                    <Library className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
+                    <p className="text-muted-foreground">{t('lessonCatalog.noLessons')}</p>
+                  </Card>
+                )}
+              </TabsContent>
+
+              <TabsContent value="favorites" className="space-y-2 mt-4">
+                {favoriteLessons.length > 0 ? (
+                  <div className="grid gap-2">
+                    {favoriteLessons.slice(0, 10).map((lesson: any) => (
+                      <LessonRow key={lesson.id} lesson={lesson} />
+                    ))}
+                  </div>
+                ) : (
+                  <Card className="p-6 text-center">
+                    <Heart className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
+                    <p className="text-muted-foreground">{t('lessonCatalog.noFavorites')}</p>
+                  </Card>
+                )}
+              </TabsContent>
+            </Tabs>
+          </div>
 
           {/* Quiz Effectués */}
           <div className="mt-8">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-semibold flex items-center gap-2">
                 <Zap className="h-5 w-5" />
-                Quiz Effectués
+                {t('quizzes.title')}
               </h2>
               <Link to="/courses">
                 <Button variant="ghost" size="sm">
-                  Voir l'historique <ArrowRight className="ml-2 h-4 w-4" />
+                  {t('quizzes.viewHistory')} <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
               </Link>
             </div>
@@ -342,8 +529,8 @@ export default function DashboardPage() {
             ) : (
               <Card className="p-6 text-center">
                 <BarChart3 className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
-                <p className="text-muted-foreground">Aucun quiz effectué pour l'instant</p>
-                <p className="text-xs text-muted-foreground mt-2">Commencez vos formations et passez les quiz</p>
+                <p className="text-muted-foreground">{t('quizzes.none')}</p>
+                <p className="text-xs text-muted-foreground mt-2">{t('quizzes.noneHint')}</p>
               </Card>
             )}
           </div>
@@ -352,22 +539,24 @@ export default function DashboardPage() {
           {/* Upcoming Sessions */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Sessions à venir</CardTitle>
+              <CardTitle className="text-lg">{t('upcomingSessions.title')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <UpcomingSession
-                title="Introduction au Machine Learning"
-                date="Aujourd'hui, 14:00"
-                instructor="Marie Dupont"
-              />
-              <UpcomingSession
-                title="Workshop React Avancé"
-                date="Demain, 10:00"
-                instructor="Thomas Martin"
-              />
+              {upcomingLiveSessions.length > 0 ? (
+                upcomingLiveSessions.map((session: any) => (
+                  <UpcomingSession
+                    key={session.id}
+                    title={session.title}
+                    date={formatDateTime(session.scheduledAt)}
+                    instructor={session.instructorName || t('upcomingSessions.noInstructor')}
+                  />
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">{t('upcomingSessions.none')}</p>
+              )}
               <Link to="/live">
                 <Button variant="outline" className="w-full">
-                  Voir toutes les sessions
+                  {t('upcomingSessions.viewAll')}
                 </Button>
               </Link>
             </CardContent>
@@ -378,7 +567,7 @@ export default function DashboardPage() {
             <CardHeader className="pb-3">
               <div className="flex items-center gap-2">
                 <Trophy className="h-6 w-6 text-yellow-500 animate-bounce" />
-                <CardTitle className="text-xl font-bold text-yellow-700 dark:text-yellow-300">Mes Badges Obtenus</CardTitle>
+                <CardTitle className="text-xl font-bold text-yellow-700 dark:text-yellow-300">{t('badgesCard.title')}</CardTitle>
                 {userBadgesData && userBadgesData.length > 0 && (
                   <span className="ml-auto bg-yellow-500 text-white rounded-full px-3 py-1 text-sm font-bold">
                     {userBadgesData.length}
@@ -408,7 +597,7 @@ export default function DashboardPage() {
                       <p className="font-bold text-sm leading-tight">{badge.name}</p>
                       {badge.awarded_at && (
                         <p className="text-xs text-muted-foreground mt-1">
-                          {new Date(badge.awarded_at).toLocaleDateString('fr-FR')}
+                          {new Date(badge.awarded_at).toLocaleDateString(dateLocale())}
                         </p>
                       )}
                     </div>
@@ -417,14 +606,14 @@ export default function DashboardPage() {
               ) : (
                 <div className="text-center py-8">
                   <Trophy className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
-                  <p className="text-muted-foreground font-medium">Aucun badge obtenu pour l'instant</p>
-                  <p className="text-xs text-muted-foreground mt-1">Réussissez des quiz et des cours pour débloquer des badges !</p>
+                  <p className="text-muted-foreground font-medium">{t('badgesCard.none')}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{t('badgesCard.noneHint')}</p>
                 </div>
               )}
               <Link to="/badges" className="mt-6 block">
                 <Button variant="default" className="w-full bg-yellow-500 hover:bg-yellow-600 text-white font-bold">
                   <Trophy className="h-4 w-4 mr-2" />
-                  Voir tous les badges
+                  {t('badgesCard.viewAll')}
                 </Button>
               </Link>
             </CardContent>
@@ -433,12 +622,23 @@ export default function DashboardPage() {
           {/* Leaderboard */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Classement</CardTitle>
+              <CardTitle className="text-lg">{t('leaderboard.title')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <LeaderboardItem rank={1} name="Sophie M." xp={3200} avatar="/avatars/1.jpg" />
-              <LeaderboardItem rank={2} name="Lucas T." xp={2980} avatar="/avatars/2.jpg" />
-              <LeaderboardItem rank={3} name="Emma R." xp={2750} avatar="/avatars/3.jpg" isYou />
+              {leaderboard.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">{t('leaderboard.none')}</p>
+              ) : (
+                leaderboard.map((entry: any, index: number) => (
+                  <LeaderboardItem
+                    key={entry.id}
+                    rank={index + 1}
+                    name={entry.display_name}
+                    xp={entry.xp}
+                    avatar={entry.avatar_url}
+                    isYou={entry.id === user?.id}
+                  />
+                ))
+              )}
             </CardContent>
           </Card>
         </div>
@@ -448,6 +648,7 @@ export default function DashboardPage() {
 }
 
 function CourseCard({ course }: { course: any }) {
+  const { t } = useTranslation('dashboard')
   const progress = course.progress || 0
   const isCompleted = course.isCompleted === true
 
@@ -461,41 +662,43 @@ function CourseCard({ course }: { course: any }) {
           <div className="flex items-start justify-between">
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <Badge variant="secondary" className="mb-0">{course.category || 'Formation'}</Badge>
+                <Badge variant="secondary" className="mb-0">{course.category || t('course.defaultCategory')}</Badge>
                 {isCompleted && (
-                  <Badge className="bg-green-500 hover:bg-green-600 mb-0">Terminé</Badge>
+                  <Badge className="bg-green-500 hover:bg-green-600 mb-0">{t('course.completed')}</Badge>
                 )}
               </div>
               <h3 className="font-semibold">{course.title}</h3>
               <p className="text-sm text-muted-foreground mt-1">
-                {course.instructor || 'Formateur'}
+                {course.instructor || t('course.defaultInstructor')}
               </p>
             </div>
           </div>
           <div className="mt-4">
             <div className="flex items-center justify-between text-sm mb-2">
-              <span className="text-muted-foreground">Progression</span>
+              <span className="text-muted-foreground">{t('course.progress')}</span>
               <span className="font-medium">{Math.round(progress)}%</span>
             </div>
             <Progress value={progress} className="h-2" />
             {isCompleted && (
-              <p className="text-xs text-green-600 dark:text-green-400 font-medium mt-2">✓ Formation complétée</p>
+              <p className="text-xs text-green-600 dark:text-green-400 font-medium mt-2">{t('course.completedNotice')}</p>
             )}
           </div>
           <div className="mt-4 flex items-center justify-between">
             <div className="flex items-center gap-4 text-sm text-muted-foreground">
-              <span className="flex items-center gap-1">
-                <Clock className="h-4 w-4" />
-                {course.duration || '2h 30min'}
-              </span>
+              {course.duration && (
+                <span className="flex items-center gap-1">
+                  <Clock className="h-4 w-4" />
+                  {course.duration}
+                </span>
+              )}
               <span className="flex items-center gap-1">
                 <CheckCircle className="h-4 w-4" />
-                {course.completedLessons || 0}/{course.totalLessons || 0} leçons
+                {t('course.lessonsCount', { completed: course.completedLessons || 0, total: course.totalLessons || 0 })}
               </span>
             </div>
-            <Link to={`/courses/${course.id}`}>
+            <Link to={`/courses/${course.publicId}`}>
               <Button size="sm">
-                <Play className="h-4 w-4 mr-1" /> {isCompleted ? 'Revoir' : 'Continuer'}
+                <Play className="h-4 w-4 mr-1" /> {isCompleted ? t('course.review') : t('course.continue')}
               </Button>
             </Link>
           </div>
@@ -540,6 +743,7 @@ function LeaderboardItem({
   avatar?: string
   isYou?: boolean
 }) {
+  const { t } = useTranslation('dashboard')
   const rankColors: Record<number, string> = {
     1: 'text-yellow-500',
     2: 'text-gray-400',
@@ -555,7 +759,7 @@ function LeaderboardItem({
       </Avatar>
       <div className="flex-1">
         <p className="text-sm font-medium">
-          {name} {isYou && <span className="text-primary">(vous)</span>}
+          {name} {isYou && <span className="text-primary">{t('leaderboard.you')}</span>}
         </p>
       </div>
       <span className="text-sm font-semibold text-primary">{xp} XP</span>
@@ -564,9 +768,10 @@ function LeaderboardItem({
 }
 
 function QuizAttemptCard({ attempt }: { attempt: any }) {
+  const { t } = useTranslation('dashboard')
   const isPassed = attempt.score >= (attempt.passing_score || 60);
   const passPercentage = attempt.passing_score || 60;
-  
+
   return (
     <Card className={`overflow-hidden transition-all hover:shadow-md ${isPassed ? 'border-green-200 bg-green-50/30 dark:bg-green-950/10 dark:border-green-800' : 'border-orange-200 bg-orange-50/30 dark:bg-orange-950/10 dark:border-orange-800'}`}>
       <div className="flex flex-col md:flex-row items-start md:items-center gap-4 p-4">
@@ -574,33 +779,33 @@ function QuizAttemptCard({ attempt }: { attempt: any }) {
           <div className="flex items-center gap-2 mb-2">
             <h3 className="font-semibold">{attempt.quiz_title || 'Quiz'}</h3>
             <Badge className={isPassed ? 'bg-green-500 hover:bg-green-600' : 'bg-orange-500 hover:bg-orange-600'}>
-              {isPassed ? '✓ Réussi' : '⚠ À reprendre'}
+              {isPassed ? t('quizzes.passed') : t('quizzes.retry')}
             </Badge>
           </div>
           <p className="text-sm text-muted-foreground">
-            {attempt.lesson_title && `Leçon: ${attempt.lesson_title}`}
+            {attempt.lesson_title && t('quizzes.lesson', { title: attempt.lesson_title })}
             {attempt.lesson_title && attempt.course_title && ' • '}
             {attempt.course_title && `${attempt.course_title}`}
           </p>
         </div>
-        
+
         <div className="flex items-center gap-6">
           <div className="text-right">
             <div className="text-2xl font-bold">{attempt.score}%</div>
-            <p className="text-xs text-muted-foreground">Requis: {passPercentage}%</p>
+            <p className="text-xs text-muted-foreground">{t('quizzes.required', { percent: passPercentage })}</p>
           </div>
-          
+
           <div className="text-center">
-            <p className="text-xs text-muted-foreground">Passé le</p>
+            <p className="text-xs text-muted-foreground">{t('quizzes.takenOn')}</p>
             <p className="text-sm font-medium">
-              {attempt.submitted_at 
-                ? new Date(attempt.submitted_at).toLocaleDateString('fr-FR', { 
-                    day: '2-digit', 
-                    month: '2-digit' 
+              {attempt.submitted_at
+                ? new Date(attempt.submitted_at).toLocaleDateString(dateLocale(), {
+                    day: '2-digit',
+                    month: '2-digit'
                   })
-                : new Date(attempt.started_at).toLocaleDateString('fr-FR', { 
-                    day: '2-digit', 
-                    month: '2-digit' 
+                : new Date(attempt.started_at).toLocaleDateString(dateLocale(), {
+                    day: '2-digit',
+                    month: '2-digit'
                   })}
             </p>
           </div>

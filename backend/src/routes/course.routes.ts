@@ -2,8 +2,11 @@ import { Router } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
 import { CourseService, ModuleService, LessonService, ContentService } from '../services/course.service';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.middleware';
-import { BadRequestError } from '../middleware/error.middleware';
+import { BadRequestError, ForbiddenError } from '../middleware/error.middleware';
 import { AuditService } from '../services/audit.service';
+import { DatabaseService } from '../services/database.service';
+import { parsePagination, buildPaginationMeta } from '../utils/pagination';
+import { resolveEntityId } from '../utils/resolvePublicId';
 
 const router = Router();
 
@@ -22,8 +25,7 @@ const validate = (req: any) => {
  */
 router.get('/', authenticate, async (req: AuthRequest, res, next) => {
   try {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+    const { page, limit } = parsePagination(req, { defaultLimit: 20, maxLimit: 100 });
     const sortBy = req.query.sortBy as string;
     const sortOrder = req.query.sortOrder as 'asc' | 'desc';
     const search = req.query.search as string;
@@ -43,12 +45,7 @@ router.get('/', authenticate, async (req: AuthRequest, res, next) => {
     res.json({
       success: true,
       data: result.data,
-      meta: {
-        page,
-        limit,
-        total: result.total,
-        totalPages: Math.ceil(result.total / limit),
-      },
+      meta: buildPaginationMeta(result.total, page, limit),
     });
   } catch (error) {
     next(error);
@@ -125,7 +122,7 @@ router.get('/categories', authenticate, async (req: AuthRequest, res, next) => {
  */
 router.get('/:id', authenticate, async (req: AuthRequest, res, next) => {
   try {
-    const courseId = parseInt(req.params.id, 10);
+    const courseId = await resolveEntityId('courses', req.params.id, req.user!.tenantId);
     const course = await CourseService.findById(req.user!.tenantId, courseId);
 
     res.json({
@@ -143,12 +140,58 @@ router.get('/:id', authenticate, async (req: AuthRequest, res, next) => {
  */
 router.get('/:id/full', authenticate, async (req: AuthRequest, res, next) => {
   try {
-    const courseId = parseInt(req.params.id, 10);
+    const courseId = await resolveEntityId('courses', req.params.id, req.user!.tenantId);
+
+    const canAccess = await CourseService.canAccessCourse(req.user!.tenantId, courseId, req.user!);
+    if (!canAccess) {
+      throw ForbiddenError('You do not have access to this course');
+    }
+
     const fullCourse = await CourseService.getFullStructure(req.user!.tenantId, courseId);
 
     res.json({
       success: true,
       data: fullCourse,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @route GET /api/v1/courses/:id/my-progress
+ * @desc The current user's real enrollment/progress state for this course --
+ * used by the course detail page instead of assuming every visitor is
+ * enrolled and every lesson incomplete.
+ */
+router.get('/:id/my-progress', authenticate, async (req: AuthRequest, res, next) => {
+  try {
+    const courseId = await resolveEntityId('courses', req.params.id, req.user!.tenantId);
+    const tenantId = req.user!.tenantId;
+    const userId = req.user!.id;
+
+    const enrollments = await DatabaseService.query<any>(
+      `SELECT progress_percent, enrolled_at, completed_at
+       FROM enrollments WHERE course_id = @courseId AND user_id = @userId AND tenant_id = @tenantId`,
+      { courseId, userId, tenantId }
+    );
+
+    const completedLessons = await DatabaseService.query<{ lesson_id: number }>(
+      `SELECT lp.lesson_id
+       FROM lesson_progress lp
+       JOIN lessons l ON l.id = lp.lesson_id
+       JOIN modules m ON m.id = l.module_id
+       WHERE m.course_id = @courseId AND lp.user_id = @userId AND lp.tenant_id = @tenantId AND lp.status = 'completed'`,
+      { courseId, userId, tenantId }
+    );
+
+    res.json({
+      success: true,
+      data: {
+        enrolled: enrollments.length > 0,
+        progressPercent: enrollments[0]?.progress_percent || 0,
+        completedLessonIds: completedLessons.map((r) => r.lesson_id),
+      },
     });
   } catch (error) {
     next(error);

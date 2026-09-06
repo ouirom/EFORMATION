@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { body, validationResult } from 'express-validator';
-import { authenticate, authorize, AuthRequest } from '../middleware/auth.middleware';
+import { authenticate, authorize, AuthRequest, ROLE_HIERARCHY } from '../middleware/auth.middleware';
 import { DatabaseService } from '../services/database.service';
 import { db, IS_PG } from '../database/db-helpers';
-import { BadRequestError, NotFoundError } from '../middleware/error.middleware';
+import { BadRequestError, NotFoundError, ForbiddenError } from '../middleware/error.middleware';
+import { parsePagination, buildPaginationMeta } from '../utils/pagination';
 
 const router = Router();
 
@@ -14,6 +15,11 @@ const validate = (req: any) => {
   }
 };
 
+// Manager and above can author/moderate blog content -- matches the authorize()
+// threshold already used on the write routes below. A plain role-name array here
+// (e.g. ['admin', 'director']) would silently exclude super_admin and manager.
+const canManageBlog = (role: string) => (ROLE_HIERARCHY[role] || 0) >= ROLE_HIERARCHY.manager;
+
 // ==================== BLOG POSTS ====================
 
 /**
@@ -22,48 +28,52 @@ const validate = (req: any) => {
  */
 router.get('/posts', authenticate, async (req: AuthRequest, res, next) => {
   try {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = Math.min(parseInt(req.query.limit as string) || 10, 50);
-    const offset = (page - 1) * limit;
+    const { page, limit, offset } = parsePagination(req, { defaultLimit: 10, maxLimit: 50 });
     const categoryId = req.query.categoryId as string;
-    const tag = req.query.tag as string;
+    const tagId = req.query.tagId as string;
     const status = req.query.status as string;
     const search = req.query.search as string;
 
-    let query = `SELECT bp.*, u.display_name as author_name, bc.name as category_name,
-                        (SELECT COUNT(*) FROM blog_comments WHERE post_id = bp.id AND deleted_at IS NULL) as comment_count
-                 FROM blog_posts bp
-                 LEFT JOIN users u ON bp.author_id = u.id
-                 LEFT JOIN blog_categories bc ON bp.category_id = bc.id
-                 WHERE bp.tenant_id = @tenantId`;
+    let whereClause = 'WHERE bp.tenant_id = @tenantId';
     const params: Record<string, any> = { tenantId: req.user!.tenantId };
 
-    // Non-admins only see published posts
-    if (!['admin', 'director'].includes(req.user!.role)) {
-      query += ' AND bp.status = @pubStatus';
+    // Non-managers only see published posts
+    if (!canManageBlog(req.user!.role)) {
+      whereClause += ' AND bp.status = @pubStatus';
       params.pubStatus = 'published';
     } else if (status) {
-      query += ' AND bp.status = @status';
+      whereClause += ' AND bp.status = @status';
       params.status = status;
     }
 
     if (categoryId) {
-      query += ' AND bp.category_id = @categoryId';
+      whereClause += ' AND bp.category_id = @categoryId';
       params.categoryId = parseInt(categoryId, 10);
     }
 
+    if (tagId) {
+      whereClause += ' AND EXISTS (SELECT 1 FROM blog_post_tags bpt WHERE bpt.post_id = bp.id AND bpt.tag_id = @tagId)';
+      params.tagId = parseInt(tagId, 10);
+    }
+
     if (search) {
-      query += ' AND (bp.title LIKE @search OR bp.body LIKE @search)';
+      whereClause += ' AND (bp.title LIKE @search OR bp.body LIKE @search)';
       params.search = `%${search}%`;
     }
 
     const [countResult, posts] = await Promise.all([
       DatabaseService.query<{ total: number }>(
-        `SELECT COUNT(*) as total FROM blog_posts bp WHERE bp.tenant_id = @tenantId ${!['admin', 'director'].includes(req.user!.role) ? "AND bp.status = 'published'" : ''}`,
-        { tenantId: req.user!.tenantId }
+        `SELECT COUNT(*) as total FROM blog_posts bp ${whereClause}`,
+        params
       ),
       DatabaseService.query<any>(
-        `${query} ORDER BY bp.created_at DESC OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY`,
+        `SELECT bp.*, u.display_name as author_name, bc.name as category_name,
+                (SELECT COUNT(*) FROM blog_comments WHERE post_id = bp.id AND deleted_at IS NULL) as comment_count
+         FROM blog_posts bp
+         LEFT JOIN users u ON bp.author_id = u.id
+         LEFT JOIN blog_categories bc ON bp.category_id = bc.id
+         ${whereClause}
+         ORDER BY bp.created_at DESC OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY`,
         { ...params, offset, limit }
       ),
     ]);
@@ -84,12 +94,7 @@ router.get('/posts', authenticate, async (req: AuthRequest, res, next) => {
     res.json({
       success: true,
       data: postsWithTags,
-      meta: {
-        page,
-        limit,
-        total: countResult[0].total,
-        totalPages: Math.ceil(countResult[0].total / limit),
-      },
+      meta: buildPaginationMeta(countResult[0].total, page, limit),
     });
   } catch (error) {
     next(error);
@@ -114,6 +119,13 @@ router.get('/posts/:id', authenticate, async (req: AuthRequest, res, next) => {
     );
 
     if (posts.length === 0) {
+      throw NotFoundError('Blog post');
+    }
+
+    // A draft/archived post is only visible to the roles that can manage the
+    // blog -- otherwise anyone could read an unpublished post just by guessing
+    // its id, bypassing the status filter the list endpoint applies.
+    if (posts[0].status !== 'published' && !canManageBlog(req.user!.role)) {
       throw NotFoundError('Blog post');
     }
 
@@ -224,6 +236,14 @@ router.put(
       const postId = parseInt(req.params.id, 10);
       const { title, body: postBody, categoryId, status, tagIds, featuredImageId } = req.body;
 
+      const existing = await DatabaseService.query<{ id: number }>(
+        'SELECT id FROM blog_posts WHERE id = @postId AND tenant_id = @tenantId',
+        { postId, tenantId: req.user!.tenantId }
+      );
+      if (existing.length === 0) {
+        throw NotFoundError('Blog post');
+      }
+
       const updateFields: string[] = [];
       const params: Record<string, any> = { postId, tenantId: req.user!.tenantId };
 
@@ -276,8 +296,8 @@ router.put(
       }
 
       const post = await DatabaseService.query<any>(
-        'SELECT * FROM blog_posts WHERE id = @postId',
-        { postId }
+        'SELECT * FROM blog_posts WHERE id = @postId AND tenant_id = @tenantId',
+        { postId, tenantId: req.user!.tenantId }
       );
 
       res.json({ success: true, data: post[0] });
@@ -294,6 +314,10 @@ router.put(
 router.delete('/posts/:id', authenticate, authorize('admin', 'director'), async (req: AuthRequest, res, next) => {
   try {
     const postId = parseInt(req.params.id, 10);
+    // blog_post_tags/blog_comments have no ON DELETE CASCADE -- deleting a post
+    // that still has tags or comments would otherwise fail on the FK constraint.
+    await DatabaseService.execute('DELETE FROM blog_post_tags WHERE post_id = @postId', { postId });
+    await DatabaseService.execute('DELETE FROM blog_comments WHERE post_id = @postId', { postId });
     await DatabaseService.execute(
       'DELETE FROM blog_posts WHERE id = @postId AND tenant_id = @tenantId',
       { postId, tenantId: req.user!.tenantId }
@@ -342,6 +366,14 @@ router.post(
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/(^-|-$)/g, '');
+
+      const existing = await DatabaseService.query<{ id: number }>(
+        'SELECT id FROM blog_categories WHERE tenant_id = @tenantId AND slug = @slug',
+        { tenantId: req.user!.tenantId, slug }
+      );
+      if (existing.length > 0) {
+        throw BadRequestError('This category already exists');
+      }
 
       const result = await DatabaseService.query<{ id: number }>(
         IS_PG
@@ -405,6 +437,14 @@ router.post(
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/(^-|-$)/g, '');
 
+      const existing = await DatabaseService.query<{ id: number }>(
+        'SELECT id FROM blog_tags WHERE tenant_id = @tenantId AND slug = @slug',
+        { tenantId: req.user!.tenantId, slug }
+      );
+      if (existing.length > 0) {
+        throw BadRequestError('This tag already exists');
+      }
+
       const result = await DatabaseService.query<{ id: number }>(
         IS_PG
           ? `INSERT INTO blog_tags (tenant_id, name, slug)
@@ -438,13 +478,21 @@ router.get('/posts/:id/comments', authenticate, async (req: AuthRequest, res, ne
   try {
     const postId = parseInt(req.params.id, 10);
 
+    const posts = await DatabaseService.query<{ status: string }>(
+      'SELECT status FROM blog_posts WHERE id = @postId AND tenant_id = @tenantId',
+      { postId, tenantId: req.user!.tenantId }
+    );
+    if (posts.length === 0 || (posts[0].status !== 'published' && !canManageBlog(req.user!.role))) {
+      throw NotFoundError('Blog post');
+    }
+
     const comments = await DatabaseService.query<any>(
       `SELECT bc.*, u.display_name as author_name
        FROM blog_comments bc
        LEFT JOIN users u ON bc.user_id = u.id
-       WHERE bc.post_id = @postId AND bc.deleted_at IS NULL
+       WHERE bc.post_id = @postId AND bc.tenant_id = @tenantId AND bc.deleted_at IS NULL
        ORDER BY bc.created_at ASC`,
-      { postId }
+      { postId, tenantId: req.user!.tenantId }
     );
 
     // Build comment tree
@@ -489,6 +537,14 @@ router.post(
       validate(req);
       const postId = parseInt(req.params.id, 10);
 
+      const posts = await DatabaseService.query<{ id: number }>(
+        'SELECT id FROM blog_posts WHERE id = @postId AND tenant_id = @tenantId',
+        { postId, tenantId: req.user!.tenantId }
+      );
+      if (posts.length === 0) {
+        throw NotFoundError('Blog post');
+      }
+
       const result = await DatabaseService.query<{ id: number }>(
         IS_PG
           ? `INSERT INTO blog_comments (tenant_id, post_id, user_id, body, parent_id)
@@ -531,21 +587,21 @@ router.delete('/comments/:id', authenticate, async (req: AuthRequest, res, next)
 
     // Check ownership or admin
     const comments = await DatabaseService.query<any>(
-      'SELECT user_id FROM blog_comments WHERE id = @commentId',
-      { commentId }
+      'SELECT user_id FROM blog_comments WHERE id = @commentId AND tenant_id = @tenantId',
+      { commentId, tenantId: req.user!.tenantId }
     );
 
     if (comments.length === 0) {
       throw NotFoundError('Comment');
     }
 
-    if (comments[0].user_id !== req.user!.id && !['admin', 'director'].includes(req.user!.role)) {
-      throw BadRequestError('Not authorized to delete this comment');
+    if (comments[0].user_id !== req.user!.id && !canManageBlog(req.user!.role)) {
+      throw ForbiddenError('Not authorized to delete this comment');
     }
 
     await DatabaseService.execute(
-      `UPDATE blog_comments SET deleted_at = ${db.now()} WHERE id = @commentId`,
-      { commentId }
+      `UPDATE blog_comments SET deleted_at = ${db.now()} WHERE id = @commentId AND tenant_id = @tenantId`,
+      { commentId, tenantId: req.user!.tenantId }
     );
 
     res.json({ success: true, message: 'Comment deleted' });

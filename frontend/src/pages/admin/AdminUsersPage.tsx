@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -23,6 +24,7 @@ import {
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { PageLoading } from '@/components/ui/loading'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { useToast } from '@/components/ui/use-toast'
 import { getInitials, formatRelativeTime } from '@/lib/utils'
 import { downloadCsv } from '@/lib/csv'
@@ -39,6 +41,9 @@ import {
   UserCheck,
   UserMinus,
   UserX,
+  Tag,
+  X,
+  Check,
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -49,22 +54,18 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { api } from '@/services/api'
 import { useAuth } from '@/contexts/AuthContext'
+import { EmailConfirmDialog, PendingNotification } from '@/components/EmailConfirmDialog'
 
 // Same permission level as 'agent' — externe/stagiaire can be assigned a direct
 // supervisor just like an agent can.
 const AGENT_LIKE_ROLES = ['agent', 'externe', 'stagiaire']
 
 // admin/super_admin are deliberately excluded — see backend INACTIVITY_POLICY_ROLES.
-const INACTIVITY_POLICY_ROLES: { value: string; label: string }[] = [
-  { value: 'director', label: 'Directeur' },
-  { value: 'manager', label: 'Manager' },
-  { value: 'supervisor', label: 'Superviseur' },
-  { value: 'agent', label: 'Agent' },
-  { value: 'externe', label: 'Externe' },
-  { value: 'stagiaire', label: 'Stagiaire' },
-]
+const INACTIVITY_POLICY_ROLE_VALUES = ['director', 'manager', 'supervisor', 'agent', 'externe', 'stagiaire']
 
 function InactivityPolicyCard() {
+  const { t } = useTranslation('admin')
+  const { t: tCommon } = useTranslation('common')
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const [days, setDays] = useState<Record<string, string>>({})
@@ -80,13 +81,13 @@ function InactivityPolicyCard() {
     mutationFn: ({ role, maxInactiveDays }: { role: string; maxInactiveDays: number | null }) =>
       api.settings.setInactivityPolicy(role, maxInactiveDays),
     onSuccess: () => {
-      toast({ title: 'Politique mise à jour' })
+      toast({ title: t('users.inactivityPolicy.updatedTitle') })
       queryClient.invalidateQueries({ queryKey: ['inactivity-policies'] })
     },
     onError: (error: any) => {
       toast({
-        title: 'Erreur',
-        description: error.response?.data?.error?.message || 'Impossible de mettre à jour la politique',
+        title: tCommon('status.error'),
+        description: error.response?.data?.error?.message || t('users.inactivityPolicy.updateErrorDescription'),
         variant: 'destructive',
       })
     },
@@ -95,22 +96,23 @@ function InactivityPolicyCard() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Suspension automatique pour inactivité</CardTitle>
+        <CardTitle className="text-base">{t('users.inactivityPolicy.title')}</CardTitle>
         <CardDescription>
-          Un compte est suspendu automatiquement s'il n'y a eu aucune connexion depuis ce nombre de jours. Laissez vide pour désactiver la suspension automatique de ce type de compte.
+          {t('users.inactivityPolicy.description')}
         </CardDescription>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {INACTIVITY_POLICY_ROLES.map(({ value, label }) => {
+          {INACTIVITY_POLICY_ROLE_VALUES.map((value) => {
             const currentValue = days[value] !== undefined ? days[value] : (policyByRole[value] ?? '')
             return (
               <div key={value} className="flex items-center gap-2">
-                <Label className="w-24 shrink-0 text-sm">{label}</Label>
+                <Label htmlFor={`inactivity-policy-${value}`} className="w-24 shrink-0 text-sm">{t(`users.roles.${value}`)}</Label>
                 <Input
+                  id={`inactivity-policy-${value}`}
                   type="number"
                   min={1}
-                  placeholder="Désactivé"
+                  placeholder={t('users.inactivityPolicy.disabledPlaceholder')}
                   className="w-24"
                   value={currentValue}
                   onChange={(e) => setDays({ ...days, [value]: e.target.value })}
@@ -125,7 +127,7 @@ function InactivityPolicyCard() {
                     saveMutation.mutate({ role: value, maxInactiveDays })
                   }}
                 >
-                  Enregistrer
+                  {t('users.inactivityPolicy.save')}
                 </Button>
               </div>
             )
@@ -137,6 +139,8 @@ function InactivityPolicyCard() {
 }
 
 export default function AdminUsersPage() {
+  const { t } = useTranslation('admin')
+  const { t: tCommon } = useTranslation('common')
   const { toast } = useToast()
   const { user: currentUser } = useAuth()
   const queryClient = useQueryClient()
@@ -159,17 +163,25 @@ export default function AdminUsersPage() {
     setPage(1)
   }, [debouncedSearch, roleFilter, statusFilter])
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
+  const [pendingNotification, setPendingNotification] = useState<PendingNotification | null>(null)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false)
   const [importFile, setImportFile] = useState<File | null>(null)
   const [importResult, setImportResult] = useState<any>(null)
   const [selectedUser, setSelectedUser] = useState<any>(null)
+  const [userPendingDelete, setUserPendingDelete] = useState<any>(null)
+  const [jobTitlePendingDelete, setJobTitlePendingDelete] = useState<any>(null)
+  const [isJobTitlesDialogOpen, setIsJobTitlesDialogOpen] = useState(false)
+  const [newJobTitleLabel, setNewJobTitleLabel] = useState('')
+  const [editingJobTitleId, setEditingJobTitleId] = useState<number | null>(null)
+  const [editingJobTitleLabel, setEditingJobTitleLabel] = useState('')
   const [newUser, setNewUser] = useState({
     firstName: '',
     lastName: '',
     email: '',
     password: '',
     role: '',
+    jobTitle: '',
     enterpriseId: '',
     directionId: '',
     serviceId: '',
@@ -178,6 +190,7 @@ export default function AdminUsersPage() {
   const [editUser, setEditUser] = useState({
     displayName: '',
     role: '',
+    jobTitle: '',
     enterpriseId: '',
     directionId: '',
     serviceId: '',
@@ -226,19 +239,70 @@ export default function AdminUsersPage() {
     queryFn: () => api.users.list({ role: 'supervisor', limit: 100 }).then((r: any) => r.data || []),
   })
 
-  const createMutation = useMutation({
-    mutationFn: (userData: any) => api.users.create(userData),
+  const { data: jobTitles = [] } = useQuery({
+    queryKey: ['job-titles'],
+    queryFn: () => api.jobTitles.list(),
+  })
+
+  const createJobTitleMutation = useMutation({
+    mutationFn: (label: string) => api.jobTitles.create(label),
     onSuccess: () => {
-      toast({ title: 'Utilisateur créé', description: 'Le compte a été créé avec succès' })
-      queryClient.invalidateQueries({ queryKey: ['admin-users'] })
-      setIsAddDialogOpen(false)
-      setNewUser({ firstName: '', lastName: '', email: '', password: '', role: '', enterpriseId: '', directionId: '', serviceId: '', supervisorId: '' })
+      queryClient.invalidateQueries({ queryKey: ['job-titles'] })
+      setNewJobTitleLabel('')
+      toast({ title: tCommon('status.success'), description: t('users.jobTitles.toasts.createdDescription') })
     },
     onError: (error: any) => {
-      toast({ 
-        title: 'Erreur', 
-        description: error.response?.data?.error?.message || 'Impossible de créer l\'utilisateur', 
-        variant: 'destructive' 
+      toast({
+        title: tCommon('status.error'),
+        description: error.response?.data?.error?.message || t('users.jobTitles.toasts.createErrorDescription'),
+        variant: 'destructive',
+      })
+    },
+  })
+
+  const updateJobTitleMutation = useMutation({
+    mutationFn: ({ id, label }: { id: number; label: string }) => api.jobTitles.update(id, label),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['job-titles'] })
+      setEditingJobTitleId(null)
+      toast({ title: tCommon('status.success'), description: t('users.jobTitles.toasts.updatedDescription') })
+    },
+    onError: (error: any) => {
+      toast({
+        title: tCommon('status.error'),
+        description: error.response?.data?.error?.message || t('users.jobTitles.toasts.updateErrorDescription'),
+        variant: 'destructive',
+      })
+    },
+  })
+
+  const deleteJobTitleMutation = useMutation({
+    mutationFn: (id: number) => api.jobTitles.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['job-titles'] })
+      toast({ title: tCommon('status.success'), description: t('users.jobTitles.toasts.deletedDescription') })
+    },
+    onError: () => {
+      toast({ title: tCommon('status.error'), description: t('users.jobTitles.toasts.deleteErrorDescription'), variant: 'destructive' })
+    },
+  })
+
+  const createMutation = useMutation({
+    mutationFn: (userData: any) => api.post('/users', userData),
+    onSuccess: (response) => {
+      toast({ title: t('users.toasts.createdTitle'), description: t('users.toasts.createdDescription') })
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+      setIsAddDialogOpen(false)
+      setNewUser({ firstName: '', lastName: '', email: '', password: '', role: '', jobTitle: '', enterpriseId: '', directionId: '', serviceId: '', supervisorId: '' })
+      if (response.data.pendingNotification) {
+        setPendingNotification(response.data.pendingNotification)
+      }
+    },
+    onError: (error: any) => {
+      toast({
+        title: tCommon('status.error'),
+        description: error.response?.data?.error?.message || t('users.toasts.createErrorDescription'),
+        variant: 'destructive'
       })
     },
   })
@@ -246,27 +310,27 @@ export default function AdminUsersPage() {
   const deleteMutation = useMutation({
     mutationFn: (userId: number) => api.users.delete(userId),
     onSuccess: () => {
-      toast({ title: 'Utilisateur supprimé', description: 'L\'utilisateur a été supprimé avec succès' })
+      toast({ title: t('users.toasts.deletedTitle'), description: t('users.toasts.deletedDescription') })
       queryClient.invalidateQueries({ queryKey: ['admin-users'] })
     },
     onError: (error: any) => {
-      toast({ title: 'Erreur', description: error.response?.data?.error?.message || 'Impossible de supprimer', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: error.response?.data?.error?.message || t('users.toasts.deleteErrorDescription'), variant: 'destructive' })
     },
   })
 
   const updateMutation = useMutation({
     mutationFn: ({ userId, data }: { userId: number; data: any }) => api.users.update(userId, data),
     onSuccess: () => {
-      toast({ title: 'Utilisateur modifié', description: 'Les modifications ont été enregistrées' })
+      toast({ title: t('users.toasts.updatedTitle'), description: t('users.toasts.updatedDescription') })
       queryClient.invalidateQueries({ queryKey: ['admin-users'] })
       setIsEditDialogOpen(false)
       setSelectedUser(null)
     },
     onError: (error: any) => {
-      toast({ 
-        title: 'Erreur', 
-        description: error.response?.data?.error?.message || 'Impossible de modifier l\'utilisateur', 
-        variant: 'destructive' 
+      toast({
+        title: tCommon('status.error'),
+        description: error.response?.data?.error?.message || t('users.toasts.updateErrorDescription'),
+        variant: 'destructive'
       })
     },
   })
@@ -274,15 +338,18 @@ export default function AdminUsersPage() {
   const changeStatusMutation = useMutation({
     mutationFn: ({ userId, status }: { userId: number; status: string }) =>
       api.put(`/users/${userId}/status`, { status }),
-    onSuccess: () => {
-      toast({ title: 'Statut mis à jour' })
+    onSuccess: (response) => {
+      toast({ title: t('users.toasts.statusUpdatedTitle') })
       queryClient.invalidateQueries({ queryKey: ['admin-users'] })
       queryClient.invalidateQueries({ queryKey: ['admin-users-pending-count'] })
+      if (response.data.pendingNotification) {
+        setPendingNotification(response.data.pendingNotification)
+      }
     },
     onError: (error: any) => {
       toast({
-        title: 'Erreur',
-        description: error.response?.data?.error?.message || 'Impossible de changer le statut',
+        title: tCommon('status.error'),
+        description: error.response?.data?.error?.message || t('users.toasts.statusUpdateErrorDescription'),
         variant: 'destructive',
       })
     },
@@ -300,12 +367,12 @@ export default function AdminUsersPage() {
     onSuccess: (data) => {
       setImportResult(data)
       queryClient.invalidateQueries({ queryKey: ['admin-users'] })
-      toast({ title: 'Import terminé', description: `${data.created} utilisateur(s) créé(s)` })
+      toast({ title: t('users.toasts.importCompleteTitle'), description: t('users.toasts.importCompleteDescription', { count: data.created }) })
     },
     onError: (error: any) => {
       toast({
-        title: 'Erreur',
-        description: error.response?.data?.error?.message || "Impossible d'importer le fichier",
+        title: tCommon('status.error'),
+        description: error.response?.data?.error?.message || t('users.toasts.importErrorDescription'),
         variant: 'destructive',
       })
     },
@@ -327,6 +394,7 @@ export default function AdminUsersPage() {
     setEditUser({
       displayName: user.display_name || '',
       role: user.role || '',
+      jobTitle: user.job_title || '',
       enterpriseId: user.enterprise_id ? String(user.enterprise_id) : '',
       directionId: user.direction_id ? String(user.direction_id) : '',
       serviceId: user.service_id ? String(user.service_id) : '',
@@ -343,6 +411,7 @@ export default function AdminUsersPage() {
       data: {
         displayName: editUser.displayName,
         role: editUser.role,
+        jobTitle: editUser.jobTitle || 'Défaut',
         enterpriseId: editUser.enterpriseId ? parseInt(editUser.enterpriseId) : null,
         directionId: editUser.directionId ? parseInt(editUser.directionId) : null,
         serviceId: editUser.serviceId ? parseInt(editUser.serviceId) : null,
@@ -357,14 +426,12 @@ export default function AdminUsersPage() {
   }
 
   const handleDeleteUser = (user: any) => {
-    if (window.confirm(`Êtes-vous sûr de vouloir supprimer ${user.display_name || user.email} ?`)) {
-      deleteMutation.mutate(user.id)
-    }
+    setUserPendingDelete(user)
   }
 
   const handleCreateUser = async () => {
     if (!newUser.email || !newUser.password || !newUser.role || !newUser.firstName || !newUser.lastName) {
-      toast({ title: 'Erreur', description: 'Veuillez remplir tous les champs obligatoires', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: t('users.toasts.fillRequiredFields'), variant: 'destructive' })
       return
     }
     
@@ -373,6 +440,7 @@ export default function AdminUsersPage() {
       password: newUser.password,
       displayName: `${newUser.firstName} ${newUser.lastName}`,
       role: newUser.role,
+      jobTitle: newUser.jobTitle.trim() || undefined,
       enterpriseId: newUser.enterpriseId ? parseInt(newUser.enterpriseId) : undefined,
       directionId: newUser.directionId ? parseInt(newUser.directionId) : undefined,
       serviceId: newUser.serviceId ? parseInt(newUser.serviceId) : undefined,
@@ -387,7 +455,7 @@ export default function AdminUsersPage() {
   if (isError) {
     return (
       <div className="rounded-md border border-destructive/50 bg-destructive/10 p-6 text-center text-destructive">
-        Impossible de charger la liste des utilisateurs. Veuillez réessayer.
+        {t('users.loadError')}
       </div>
     )
   }
@@ -396,20 +464,21 @@ export default function AdminUsersPage() {
   const meta = data?.meta as { page: number; limit: number; total: number; totalPages: number } | undefined
 
   const roleLabels: Record<string, string> = {
-    admin: 'Administrateur',
-    director: 'Directeur',
-    manager: 'Manager',
-    supervisor: 'Superviseur',
-    agent: 'Agent',
-    externe: 'Externe',
-    stagiaire: 'Stagiaire',
+    super_admin: t('users.roles.superAdmin'),
+    admin: t('users.roles.admin'),
+    director: t('users.roles.director'),
+    manager: t('users.roles.manager'),
+    supervisor: t('users.roles.supervisor'),
+    agent: t('users.roles.agent'),
+    externe: t('users.roles.externe'),
+    stagiaire: t('users.roles.stagiaire'),
   }
 
   const statusLabels: Record<string, string> = {
-    pending: 'En attente',
-    active: 'Actif',
-    suspended: 'Suspendu',
-    deactivated: 'Désactivé',
+    pending: t('users.statuses.pending'),
+    active: t('users.statuses.active'),
+    suspended: t('users.statuses.suspended'),
+    deactivated: t('users.statuses.deactivated'),
   }
   const statusColors: Record<string, string> = {
     pending: 'bg-amber-100 text-amber-800',
@@ -424,14 +493,15 @@ export default function AdminUsersPage() {
     downloadCsv(
       `utilisateurs-${Date.now()}.csv`,
       [
-        { key: 'display_name', label: 'Nom' },
+        { key: 'display_name', label: t('users.table.user') },
         { key: 'email', label: 'Email' },
-        { key: 'enterprise_name', label: 'Entreprise' },
-        { key: 'direction_name', label: 'Direction' },
-        { key: 'service_name', label: 'Service' },
-        { key: 'supervisor_name', label: 'Superviseur' },
-        { key: 'role_label', label: 'Rôle' },
-        { key: 'status_label', label: 'Statut' },
+        { key: 'job_title', label: t('users.editDialog.jobTitle') },
+        { key: 'enterprise_name', label: t('users.editDialog.enterprise') },
+        { key: 'direction_name', label: t('users.editDialog.direction') },
+        { key: 'service_name', label: t('users.editDialog.service') },
+        { key: 'supervisor_name', label: t('users.editDialog.supervisor') },
+        { key: 'role_label', label: t('users.table.role') },
+        { key: 'status_label', label: t('users.table.status') },
       ],
       users.map((u: any) => ({
         ...u,
@@ -446,9 +516,9 @@ export default function AdminUsersPage() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold">Gestion des utilisateurs</h1>
+          <h1 className="text-3xl font-bold">{t('users.title')}</h1>
           <p className="text-muted-foreground">
-            {meta?.total ?? users.length} utilisateurs au total
+            {t('users.totalUsers', { count: meta?.total ?? users.length })}
             {pendingCount > 0 && (
               <>
                 {' '}·{' '}
@@ -457,7 +527,7 @@ export default function AdminUsersPage() {
                   className="text-amber-700 underline underline-offset-2 hover:no-underline"
                   onClick={() => setStatusFilter('pending')}
                 >
-                  {pendingCount} en attente d'activation
+                  {t('users.pendingActivation', { count: pendingCount })}
                 </button>
               </>
             )}
@@ -466,41 +536,45 @@ export default function AdminUsersPage() {
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => setIsImportDialogOpen(true)}>
             <Upload className="h-4 w-4 mr-2" />
-            Importer
+            {t('users.import')}
           </Button>
           <Button variant="outline" onClick={handleExport} disabled={users.length === 0}>
             <Download className="h-4 w-4 mr-2" />
-            Exporter
+            {t('users.export')}
+          </Button>
+          <Button variant="outline" onClick={() => setIsJobTitlesDialogOpen(true)}>
+            <Tag className="h-4 w-4 mr-2" />
+            {t('users.jobTitles.manageButton')}
           </Button>
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
             <DialogTrigger asChild>
               <Button>
                 <Plus className="h-4 w-4 mr-2" />
-                Ajouter
+                {t('users.add')}
               </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Nouvel utilisateur</DialogTitle>
+                <DialogTitle>{t('users.addDialog.title')}</DialogTitle>
                 <DialogDescription>
-                  Créez un nouveau compte utilisateur
+                  {t('users.addDialog.description')}
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="firstName">Prénom *</Label>
-                    <Input 
-                      id="firstName" 
-                      placeholder="Jean" 
+                    <Label htmlFor="firstName">{t('users.addDialog.firstName')}</Label>
+                    <Input
+                      id="firstName"
+                      placeholder="Jean"
                       value={newUser.firstName}
                       onChange={(e) => setNewUser({ ...newUser, firstName: e.target.value })}
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="lastName">Nom *</Label>
-                    <Input 
-                      id="lastName" 
+                    <Label htmlFor="lastName">{t('users.addDialog.lastName')}</Label>
+                    <Input
+                      id="lastName"
                       placeholder="Dupont"
                       value={newUser.lastName}
                       onChange={(e) => setNewUser({ ...newUser, lastName: e.target.value })}
@@ -508,57 +582,73 @@ export default function AdminUsersPage() {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="email">Email *</Label>
-                  <Input 
-                    id="email" 
-                    type="email" 
+                  <Label htmlFor="email">{t('users.addDialog.email')}</Label>
+                  <Input
+                    id="email"
+                    type="email"
                     placeholder="jean.dupont@company.com"
                     value={newUser.email}
                     onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="password">Mot de passe *</Label>
-                  <Input 
-                    id="password" 
-                    type="password" 
-                    placeholder="Minimum 8 caractères"
+                  <Label htmlFor="password">{t('users.addDialog.password')}</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    placeholder={t('users.addDialog.passwordPlaceholder')}
                     value={newUser.password}
                     onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="role">Rôle *</Label>
+                  <Label htmlFor="role">{t('users.addDialog.role')}</Label>
                   <Select value={newUser.role} onValueChange={(value: string) => setNewUser({ ...newUser, role: value })}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Sélectionner un rôle" />
+                    <SelectTrigger id="role">
+                      <SelectValue placeholder={t('users.addDialog.rolePlaceholder')} />
                     </SelectTrigger>
                     <SelectContent>
                       {currentUser?.role === 'super_admin' && (
-                        <SelectItem value="super_admin">Super administrateur</SelectItem>
+                        <SelectItem value="super_admin">{t('users.roles.superAdmin')}</SelectItem>
                       )}
                       {/* Directors can't create admin/super_admin accounts (enforced backend-side
                           too) -- hiding the option avoids a guaranteed rejection on submit. */}
                       {currentUser?.role !== 'director' && (
-                        <SelectItem value="admin">Administrateur</SelectItem>
+                        <SelectItem value="admin">{t('users.roles.admin')}</SelectItem>
                       )}
-                      <SelectItem value="director">Directeur</SelectItem>
-                      <SelectItem value="manager">Manager</SelectItem>
-                      <SelectItem value="supervisor">Superviseur</SelectItem>
-                      <SelectItem value="agent">Agent</SelectItem>
-                      <SelectItem value="externe">Externe</SelectItem>
-                      <SelectItem value="stagiaire">Stagiaire</SelectItem>
+                      <SelectItem value="director">{t('users.roles.director')}</SelectItem>
+                      <SelectItem value="manager">{t('users.roles.manager')}</SelectItem>
+                      <SelectItem value="supervisor">{t('users.roles.supervisor')}</SelectItem>
+                      <SelectItem value="agent">{t('users.roles.agent')}</SelectItem>
+                      <SelectItem value="externe">{t('users.roles.externe')}</SelectItem>
+                      <SelectItem value="stagiaire">{t('users.roles.stagiaire')}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="enterprise">Entreprise</Label>
-                  <Select 
-                    value={newUser.enterpriseId} 
+                  <Label htmlFor="jobTitle">{t('users.addDialog.jobTitle')}</Label>
+                  <Select
+                    value={newUser.jobTitle}
+                    onValueChange={(value: string) => setNewUser({ ...newUser, jobTitle: value })}
+                  >
+                    <SelectTrigger id="jobTitle">
+                      <SelectValue placeholder={t('users.addDialog.jobTitlePlaceholder')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {jobTitles.map((jt: any) => (
+                        <SelectItem key={jt.id} value={jt.label}>{jt.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="enterprise">{t('users.addDialog.enterprise')}</Label>
+                  <Select
+                    value={newUser.enterpriseId}
                     onValueChange={(value: string) => setNewUser({ ...newUser, enterpriseId: value, directionId: '', serviceId: '' })}
                   >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Sélectionner une entreprise" />
+                    <SelectTrigger id="enterprise">
+                      <SelectValue placeholder={t('users.addDialog.enterprisePlaceholder')} />
                     </SelectTrigger>
                     <SelectContent>
                       {enterprises.map((e: any) => (
@@ -568,14 +658,14 @@ export default function AdminUsersPage() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="direction">Direction</Label>
-                  <Select 
-                    value={newUser.directionId} 
+                  <Label htmlFor="direction">{t('users.addDialog.direction')}</Label>
+                  <Select
+                    value={newUser.directionId}
                     onValueChange={(value: string) => setNewUser({ ...newUser, directionId: value, serviceId: '' })}
                     disabled={!newUser.enterpriseId}
                   >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Sélectionner une direction" />
+                    <SelectTrigger id="direction">
+                      <SelectValue placeholder={t('users.addDialog.directionPlaceholder')} />
                     </SelectTrigger>
                     <SelectContent>
                       {directions
@@ -587,14 +677,14 @@ export default function AdminUsersPage() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="service">Service</Label>
-                  <Select 
-                    value={newUser.serviceId} 
+                  <Label htmlFor="service">{t('users.addDialog.service')}</Label>
+                  <Select
+                    value={newUser.serviceId}
                     onValueChange={(value: string) => setNewUser({ ...newUser, serviceId: value })}
                     disabled={!newUser.directionId}
                   >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Sélectionner un service" />
+                    <SelectTrigger id="service">
+                      <SelectValue placeholder={t('users.addDialog.servicePlaceholder')} />
                     </SelectTrigger>
                     <SelectContent>
                       {services
@@ -607,16 +697,16 @@ export default function AdminUsersPage() {
                 </div>
                 {AGENT_LIKE_ROLES.includes(newUser.role) && (
                   <div className="space-y-2">
-                    <Label htmlFor="supervisor">Superviseur direct</Label>
+                    <Label htmlFor="supervisor">{t('users.addDialog.supervisor')}</Label>
                     <Select
                       value={newUser.supervisorId || '__none__'}
                       onValueChange={(value: string) => setNewUser({ ...newUser, supervisorId: value === '__none__' ? '' : value })}
                     >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Aucun" />
+                      <SelectTrigger id="supervisor">
+                        <SelectValue placeholder={t('users.addDialog.none')} />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="__none__">Aucun</SelectItem>
+                        <SelectItem value="__none__">{t('users.addDialog.none')}</SelectItem>
                         {supervisorOptions.map((s: any) => (
                           <SelectItem key={s.id} value={String(s.id)}>{s.display_name}</SelectItem>
                         ))}
@@ -627,10 +717,10 @@ export default function AdminUsersPage() {
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={() => setIsAddDialogOpen(false)} disabled={createMutation.isPending}>
-                  Annuler
+                  {t('users.addDialog.cancel')}
                 </Button>
                 <Button onClick={handleCreateUser} disabled={createMutation.isPending}>
-                  {createMutation.isPending ? 'Création...' : 'Créer'}
+                  {createMutation.isPending ? t('users.addDialog.creating') : t('users.addDialog.create')}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -645,7 +735,7 @@ export default function AdminUsersPage() {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Rechercher par nom ou email..."
+            placeholder={t('users.filters.searchPlaceholder')}
             className="pl-10"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -653,32 +743,32 @@ export default function AdminUsersPage() {
         </div>
         <Select value={roleFilter} onValueChange={setRoleFilter}>
           <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="Tous les rôles" />
+            <SelectValue placeholder={t('users.filters.allRoles')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Tous les rôles</SelectItem>
+            <SelectItem value="all">{t('users.filters.allRoles')}</SelectItem>
             {currentUser?.role === 'super_admin' && (
-              <SelectItem value="super_admin">Super administrateur</SelectItem>
+              <SelectItem value="super_admin">{t('users.roles.superAdmin')}</SelectItem>
             )}
-            <SelectItem value="admin">Administrateur</SelectItem>
-            <SelectItem value="director">Directeur</SelectItem>
-            <SelectItem value="manager">Manager</SelectItem>
-            <SelectItem value="supervisor">Superviseur</SelectItem>
-            <SelectItem value="agent">Agent</SelectItem>
-            <SelectItem value="externe">Externe</SelectItem>
-            <SelectItem value="stagiaire">Stagiaire</SelectItem>
+            <SelectItem value="admin">{t('users.roles.admin')}</SelectItem>
+            <SelectItem value="director">{t('users.roles.director')}</SelectItem>
+            <SelectItem value="manager">{t('users.roles.manager')}</SelectItem>
+            <SelectItem value="supervisor">{t('users.roles.supervisor')}</SelectItem>
+            <SelectItem value="agent">{t('users.roles.agent')}</SelectItem>
+            <SelectItem value="externe">{t('users.roles.externe')}</SelectItem>
+            <SelectItem value="stagiaire">{t('users.roles.stagiaire')}</SelectItem>
           </SelectContent>
         </Select>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-[150px]">
-            <SelectValue placeholder="Tous les statuts" />
+            <SelectValue placeholder={t('users.filters.allStatuses')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Tous les statuts</SelectItem>
-            <SelectItem value="pending">En attente</SelectItem>
-            <SelectItem value="active">Actif</SelectItem>
-            <SelectItem value="suspended">Suspendu</SelectItem>
-            <SelectItem value="deactivated">Désactivé</SelectItem>
+            <SelectItem value="all">{t('users.filters.allStatuses')}</SelectItem>
+            <SelectItem value="pending">{t('users.statuses.pending')}</SelectItem>
+            <SelectItem value="active">{t('users.statuses.active')}</SelectItem>
+            <SelectItem value="suspended">{t('users.statuses.suspended')}</SelectItem>
+            <SelectItem value="deactivated">{t('users.statuses.deactivated')}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -690,15 +780,15 @@ export default function AdminUsersPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="text-left p-4 font-medium">Utilisateur</th>
-                  <th className="text-left p-4 font-medium">Entreprise</th>
-                  <th className="text-left p-4 font-medium">Direction</th>
-                  <th className="text-left p-4 font-medium">Service</th>
-                  <th className="text-left p-4 font-medium">Superviseur</th>
-                  <th className="text-left p-4 font-medium">Rôle</th>
-                  <th className="text-left p-4 font-medium">Statut</th>
-                  <th className="text-left p-4 font-medium">Dernière connexion</th>
-                  <th className="text-right p-4 font-medium">Actions</th>
+                  <th className="text-left p-4 font-medium">{t('users.table.user')}</th>
+                  <th className="text-left p-4 font-medium">{t('users.table.enterprise')}</th>
+                  <th className="text-left p-4 font-medium">{t('users.table.direction')}</th>
+                  <th className="text-left p-4 font-medium">{t('users.table.service')}</th>
+                  <th className="text-left p-4 font-medium">{t('users.table.supervisor')}</th>
+                  <th className="text-left p-4 font-medium">{t('users.table.role')}</th>
+                  <th className="text-left p-4 font-medium">{t('users.table.status')}</th>
+                  <th className="text-left p-4 font-medium">{t('users.table.lastLogin')}</th>
+                  <th className="text-right p-4 font-medium">{t('users.table.actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -716,6 +806,7 @@ export default function AdminUsersPage() {
                           <p className="font-medium">
                             {user.display_name || `${user.firstName} ${user.lastName}`}
                           </p>
+                          <p className="text-xs text-muted-foreground">{user.job_title || t('users.table.defaultJobTitle')}</p>
                           <p className="text-sm text-muted-foreground">{user.email}</p>
                         </div>
                       </div>
@@ -740,7 +831,7 @@ export default function AdminUsersPage() {
                     </td>
                     <td className="p-4">
                       <Badge className={statusColors[user.status] || 'bg-gray-100 text-gray-800'}>
-                        {statusLabels[user.status] || user.status || (user.is_active ? 'Actif' : 'Inactif')}
+                        {statusLabels[user.status] || user.status || (user.is_active ? t('users.statuses.active') : t('users.statuses.inactive'))}
                       </Badge>
                     </td>
                     <td className="p-4 text-sm text-muted-foreground">
@@ -756,29 +847,29 @@ export default function AdminUsersPage() {
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => handleEditUser(user)}>
                             <Edit className="h-4 w-4 mr-2" />
-                            Modifier
+                            {t('users.rowActions.edit')}
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => handleSendEmail(user)}>
                             <Mail className="h-4 w-4 mr-2" />
-                            Envoyer un email
+                            {t('users.rowActions.sendEmail')}
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           {user.status !== 'active' && (
                             <DropdownMenuItem onClick={() => changeStatusMutation.mutate({ userId: user.id, status: 'active' })}>
                               <UserCheck className="h-4 w-4 mr-2" />
-                              {user.status === 'pending' ? 'Activer' : 'Réactiver'}
+                              {user.status === 'pending' ? t('users.rowActions.activate') : t('users.rowActions.reactivate')}
                             </DropdownMenuItem>
                           )}
                           {user.status === 'active' && (
                             <DropdownMenuItem onClick={() => changeStatusMutation.mutate({ userId: user.id, status: 'suspended' })}>
                               <UserMinus className="h-4 w-4 mr-2" />
-                              Suspendre
+                              {t('users.rowActions.suspend')}
                             </DropdownMenuItem>
                           )}
                           {user.status !== 'deactivated' && (
                             <DropdownMenuItem onClick={() => changeStatusMutation.mutate({ userId: user.id, status: 'deactivated' })}>
                               <UserX className="h-4 w-4 mr-2" />
-                              Désactiver
+                              {t('users.rowActions.deactivate')}
                             </DropdownMenuItem>
                           )}
                           <DropdownMenuSeparator />
@@ -787,7 +878,7 @@ export default function AdminUsersPage() {
                             onClick={() => handleDeleteUser(user)}
                           >
                             <Trash2 className="h-4 w-4 mr-2" />
-                            Supprimer
+                            {t('users.rowActions.delete')}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -797,7 +888,7 @@ export default function AdminUsersPage() {
                 {users.length === 0 && (
                   <tr>
                     <td colSpan={9} className="p-8 text-center text-muted-foreground">
-                      Aucun utilisateur ne correspond à ces critères.
+                      {t('users.table.noResults')}
                     </td>
                   </tr>
                 )}
@@ -810,7 +901,7 @@ export default function AdminUsersPage() {
       {meta && meta.totalPages > 1 && (
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
-            Page {meta.page} sur {meta.totalPages} ({meta.total} utilisateurs)
+            {t('users.pagination.pageOf', { page: meta.page, totalPages: meta.totalPages, total: meta.total })}
           </p>
           <div className="flex gap-2">
             <Button
@@ -819,7 +910,7 @@ export default function AdminUsersPage() {
               disabled={page <= 1}
               onClick={() => setPage((p) => Math.max(1, p - 1))}
             >
-              Précédent
+              {t('users.pagination.previous')}
             </Button>
             <Button
               variant="outline"
@@ -827,7 +918,7 @@ export default function AdminUsersPage() {
               disabled={page >= meta.totalPages}
               onClick={() => setPage((p) => Math.min(meta.totalPages, p + 1))}
             >
-              Suivant
+              {t('users.pagination.next')}
             </Button>
           </div>
         </div>
@@ -837,22 +928,22 @@ export default function AdminUsersPage() {
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Modifier l'utilisateur</DialogTitle>
+            <DialogTitle>{t('users.editDialog.title')}</DialogTitle>
             <DialogDescription>
-              Modifier les informations de {selectedUser?.display_name || selectedUser?.email}
+              {t('users.editDialog.description', { name: selectedUser?.display_name || selectedUser?.email })}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="editDisplayName">Nom complet</Label>
-              <Input 
-                id="editDisplayName" 
+              <Label htmlFor="editDisplayName">{t('users.editDialog.fullName')}</Label>
+              <Input
+                id="editDisplayName"
                 value={editUser.displayName}
                 onChange={(e) => setEditUser({ ...editUser, displayName: e.target.value })}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="editRole">Rôle</Label>
+              <Label htmlFor="editRole">{t('users.editDialog.role')}</Label>
               {/* Only admins/super_admins can actually change a role (the backend silently
                   drops the field otherwise) -- disable rather than let a director submit a
                   change that quietly does nothing. */}
@@ -861,34 +952,50 @@ export default function AdminUsersPage() {
                 onValueChange={(value: string) => setEditUser({ ...editUser, role: value })}
                 disabled={currentUser?.role !== 'admin' && currentUser?.role !== 'super_admin'}
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="Sélectionner un rôle" />
+                <SelectTrigger id="editRole">
+                  <SelectValue placeholder={t('users.addDialog.rolePlaceholder')} />
                 </SelectTrigger>
                 <SelectContent>
                   {currentUser?.role === 'super_admin' && (
-                    <SelectItem value="super_admin">Super administrateur</SelectItem>
+                    <SelectItem value="super_admin">{t('users.roles.superAdmin')}</SelectItem>
                   )}
-                  <SelectItem value="admin">Administrateur</SelectItem>
-                  <SelectItem value="director">Directeur</SelectItem>
-                  <SelectItem value="manager">Manager</SelectItem>
-                  <SelectItem value="supervisor">Superviseur</SelectItem>
-                  <SelectItem value="externe">Externe</SelectItem>
-                  <SelectItem value="stagiaire">Stagiaire</SelectItem>
-                  <SelectItem value="agent">Agent</SelectItem>
+                  <SelectItem value="admin">{t('users.roles.admin')}</SelectItem>
+                  <SelectItem value="director">{t('users.roles.director')}</SelectItem>
+                  <SelectItem value="manager">{t('users.roles.manager')}</SelectItem>
+                  <SelectItem value="supervisor">{t('users.roles.supervisor')}</SelectItem>
+                  <SelectItem value="externe">{t('users.roles.externe')}</SelectItem>
+                  <SelectItem value="stagiaire">{t('users.roles.stagiaire')}</SelectItem>
+                  <SelectItem value="agent">{t('users.roles.agent')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="editEnterprise">Entreprise</Label>
-              <Select 
-                value={editUser.enterpriseId || '__none__'} 
-                onValueChange={(value: string) => setEditUser({ ...editUser, enterpriseId: value === '__none__' ? '' : value, directionId: '', serviceId: '' })}
+              <Label htmlFor="editJobTitle">{t('users.editDialog.jobTitle')}</Label>
+              <Select
+                value={editUser.jobTitle}
+                onValueChange={(value: string) => setEditUser({ ...editUser, jobTitle: value })}
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="Sélectionner une entreprise" />
+                <SelectTrigger id="editJobTitle">
+                  <SelectValue placeholder={t('users.addDialog.jobTitlePlaceholder')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__none__">Aucune</SelectItem>
+                  {jobTitles.map((jt: any) => (
+                    <SelectItem key={jt.id} value={jt.label}>{jt.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="editEnterprise">{t('users.editDialog.enterprise')}</Label>
+              <Select
+                value={editUser.enterpriseId || '__none__'}
+                onValueChange={(value: string) => setEditUser({ ...editUser, enterpriseId: value === '__none__' ? '' : value, directionId: '', serviceId: '' })}
+              >
+                <SelectTrigger id="editEnterprise">
+                  <SelectValue placeholder={t('users.addDialog.enterprisePlaceholder')} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">{t('users.editDialog.none')}</SelectItem>
                   {enterprises.map((e: any) => (
                     <SelectItem key={e.id} value={String(e.id)}>{e.name}</SelectItem>
                   ))}
@@ -896,17 +1003,17 @@ export default function AdminUsersPage() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="editDirection">Direction</Label>
-              <Select 
-                value={editUser.directionId || '__none__'} 
+              <Label htmlFor="editDirection">{t('users.editDialog.direction')}</Label>
+              <Select
+                value={editUser.directionId || '__none__'}
                 onValueChange={(value: string) => setEditUser({ ...editUser, directionId: value === '__none__' ? '' : value, serviceId: '' })}
                 disabled={!editUser.enterpriseId}
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="Sélectionner une direction" />
+                <SelectTrigger id="editDirection">
+                  <SelectValue placeholder={t('users.addDialog.directionPlaceholder')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__none__">Aucune</SelectItem>
+                  <SelectItem value="__none__">{t('users.editDialog.none')}</SelectItem>
                   {directions
                     .filter((d: any) => !editUser.enterpriseId || d.enterprise_id === parseInt(editUser.enterpriseId))
                     .map((d: any) => (
@@ -916,17 +1023,17 @@ export default function AdminUsersPage() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="editService">Service</Label>
-              <Select 
-                value={editUser.serviceId || '__none__'} 
+              <Label htmlFor="editService">{t('users.editDialog.service')}</Label>
+              <Select
+                value={editUser.serviceId || '__none__'}
                 onValueChange={(value: string) => setEditUser({ ...editUser, serviceId: value === '__none__' ? '' : value })}
                 disabled={!editUser.directionId}
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="Sélectionner un service" />
+                <SelectTrigger id="editService">
+                  <SelectValue placeholder={t('users.addDialog.servicePlaceholder')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__none__">Aucun</SelectItem>
+                  <SelectItem value="__none__">{t('users.addDialog.none')}</SelectItem>
                   {services
                     .filter((s: any) => !editUser.directionId || s.direction_id === parseInt(editUser.directionId))
                     .map((s: any) => (
@@ -937,16 +1044,16 @@ export default function AdminUsersPage() {
             </div>
             {AGENT_LIKE_ROLES.includes(editUser.role) && (
               <div className="space-y-2">
-                <Label htmlFor="editSupervisor">Superviseur direct</Label>
+                <Label htmlFor="editSupervisor">{t('users.editDialog.supervisor')}</Label>
                 <Select
                   value={editUser.supervisorId || '__none__'}
                   onValueChange={(value: string) => setEditUser({ ...editUser, supervisorId: value === '__none__' ? '' : value })}
                 >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Aucun" />
+                  <SelectTrigger id="editSupervisor">
+                    <SelectValue placeholder={t('users.addDialog.none')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="__none__">Aucun</SelectItem>
+                    <SelectItem value="__none__">{t('users.addDialog.none')}</SelectItem>
                     {supervisorOptions.map((s: any) => (
                       <SelectItem key={s.id} value={String(s.id)}>{s.display_name}</SelectItem>
                     ))}
@@ -962,15 +1069,15 @@ export default function AdminUsersPage() {
                 onChange={(e) => setEditUser({ ...editUser, isActive: e.target.checked })}
                 className="h-4 w-4 rounded border-gray-300"
               />
-              <Label htmlFor="editIsActive">Compte actif</Label>
+              <Label htmlFor="editIsActive">{t('users.editDialog.activeAccount')}</Label>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsEditDialogOpen(false)} disabled={updateMutation.isPending}>
-              Annuler
+              {t('users.editDialog.cancel')}
             </Button>
             <Button onClick={handleUpdateUser} disabled={updateMutation.isPending}>
-              {updateMutation.isPending ? 'Enregistrement...' : 'Enregistrer'}
+              {updateMutation.isPending ? t('users.editDialog.saving') : t('users.editDialog.save')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -980,15 +1087,14 @@ export default function AdminUsersPage() {
       <Dialog open={isImportDialogOpen} onOpenChange={(open) => (open ? setIsImportDialogOpen(true) : closeImportDialog())}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Importer des utilisateurs (CSV)</DialogTitle>
+            <DialogTitle>{t('users.importDialog.title')}</DialogTitle>
             <DialogDescription>
-              Colonnes attendues : email, displayName, role, enterpriseCode, directionCode, serviceCode, supervisorEmail
-              (toutes facultatives sauf email/displayName/role). Un mot de passe temporaire est généré et envoyé par email.
+              {t('users.importDialog.description')}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="importFile">Fichier CSV</Label>
+              <Label htmlFor="importFile">{t('users.importDialog.fileLabel')}</Label>
               <Input
                 id="importFile"
                 type="file"
@@ -1003,16 +1109,20 @@ export default function AdminUsersPage() {
             {importResult && (
               <div className="space-y-2 max-h-64 overflow-y-auto border rounded-md p-3 text-sm">
                 <p className="font-medium">
-                  {importResult.created} créé(s), {importResult.skipped} ignoré(s), {importResult.errors} erreur(s)
-                  {' '}sur {importResult.totalRows} ligne(s)
+                  {t('users.importDialog.resultSummary', {
+                    created: importResult.created,
+                    skipped: importResult.skipped,
+                    errors: importResult.errors,
+                    total: importResult.totalRows,
+                  })}
                 </p>
                 {importResult.results
                   .filter((r: any) => r.status !== 'created')
                   .map((r: any, i: number) => (
                     <div key={i} className="flex justify-between gap-2">
-                      <span>Ligne {r.line} — {r.email || '(email manquant)'}</span>
+                      <span>{t('users.importDialog.lineLabel', { line: r.line, email: r.email || t('users.importDialog.missingEmail') })}</span>
                       <span className={r.status === 'error' ? 'text-destructive' : 'text-muted-foreground'}>
-                        {r.status === 'error' ? r.message : 'déjà existant'}
+                        {r.status === 'error' ? r.message : t('users.importDialog.alreadyExists')}
                       </span>
                     </div>
                   ))}
@@ -1021,14 +1131,147 @@ export default function AdminUsersPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={closeImportDialog} disabled={importMutation.isPending}>
-              Fermer
+              {t('users.importDialog.close')}
             </Button>
             <Button onClick={handleImportSubmit} disabled={!importFile || importMutation.isPending}>
-              {importMutation.isPending ? 'Import en cours...' : 'Importer'}
+              {importMutation.isPending ? t('users.importDialog.importing') : t('users.importDialog.importButton')}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <EmailConfirmDialog
+        pendingNotification={pendingNotification}
+        onOpenChange={(open) => !open && setPendingNotification(null)}
+      />
+
+      {/* Manage Job Titles Dialog */}
+      <Dialog
+        open={isJobTitlesDialogOpen}
+        onOpenChange={(open) => {
+          setIsJobTitlesDialogOpen(open)
+          if (!open) {
+            setEditingJobTitleId(null)
+            setNewJobTitleLabel('')
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('users.jobTitles.manageDialog.title')}</DialogTitle>
+            <DialogDescription>{t('users.jobTitles.manageDialog.description')}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 max-h-72 overflow-y-auto">
+            {jobTitles.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">{t('users.jobTitles.manageDialog.none')}</p>
+            ) : (
+              jobTitles.map((jt: any) => (
+                <div key={jt.id} className="flex items-center gap-2 p-2 rounded-md border">
+                  {editingJobTitleId === jt.id ? (
+                    <>
+                      <Input
+                        value={editingJobTitleLabel}
+                        onChange={(e) => setEditingJobTitleLabel(e.target.value)}
+                        className="h-8"
+                        autoFocus
+                      />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0"
+                        disabled={!editingJobTitleLabel.trim() || updateJobTitleMutation.isPending}
+                        onClick={() => updateJobTitleMutation.mutate({ id: jt.id, label: editingJobTitleLabel.trim() })}
+                      >
+                        <Check className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0"
+                        onClick={() => setEditingJobTitleId(null)}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="flex-1 text-sm">{jt.label}</span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0"
+                        onClick={() => {
+                          setEditingJobTitleId(jt.id)
+                          setEditingJobTitleLabel(jt.label)
+                        }}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0"
+                        onClick={() => setJobTitlePendingDelete(jt)}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+          <div className="flex items-center gap-2 pt-2 border-t">
+            <Input
+              value={newJobTitleLabel}
+              onChange={(e) => setNewJobTitleLabel(e.target.value)}
+              placeholder={t('users.jobTitles.manageDialog.addPlaceholder')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && newJobTitleLabel.trim()) {
+                  createJobTitleMutation.mutate(newJobTitleLabel.trim())
+                }
+              }}
+            />
+            <Button
+              disabled={!newJobTitleLabel.trim() || createJobTitleMutation.isPending}
+              onClick={() => createJobTitleMutation.mutate(newJobTitleLabel.trim())}
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsJobTitlesDialogOpen(false)}>
+              {t('users.jobTitles.manageDialog.close')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <ConfirmDialog
+        open={!!userPendingDelete}
+        onOpenChange={(open) => !open && setUserPendingDelete(null)}
+        title={tCommon('actions.delete')}
+        description={t('users.confirmDelete', { name: userPendingDelete?.display_name || userPendingDelete?.email })}
+        onConfirm={() => {
+          if (userPendingDelete) {
+            deleteMutation.mutate(userPendingDelete.id)
+          }
+          setUserPendingDelete(null)
+        }}
+      />
+
+      <ConfirmDialog
+        open={!!jobTitlePendingDelete}
+        onOpenChange={(open) => !open && setJobTitlePendingDelete(null)}
+        title={tCommon('actions.delete')}
+        description={t('users.jobTitles.manageDialog.confirmDelete', { label: jobTitlePendingDelete?.label })}
+        onConfirm={() => {
+          if (jobTitlePendingDelete) {
+            deleteJobTitleMutation.mutate(jobTitlePendingDelete.id)
+          }
+          setJobTitlePendingDelete(null)
+        }}
+      />
     </div>
   )
 }

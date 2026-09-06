@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -32,6 +33,8 @@ const EMPTY_SETTINGS: EmailSettings = {
 }
 
 export default function AdminEmailSettingsPage() {
+  const { t } = useTranslation('admin')
+  const { t: tCommon } = useTranslation('common')
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const [formData, setFormData] = useState<EmailSettings>(EMPTY_SETTINGS)
@@ -50,12 +53,12 @@ export default function AdminEmailSettingsPage() {
     mutationFn: (data: EmailSettings) => api.settings.updateEmail(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['email-settings'] })
-      toast({ title: 'Succès', description: 'Paramètres email enregistrés' })
+      toast({ title: tCommon('status.success'), description: t('emailSettings.toasts.savedDescription') })
     },
     onError: (error: any) => {
       toast({
-        title: 'Erreur',
-        description: error.response?.data?.error?.message || 'Impossible d\'enregistrer les paramètres',
+        title: tCommon('status.error'),
+        description: error.response?.data?.error?.message || t('emailSettings.toasts.saveErrorDescription'),
         variant: 'destructive',
       })
     },
@@ -64,12 +67,12 @@ export default function AdminEmailSettingsPage() {
   const testMutation = useMutation({
     mutationFn: (to: string) => api.settings.testEmail(to),
     onSuccess: () => {
-      toast({ title: 'Succès', description: `Email de test envoyé à ${testEmail}` })
+      toast({ title: tCommon('status.success'), description: t('emailSettings.toasts.testSentDescription', { email: testEmail }) })
     },
     onError: (error: any) => {
       toast({
-        title: 'Erreur',
-        description: error.response?.data?.error?.message || "Impossible d'envoyer l'email de test",
+        title: tCommon('status.error'),
+        description: error.response?.data?.error?.message || t('emailSettings.toasts.testErrorDescription'),
         variant: 'destructive',
       })
     },
@@ -81,7 +84,7 @@ export default function AdminEmailSettingsPage() {
 
   const handleSendTest = () => {
     if (!testEmail) {
-      toast({ title: 'Erreur', description: 'Veuillez entrer une adresse email', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: t('emailSettings.toasts.enterEmailDescription'), variant: 'destructive' })
       return
     }
     testMutation.mutate(testEmail)
@@ -94,25 +97,25 @@ export default function AdminEmailSettingsPage() {
   return (
     <div className="space-y-6 max-w-3xl">
       <div>
-        <h1 className="text-3xl font-bold">Notifications par email</h1>
-        <p className="text-muted-foreground">Configurez le serveur SMTP utilisé pour envoyer les notifications</p>
+        <h1 className="text-3xl font-bold">{t('emailSettings.title')}</h1>
+        <p className="text-muted-foreground">{t('emailSettings.subtitle')}</p>
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Mail className="h-5 w-5" />
-            Configuration SMTP
+            {t('emailSettings.smtpConfig.title')}
           </CardTitle>
           <CardDescription>
-            Les emails (notifications, mots de passe oubliés, alertes) seront envoyés via ce serveur
+            {t('emailSettings.smtpConfig.description')}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
             <div>
-              <p className="font-medium text-sm">Activer l'envoi d'emails</p>
-              <p className="text-xs text-muted-foreground">Si désactivé, aucune notification email ne sera envoyée</p>
+              <p className="font-medium text-sm">{t('emailSettings.smtpConfig.enableSending')}</p>
+              <p className="text-xs text-muted-foreground">{t('emailSettings.smtpConfig.enableSendingHint')}</p>
             </div>
             <input
               type="checkbox"
@@ -124,16 +127,18 @@ export default function AdminEmailSettingsPage() {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2 md:col-span-2">
-              <Label>Serveur SMTP</Label>
+              <Label htmlFor="smtp-server">{t('emailSettings.smtpConfig.smtpServer')}</Label>
               <Input
+                id="smtp-server"
                 placeholder="smtp.gmail.com"
                 value={formData.smtpHost}
                 onChange={(e) => setFormData({ ...formData, smtpHost: e.target.value })}
               />
             </div>
             <div className="space-y-2">
-              <Label>Port</Label>
+              <Label htmlFor="smtp-port">{t('emailSettings.smtpConfig.port')}</Label>
               <Input
+                id="smtp-port"
                 type="number"
                 value={formData.smtpPort}
                 onChange={(e) => setFormData({ ...formData, smtpPort: parseInt(e.target.value) || 0 })}
@@ -142,8 +147,9 @@ export default function AdminEmailSettingsPage() {
           </div>
 
           <div className="flex items-center justify-between p-3 border rounded-lg">
-            <Label className="cursor-pointer">Connexion sécurisée (TLS/SSL)</Label>
+            <Label htmlFor="smtp-secure" className="cursor-pointer">{t('emailSettings.smtpConfig.secureConnection')}</Label>
             <input
+              id="smtp-secure"
               type="checkbox"
               className="h-5 w-5"
               checked={formData.smtpSecure}
@@ -153,16 +159,18 @@ export default function AdminEmailSettingsPage() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Nom d'utilisateur SMTP</Label>
+              <Label htmlFor="smtp-username">{t('emailSettings.smtpConfig.smtpUsername')}</Label>
               <Input
+                id="smtp-username"
                 placeholder="notifications@entreprise.com"
                 value={formData.smtpUser}
                 onChange={(e) => setFormData({ ...formData, smtpUser: e.target.value })}
               />
             </div>
             <div className="space-y-2">
-              <Label>Mot de passe SMTP</Label>
+              <Label htmlFor="smtp-password">{t('emailSettings.smtpConfig.smtpPassword')}</Label>
               <Input
+                id="smtp-password"
                 type="password"
                 placeholder="••••••••"
                 value={formData.smtpPassword}
@@ -173,8 +181,9 @@ export default function AdminEmailSettingsPage() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Email d'expédition</Label>
+              <Label htmlFor="smtp-from-email">{t('emailSettings.smtpConfig.fromEmail')}</Label>
               <Input
+                id="smtp-from-email"
                 type="email"
                 placeholder="noreply@entreprise.com"
                 value={formData.fromEmail}
@@ -182,8 +191,9 @@ export default function AdminEmailSettingsPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label>Nom d'expéditeur</Label>
+              <Label htmlFor="smtp-from-name">{t('emailSettings.smtpConfig.fromName')}</Label>
               <Input
+                id="smtp-from-name"
                 placeholder="E-Formation"
                 value={formData.fromName}
                 onChange={(e) => setFormData({ ...formData, fromName: e.target.value })}
@@ -198,7 +208,7 @@ export default function AdminEmailSettingsPage() {
               ) : (
                 <Save className="h-4 w-4 mr-2" />
               )}
-              Enregistrer
+              {t('emailSettings.smtpConfig.save')}
             </Button>
           </div>
         </CardContent>
@@ -208,9 +218,9 @@ export default function AdminEmailSettingsPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Send className="h-5 w-5" />
-            Tester la configuration
+            {t('emailSettings.testConfig.title')}
           </CardTitle>
-          <CardDescription>Envoyez un email de test pour vérifier que la configuration fonctionne</CardDescription>
+          <CardDescription>{t('emailSettings.testConfig.description')}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex gap-2">
@@ -226,7 +236,7 @@ export default function AdminEmailSettingsPage() {
               ) : (
                 <Send className="h-4 w-4 mr-2" />
               )}
-              Envoyer un test
+              {t('emailSettings.testConfig.sendTest')}
             </Button>
           </div>
         </CardContent>

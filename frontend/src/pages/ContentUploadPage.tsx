@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -32,6 +33,8 @@ interface LessonFile {
 }
 
 export default function ContentUploadPage() {
+  const { t } = useTranslation('courses')
+  const { t: tCommon } = useTranslation('common')
   const { toast } = useToast()
   const [selectedFiles, setSelectedFiles] = useState<FileWithPreview[]>([])
   const [uploadingFiles, setUploadingFiles] = useState<Map<string, number>>(new Map())
@@ -64,16 +67,16 @@ export default function ContentUploadPage() {
     mutationFn: (fileId: number) => fileService.deleteFile(fileId),
     onSuccess: () => {
       toast({
-        title: 'Succès',
-        description: 'Fichier supprimé avec succès',
+        title: tCommon('status.success'),
+        description: t('contentUpload.deleteSuccessDescription'),
         variant: 'default',
       })
       refetchFiles()
     },
     onError: (error: any) => {
       toast({
-        title: 'Erreur',
-        description: error.message || 'Erreur lors de la suppression',
+        title: tCommon('status.error'),
+        description: error.message || t('contentUpload.deleteErrorDescription'),
         variant: 'destructive',
       })
     },
@@ -82,8 +85,8 @@ export default function ContentUploadPage() {
   const handleFilesSelected = async (files: File[]) => {
     if (!lessonId) {
       toast({
-        title: 'Erreur',
-        description: 'Veuillez sélectionner une leçon',
+        title: tCommon('status.error'),
+        description: t('contentUpload.selectLessonError'),
         variant: 'destructive',
       })
       return
@@ -119,8 +122,8 @@ export default function ContentUploadPage() {
       }
 
       toast({
-        title: 'Succès',
-        description: `${files.length} fichier(s) uploadé(s) avec succès`,
+        title: tCommon('status.success'),
+        description: t('contentUpload.uploadSuccessDescription', { count: files.length }),
         variant: 'default',
       })
 
@@ -130,8 +133,8 @@ export default function ContentUploadPage() {
       refetchFiles()
     } catch (error: any) {
       toast({
-        title: 'Erreur',
-        description: error.message || 'Erreur lors de l\'upload',
+        title: tCommon('status.error'),
+        description: error.message || t('contentUpload.uploadErrorDescription'),
         variant: 'destructive',
       })
     }
@@ -142,8 +145,8 @@ export default function ContentUploadPage() {
       await fileService.downloadFile(fileId, filename)
     } catch (error: any) {
       toast({
-        title: 'Erreur',
-        description: 'Erreur lors du téléchargement',
+        title: tCommon('status.error'),
+        description: t('contentUpload.downloadErrorDescription'),
         variant: 'destructive',
       })
     }
@@ -177,24 +180,24 @@ export default function ContentUploadPage() {
     <div className="space-y-6 max-w-4xl mx-auto">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold">Gestion des Fichiers de Contenu</h1>
+        <h1 className="text-3xl font-bold">{t('contentUpload.title')}</h1>
         <p className="text-muted-foreground">
-          Uploadez des fichiers (PDF, Word, PowerPoint, Excel, Images) à vos leçons
+          {t('contentUpload.subtitle')}
         </p>
       </div>
 
       {/* Upload Section */}
       <Card>
         <CardHeader>
-          <CardTitle>Ajouter des Fichiers</CardTitle>
+          <CardTitle>{t('contentUpload.addFilesTitle')}</CardTitle>
           <CardDescription>
-            Sélectionnez une leçon et uploadez vos fichiers
+            {t('contentUpload.addFilesSubtitle')}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           {/* Lesson Selection */}
           <div>
-            <Label htmlFor="lesson-select">Leçon *</Label>
+            <Label htmlFor="lesson-select">{t('contentUpload.lessonLabel')}</Label>
             <select
               id="lesson-select"
               value={lessonId}
@@ -204,7 +207,7 @@ export default function ContentUploadPage() {
               }}
               className="w-full mt-2 p-2 border border-input rounded-md bg-background"
             >
-              <option value="">-- Sélectionner une leçon --</option>
+              <option value="">{t('contentUpload.selectLessonPlaceholder')}</option>
               {lessons?.map((lesson: any) => (
                 <option key={lesson.id} value={lesson.id}>
                   {lesson.title} ({lesson.module_title})
@@ -218,25 +221,25 @@ export default function ContentUploadPage() {
               {/* Content Details */}
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
-                  <Label htmlFor="content-type">Type de Contenu</Label>
+                  <Label htmlFor="content-type">{t('contentUpload.contentTypeLabel')}</Label>
                   <select
                     id="content-type"
                     value={contentType}
                     onChange={(e) => setContentType(e.target.value)}
                     className="w-full mt-2 p-2 border border-input rounded-md bg-background"
                   >
-                    <option value="pdf">PDF</option>
-                    <option value="docx">Document Word</option>
-                    <option value="image">Image</option>
-                    <option value="video_mp4">Vidéo MP4</option>
-                    <option value="text">Texte</option>
+                    <option value="pdf">{t('contentUpload.contentTypes.pdf')}</option>
+                    <option value="docx">{t('contentUpload.contentTypes.docx')}</option>
+                    <option value="image">{t('contentUpload.contentTypes.image')}</option>
+                    <option value="video_mp4">{t('contentUpload.contentTypes.video')}</option>
+                    <option value="text">{t('contentUpload.contentTypes.text')}</option>
                   </select>
                 </div>
                 <div>
-                  <Label htmlFor="content-title">Titre du Contenu</Label>
+                  <Label htmlFor="content-title">{t('contentUpload.contentTitleLabel')}</Label>
                   <Input
                     id="content-title"
-                    placeholder="Ex: Lecteurs de contrat..."
+                    placeholder={t('contentUpload.contentTitlePlaceholder')}
                     value={contentTitle}
                     onChange={(e) => setContentTitle(e.target.value)}
                     className="mt-2"
@@ -245,10 +248,10 @@ export default function ContentUploadPage() {
               </div>
 
               <div>
-                <Label htmlFor="content-body">Description (Optionnel)</Label>
+                <Label htmlFor="content-body">{t('contentUpload.descriptionLabel')}</Label>
                 <Textarea
                   id="content-body"
-                  placeholder="Description ou notes supplémentaires..."
+                  placeholder={t('contentUpload.descriptionPlaceholder')}
                   value={contentBody}
                   onChange={(e) => setContentBody(e.target.value)}
                   className="mt-2"
@@ -258,7 +261,7 @@ export default function ContentUploadPage() {
 
               {/* File Upload */}
               <div>
-                <Label>Fichiers à Uploader</Label>
+                <Label>{t('contentUpload.filesToUploadLabel')}</Label>
                 <div className="mt-2">
                   <FileUpload
                     accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.png,.jpg,.jpeg,.gif,.mp4"
@@ -276,7 +279,7 @@ export default function ContentUploadPage() {
                 <div className="flex flex-col items-end gap-2">
                   {uploadingFiles.size > 0 && (
                     <p className="text-xs text-muted-foreground">
-                      Upload en cours: {uploadingFiles.size} fichier{uploadingFiles.size > 1 ? 's' : ''}
+                      {t('contentUpload.uploadingCount', { count: uploadingFiles.size })}
                     </p>
                   )}
                   <Button
@@ -288,7 +291,7 @@ export default function ContentUploadPage() {
                     disabled={selectedFiles.some((f) => f.status === 'uploading') || uploadingFiles.size > 0}
                   >
                     <UploadIcon className="h-4 w-4 mr-2" />
-                    Uploader {selectedFiles.length} fichier{selectedFiles.length > 1 ? 's' : ''}
+                    {t('contentUpload.uploadButton', { count: selectedFiles.length })}
                   </Button>
                 </div>
               )}
@@ -301,9 +304,9 @@ export default function ContentUploadPage() {
       {lessonId && lessonFiles && lessonFiles.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Fichiers de la Leçon</CardTitle>
+            <CardTitle>{t('contentUpload.lessonFilesTitle')}</CardTitle>
             <CardDescription>
-              {lessonFiles.length} fichier(s) uploadé(s)
+              {t('contentUpload.uploadedCount', { count: lessonFiles.length })}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -327,7 +330,7 @@ export default function ContentUploadPage() {
                         </p>
                         <span className="text-xs text-muted-foreground">·</span>
                         <p className="text-xs text-muted-foreground">
-                          Uploadé par {file.uploaded_by}
+                          {t('contentUpload.uploadedBy', { name: file.uploaded_by })}
                         </p>
                       </div>
                     </div>
@@ -366,10 +369,10 @@ export default function ContentUploadPage() {
             <div className="text-center py-8">
               <FileIcon className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
               <p className="text-muted-foreground font-medium">
-                Aucun fichier uploadé pour cette leçon
+                {t('contentUpload.noFiles')}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
-                Uploadez des fichiers pour commencer
+                {t('contentUpload.noFilesHint')}
               </p>
             </div>
           </CardContent>

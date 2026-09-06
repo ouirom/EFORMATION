@@ -1,0 +1,29 @@
+{
+  "title": "AI Assistant",
+  "subtitle": "Your personal tutor",
+  "greeting": "Hello! 👋 I'm your AI learning assistant. I'm here to help you with your learning.\n\nI can:\n• Answer your questions about courses\n• Explain complex concepts\n• Suggest resources\n• Help you prepare for quizzes\n\nHow can I help you today?",
+  "greetingSuggestions": [
+    "Explain Machine Learning to me",
+    "Which courses do you recommend?",
+    "Help me understand React"
+  ],
+  "quickActions": {
+    "summarize": "Summarize a course",
+    "explain": "Explain a concept",
+    "quiz": "Prepare a quiz"
+  },
+  "quickActionPrompts": {
+    "summarize": "Summarize the course on ",
+    "explain": "Explain to me ",
+    "quiz": "Help me prepare the quiz on "
+  },
+  "placeholder": "Ask your question...",
+  "copied": "Copied to clipboard",
+  "errorTitle": "Error",
+  "errorDescription": "Could not generate a response",
+  "languageLabel": "Language",
+  "languageOptions": {
+    "fr": "Français",
+    "en": "English"
+  }
+}

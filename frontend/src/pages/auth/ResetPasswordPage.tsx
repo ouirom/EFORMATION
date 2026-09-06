@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,6 +10,8 @@ import { api } from '@/services/api'
 import { Loader2, Lock, Eye, EyeOff, CheckCircle, ArrowLeft } from 'lucide-react'
 
 export default function ResetPasswordPage() {
+  const { t } = useTranslation('auth')
+  const { t: tCommon } = useTranslation('common')
   const [searchParams] = useSearchParams()
   const token = searchParams.get('token')
   const [password, setPassword] = useState('')
@@ -24,8 +27,8 @@ export default function ResetPasswordPage() {
 
     if (password !== confirmPassword) {
       toast({
-        title: 'Erreur',
-        description: 'Les mots de passe ne correspondent pas',
+        title: tCommon('status.error'),
+        description: t('resetPassword.errors.passwordMismatch'),
         variant: 'destructive',
       })
       return
@@ -39,9 +42,8 @@ export default function ResetPasswordPage() {
       !/[!@#$%^&*(),.?":{}|<>]/.test(password)
     ) {
       toast({
-        title: 'Erreur',
-        description:
-          'Le mot de passe doit contenir au moins 8 caractères, une majuscule, une minuscule, un chiffre et un caractère spécial',
+        title: tCommon('status.error'),
+        description: t('resetPassword.errors.weakPassword'),
         variant: 'destructive',
       })
       return
@@ -54,8 +56,8 @@ export default function ResetPasswordPage() {
       setIsSuccess(true)
     } catch (error: any) {
       toast({
-        title: 'Erreur',
-        description: error.response?.data?.error?.message || 'Le lien est invalide ou a expiré',
+        title: tCommon('status.error'),
+        description: error.response?.data?.error?.message || t('resetPassword.errors.invalidOrExpiredLink'),
         variant: 'destructive',
       })
     } finally {
@@ -67,15 +69,15 @@ export default function ResetPasswordPage() {
     return (
       <Card className="w-full">
         <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl text-center text-destructive">Lien invalide</CardTitle>
+          <CardTitle className="text-2xl text-center text-destructive">{t('resetPassword.invalidLinkTitle')}</CardTitle>
           <CardDescription className="text-center">
-            Le lien de réinitialisation est invalide ou a expiré.
+            {t('resetPassword.invalidLinkDescription')}
           </CardDescription>
         </CardHeader>
         <CardFooter className="flex justify-center">
           <Link to="/forgot-password">
             <Button variant="outline">
-              Demander un nouveau lien
+              {t('resetPassword.requestNewLink')}
             </Button>
           </Link>
         </CardFooter>
@@ -90,15 +92,14 @@ export default function ResetPasswordPage() {
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
             <CheckCircle className="h-8 w-8 text-green-600" />
           </div>
-          <CardTitle className="text-2xl text-center">Mot de passe modifié !</CardTitle>
+          <CardTitle className="text-2xl text-center">{t('resetPassword.successTitle')}</CardTitle>
           <CardDescription className="text-center">
-            Votre mot de passe a été réinitialisé avec succès.
-            Vous pouvez maintenant vous connecter avec votre nouveau mot de passe.
+            {t('resetPassword.successDescription')}
           </CardDescription>
         </CardHeader>
         <CardFooter className="flex justify-center">
           <Button onClick={() => navigate('/login')}>
-            Se connecter
+            {t('resetPassword.signIn')}
           </Button>
         </CardFooter>
       </Card>
@@ -108,15 +109,15 @@ export default function ResetPasswordPage() {
   return (
     <Card className="w-full">
       <CardHeader className="space-y-1">
-        <CardTitle className="text-2xl text-center">Nouveau mot de passe</CardTitle>
+        <CardTitle className="text-2xl text-center">{t('resetPassword.title')}</CardTitle>
         <CardDescription className="text-center">
-          Entrez votre nouveau mot de passe
+          {t('resetPassword.subtitle')}
         </CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit}>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="password">Nouveau mot de passe</Label>
+            <Label htmlFor="password">{t('resetPassword.newPassword')}</Label>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -139,11 +140,11 @@ export default function ResetPasswordPage() {
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Minimum 8 caractères avec majuscule, minuscule, chiffre et caractère spécial
+              {t('resetPassword.passwordHint')}
             </p>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="confirmPassword">Confirmer le mot de passe</Label>
+            <Label htmlFor="confirmPassword">{t('resetPassword.confirmPassword')}</Label>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -161,11 +162,11 @@ export default function ResetPasswordPage() {
         <CardFooter className="flex flex-col gap-4">
           <Button type="submit" className="w-full" disabled={isLoading}>
             {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Réinitialiser le mot de passe
+            {t('resetPassword.submit')}
           </Button>
           <Link to="/login" className="text-sm text-primary hover:underline">
             <ArrowLeft className="inline h-4 w-4 mr-1" />
-            Retour à la connexion
+            {t('resetPassword.backToLogin')}
           </Link>
         </CardFooter>
       </form>

@@ -3,7 +3,7 @@ import { body, validationResult } from 'express-validator';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.middleware';
 import { DatabaseService } from '../services/database.service';
 import { db, IS_PG } from '../database/db-helpers';
-import { BadRequestError, NotFoundError } from '../middleware/error.middleware';
+import { BadRequestError, ForbiddenError, NotFoundError } from '../middleware/error.middleware';
 
 const router = Router();
 
@@ -31,55 +31,6 @@ router.get('/', authenticate, async (req: AuthRequest, res, next) => {
     );
 
     res.json({ success: true, data: badges });
-  } catch (error) {
-    next(error);
-  }
-});
-
-/**
- * @route GET /api/v1/badges/:id
- * @desc Get badge by ID
- */
-router.get('/:id', authenticate, async (req: AuthRequest, res, next) => {
-  try {
-    const badgeId = parseInt(req.params.id, 10);
-
-    const badges = await DatabaseService.query<any>(
-      `SELECT b.*, f.storage_key as icon_url
-       FROM badges b
-       LEFT JOIN file_assets f ON b.icon_file_id = f.id
-       WHERE b.id = @badgeId AND b.tenant_id = @tenantId`,
-      { badgeId, tenantId: req.user!.tenantId }
-    );
-
-    if (badges.length === 0) {
-      throw NotFoundError('Badge');
-    }
-
-    // Get recent awardees
-    const awardees = await DatabaseService.query<any>(
-      IS_PG
-        ? `SELECT ub.awarded_at, u.display_name, u.email
-           FROM user_badges ub
-           JOIN users u ON ub.user_id = u.id
-           WHERE ub.badge_id = @badgeId
-           ORDER BY ub.awarded_at DESC
-           LIMIT 10`
-        : `SELECT TOP 10 ub.awarded_at, u.display_name, u.email
-           FROM user_badges ub
-           JOIN users u ON ub.user_id = u.id
-           WHERE ub.badge_id = @badgeId
-           ORDER BY ub.awarded_at DESC`,
-      { badgeId }
-    );
-
-    res.json({
-      success: true,
-      data: {
-        ...badges[0],
-        recentAwardees: awardees,
-      },
-    });
   } catch (error) {
     next(error);
   }
@@ -346,15 +297,79 @@ router.get('/my-badges', authenticate, async (req: AuthRequest, res, next) => {
 });
 
 /**
+ * @route GET /api/v1/badges/:id
+ * @desc Get badge by ID -- registered after every literal-segment GET route
+ * (/my-badges, /stats/leaderboard) so ":id" doesn't swallow them first.
+ */
+router.get('/:id', authenticate, async (req: AuthRequest, res, next) => {
+  try {
+    const badgeId = parseInt(req.params.id, 10);
+
+    const badges = await DatabaseService.query<any>(
+      `SELECT b.*, f.storage_key as icon_url
+       FROM badges b
+       LEFT JOIN file_assets f ON b.icon_file_id = f.id
+       WHERE b.id = @badgeId AND b.tenant_id = @tenantId`,
+      { badgeId, tenantId: req.user!.tenantId }
+    );
+
+    if (badges.length === 0) {
+      throw NotFoundError('Badge');
+    }
+
+    // Get recent awardees
+    const awardees = await DatabaseService.query<any>(
+      IS_PG
+        ? `SELECT ub.awarded_at, u.display_name, u.email
+           FROM user_badges ub
+           JOIN users u ON ub.user_id = u.id
+           WHERE ub.badge_id = @badgeId
+           ORDER BY ub.awarded_at DESC
+           LIMIT 10`
+        : `SELECT TOP 10 ub.awarded_at, u.display_name, u.email
+           FROM user_badges ub
+           JOIN users u ON ub.user_id = u.id
+           WHERE ub.badge_id = @badgeId
+           ORDER BY ub.awarded_at DESC`,
+      { badgeId }
+    );
+
+    res.json({
+      success: true,
+      data: {
+        ...badges[0],
+        recentAwardees: awardees,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
  * @route POST /api/v1/badges/award-quiz
- * @desc Award badges for quiz completion (called after quiz submission)
+ * @desc Award badges for quiz completion (called after quiz submission).
+ * score/passed are read from the caller's own graded quiz_attempts row, never
+ * trusted from the request body -- otherwise any authenticated user could
+ * POST {quizId, score: 100, passed: true} directly and self-award a
+ * "Perfect Score"/"Gold Trophy" badge without ever taking the quiz.
  */
 router.post('/award-quiz', authenticate, async (req: AuthRequest, res, next) => {
   try {
-    const { quizId, score, passed } = req.body;
+    const { quizId, attemptId } = req.body;
     const userId = req.user!.id;
     const tenantId = req.user!.tenantId;
-    
+
+    const attempts = await DatabaseService.query<{ score: number; passed: boolean }>(
+      `SELECT score, passed FROM quiz_attempts
+       WHERE id = @attemptId AND quiz_id = @quizId AND user_id = @userId AND tenant_id = @tenantId`,
+      { attemptId, quizId, userId, tenantId }
+    );
+    if (attempts.length === 0) {
+      throw ForbiddenError('No matching graded attempt for this quiz');
+    }
+    const { score, passed } = attempts[0];
+
     const awardedBadges: any[] = [];
 
     // 1. Badge "Quiz Réussi" si passé

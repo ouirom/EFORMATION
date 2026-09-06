@@ -1,0 +1,42 @@
+{
+  "quickSearch": {
+    "placeholder": "Search...",
+    "searching": "Searching...",
+    "noResults": "No results for \"{{query}}\"",
+    "viewAllResults": "View all results for \"{{query}}\"",
+    "types": {
+      "course": "Course",
+      "lesson": "Lesson",
+      "quiz": "Quiz",
+      "blog": "Article",
+      "badge": "Badge",
+      "live_session": "Live session",
+      "user": "User"
+    }
+  },
+  "productTour": {
+    "close": "Close the guided tour",
+    "previous": "Previous",
+    "next": "Next",
+    "finish": "Finish"
+  },
+  "globalHelp": {
+    "title": "Help",
+    "close": "Close help",
+    "backToPageHelp": "Back to this page's help",
+    "allTopics": "All topics",
+    "filterPlaceholder": "Filter topics...",
+    "noTopicFound": "No topic found",
+    "footerHintBefore": "Press",
+    "footerHintAfter": "at any time to open or close help"
+  },
+  "emailConfirm": {
+    "title": "Confirm sending the email",
+    "description": "An email is about to be sent to {{email}}:",
+    "confirm": "Send email",
+    "reject": "Don't send",
+    "sentToast": "Email sent",
+    "rejectedToast": "Send cancelled",
+    "errorToast": "Something went wrong"
+  }
+}

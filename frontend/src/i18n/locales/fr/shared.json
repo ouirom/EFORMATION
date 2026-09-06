@@ -1,0 +1,42 @@
+{
+  "quickSearch": {
+    "placeholder": "Rechercher...",
+    "searching": "Recherche en cours...",
+    "noResults": "Aucun résultat pour \"{{query}}\"",
+    "viewAllResults": "Voir tous les résultats pour \"{{query}}\"",
+    "types": {
+      "course": "Formation",
+      "lesson": "Leçon",
+      "quiz": "Quiz",
+      "blog": "Article",
+      "badge": "Badge",
+      "live_session": "Session live",
+      "user": "Utilisateur"
+    }
+  },
+  "productTour": {
+    "close": "Fermer la visite guidée",
+    "previous": "Précédent",
+    "next": "Suivant",
+    "finish": "Terminer"
+  },
+  "globalHelp": {
+    "title": "Aide",
+    "close": "Fermer l'aide",
+    "backToPageHelp": "Revenir à l'aide de cette page",
+    "allTopics": "Toutes les rubriques",
+    "filterPlaceholder": "Filtrer les rubriques...",
+    "noTopicFound": "Aucune rubrique trouvée",
+    "footerHintBefore": "Appuyez sur",
+    "footerHintAfter": "à tout moment pour ouvrir ou fermer l'aide"
+  },
+  "emailConfirm": {
+    "title": "Confirmer l'envoi de l'email",
+    "description": "Un email va être envoyé à {{email}} :",
+    "confirm": "Envoyer l'email",
+    "reject": "Ne pas envoyer",
+    "sentToast": "Email envoyé",
+    "rejectedToast": "Envoi annulé",
+    "errorToast": "Une erreur est survenue"
+  }
+}

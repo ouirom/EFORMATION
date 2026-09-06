@@ -4,6 +4,7 @@ import { authenticate, AuthRequest } from '../middleware/auth.middleware';
 import { DatabaseService } from '../services/database.service';
 import { BadRequestError } from '../middleware/error.middleware';
 import { db, IS_PG } from '../database/db-helpers';
+import { parsePagination, buildPaginationMeta } from '../utils/pagination';
 
 const router = Router();
 
@@ -35,7 +36,7 @@ router.get(
       const isAdmin = ['admin', 'director', 'manager'].includes(req.user!.role);
       const allTypes = ['course', 'lesson', 'quiz', 'blog', 'badge', 'live_session', ...(isAdmin ? ['user'] : [])];
       const types = requestedTypes.length > 0 && !requestedTypes.includes('all') ? requestedTypes : allTypes;
-      const limit = Math.min(parseInt(req.query.limit as string) || 10, 50);
+      const { limit } = parsePagination(req, { defaultLimit: 10, maxLimit: 50 });
       const tenantId = req.user!.tenantId;
       const like = `%${searchQuery}%`;
       const exact = `${searchQuery}%`;
@@ -47,17 +48,21 @@ router.get(
       if (types.includes('course')) {
         const courses = await DatabaseService.query<any>(
           IS_PG
-            ? `SELECT id, title, description, category
-               FROM courses
-               WHERE tenant_id = @tenantId AND is_published = ${db.bool(true)}
-                 AND (title LIKE @like OR description LIKE @like OR category LIKE @like)
-               ORDER BY CASE WHEN title LIKE @exact THEN 0 ELSE 1 END, title
+            ? `SELECT c.id, c.public_id, c.title, c.description, c.category, c.level, c.duration,
+                      u.display_name as instructor_name
+               FROM courses c
+               LEFT JOIN users u ON u.id = c.created_by
+               WHERE c.tenant_id = @tenantId AND c.is_published = ${db.bool(true)}
+                 AND (c.title LIKE @like OR c.description LIKE @like OR c.category LIKE @like)
+               ORDER BY CASE WHEN c.title LIKE @exact THEN 0 ELSE 1 END, c.title
                LIMIT @limit`
-            : `SELECT TOP (@limit) id, title, description, category
-               FROM courses
-               WHERE tenant_id = @tenantId AND is_published = ${db.bool(true)}
-                 AND (title LIKE @like OR description LIKE @like OR category LIKE @like)
-               ORDER BY CASE WHEN title LIKE @exact THEN 0 ELSE 1 END, title`,
+            : `SELECT TOP (@limit) c.id, c.public_id, c.title, c.description, c.category, c.level, c.duration,
+                      u.display_name as instructor_name
+               FROM courses c
+               LEFT JOIN users u ON u.id = c.created_by
+               WHERE c.tenant_id = @tenantId AND c.is_published = ${db.bool(true)}
+                 AND (c.title LIKE @like OR c.description LIKE @like OR c.category LIKE @like)
+               ORDER BY CASE WHEN c.title LIKE @exact THEN 0 ELSE 1 END, c.title`,
           { tenantId, like, exact, limit }
         );
         results.push(
@@ -66,8 +71,8 @@ router.get(
             type: 'course',
             title: c.title,
             description: c.description || c.category || '',
-            url: `/courses/${c.id}`,
-            metadata: { category: c.category },
+            url: `/courses/${c.public_id}`,
+            metadata: { category: c.category, instructor: c.instructor_name, duration: c.duration, level: c.level },
             score: startsWithQuery(c.title) ? 1 : 0.75,
           }))
         );
@@ -77,14 +82,14 @@ router.get(
       if (types.includes('lesson')) {
         const lessons = await DatabaseService.query<any>(
           IS_PG
-            ? `SELECT l.id, l.title, c.id as course_id, c.title as course_title
+            ? `SELECT l.id, l.public_id, l.title, c.public_id as course_public_id, c.title as course_title
                FROM lessons l
                JOIN modules m ON l.module_id = m.id
                JOIN courses c ON m.course_id = c.id
                WHERE c.tenant_id = @tenantId AND c.is_published = ${db.bool(true)} AND l.title LIKE @like
                ORDER BY CASE WHEN l.title LIKE @exact THEN 0 ELSE 1 END, l.title
                LIMIT @limit`
-            : `SELECT TOP (@limit) l.id, l.title, c.id as course_id, c.title as course_title
+            : `SELECT TOP (@limit) l.id, l.public_id, l.title, c.public_id as course_public_id, c.title as course_title
                FROM lessons l
                JOIN modules m ON l.module_id = m.id
                JOIN courses c ON m.course_id = c.id
@@ -98,7 +103,7 @@ router.get(
             type: 'lesson',
             title: l.title,
             description: l.course_title,
-            url: `/courses/${l.course_id}/lessons/${l.id}`,
+            url: `/courses/${l.course_public_id}/lessons/${l.public_id}`,
             metadata: { courseTitle: l.course_title },
             score: startsWithQuery(l.title) ? 0.9 : 0.65,
           }))
@@ -139,21 +144,23 @@ router.get(
         );
       }
 
-      // Search blog posts (no per-post page yet, link to the blog list)
+      // Search blog posts
       if (types.includes('blog')) {
         const posts = await DatabaseService.query<any>(
           IS_PG
-            ? `SELECT id, title
-               FROM blog_posts
-               WHERE tenant_id = @tenantId AND status = 'published'
-                 AND (title LIKE @like OR body LIKE @like)
-               ORDER BY CASE WHEN title LIKE @exact THEN 0 ELSE 1 END, title
+            ? `SELECT bp.id, bp.title, bp.published_at, bp.created_at, u.display_name as author_name
+               FROM blog_posts bp
+               LEFT JOIN users u ON u.id = bp.author_id
+               WHERE bp.tenant_id = @tenantId AND bp.status = 'published'
+                 AND (bp.title LIKE @like OR bp.body LIKE @like)
+               ORDER BY CASE WHEN bp.title LIKE @exact THEN 0 ELSE 1 END, bp.title
                LIMIT @limit`
-            : `SELECT TOP (@limit) id, title
-               FROM blog_posts
-               WHERE tenant_id = @tenantId AND status = 'published'
-                 AND (title LIKE @like OR body LIKE @like)
-               ORDER BY CASE WHEN title LIKE @exact THEN 0 ELSE 1 END, title`,
+            : `SELECT TOP (@limit) bp.id, bp.title, bp.published_at, bp.created_at, u.display_name as author_name
+               FROM blog_posts bp
+               LEFT JOIN users u ON u.id = bp.author_id
+               WHERE bp.tenant_id = @tenantId AND bp.status = 'published'
+                 AND (bp.title LIKE @like OR bp.body LIKE @like)
+               ORDER BY CASE WHEN bp.title LIKE @exact THEN 0 ELSE 1 END, bp.title`,
           { tenantId, like, exact, limit }
         );
         results.push(
@@ -162,8 +169,8 @@ router.get(
             type: 'blog',
             title: p.title,
             description: '',
-            url: '/blog',
-            metadata: {},
+            url: `/blog/${p.id}`,
+            metadata: { author: p.author_name, date: p.published_at || p.created_at },
             score: startsWithQuery(p.title) ? 0.8 : 0.55,
           }))
         );
@@ -280,9 +287,7 @@ router.get('/courses', authenticate, async (req: AuthRequest, res, next) => {
     const searchQuery = req.query.q as string || '';
     const category = req.query.category as string;
     const difficulty = req.query.difficulty as string;
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
-    const offset = (page - 1) * limit;
+    const { page, limit, offset } = parsePagination(req, { defaultLimit: 20, maxLimit: 50 });
     const sortBy = req.query.sortBy as string || 'title';
     const sortOrder = req.query.sortOrder as string || 'asc';
 
@@ -328,10 +333,7 @@ router.get('/courses', authenticate, async (req: AuthRequest, res, next) => {
       success: true,
       data: courses,
       meta: {
-        page,
-        limit,
-        total: countResult[0].total,
-        totalPages: Math.ceil(countResult[0].total / limit),
+        ...buildPaginationMeta(countResult[0].total, page, limit),
         query: searchQuery,
       },
     });
@@ -357,9 +359,7 @@ router.get('/users', authenticate, async (req: AuthRequest, res, next) => {
     const enterpriseId = req.query.enterpriseId as string;
     const directionId = req.query.directionId as string;
     const serviceId = req.query.serviceId as string;
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
-    const offset = (page - 1) * limit;
+    const { page, limit, offset } = parsePagination(req, { defaultLimit: 20, maxLimit: 50 });
 
     let query = `SELECT u.id, u.display_name, u.email, u.role, u.is_active, u.created_at,
                         e.name as enterprise_name, d.name as direction_name, s.name as service_name
@@ -407,12 +407,7 @@ router.get('/users', authenticate, async (req: AuthRequest, res, next) => {
     res.json({
       success: true,
       data: users,
-      meta: {
-        page,
-        limit,
-        total: countResult[0].total,
-        totalPages: Math.ceil(countResult[0].total / limit),
-      },
+      meta: buildPaginationMeta(countResult[0].total, page, limit),
     });
   } catch (error) {
     next(error);

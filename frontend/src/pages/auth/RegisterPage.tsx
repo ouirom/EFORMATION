@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
@@ -9,6 +10,8 @@ import { Loader2, Eye, EyeOff, Check, X, MailCheck } from 'lucide-react'
 import { useToast } from '@/components/ui/use-toast'
 
 export default function RegisterPage() {
+  const { t } = useTranslation('auth')
+  const { t: tCommon } = useTranslation('common')
   const { register, isLoading } = useAuth()
   const { toast } = useToast()
   const [showPassword, setShowPassword] = useState(false)
@@ -22,11 +25,11 @@ export default function RegisterPage() {
   })
 
   const passwordRequirements = [
-    { label: '8 caractères minimum', met: formData.password.length >= 8 },
-    { label: 'Une majuscule', met: /[A-Z]/.test(formData.password) },
-    { label: 'Une minuscule', met: /[a-z]/.test(formData.password) },
-    { label: 'Un chiffre', met: /\d/.test(formData.password) },
-    { label: 'Un caractère spécial', met: /[!@#$%^&*(),.?":{}|<>]/.test(formData.password) },
+    { label: t('register.passwordRequirements.minLength'), met: formData.password.length >= 8 },
+    { label: t('register.passwordRequirements.uppercase'), met: /[A-Z]/.test(formData.password) },
+    { label: t('register.passwordRequirements.lowercase'), met: /[a-z]/.test(formData.password) },
+    { label: t('register.passwordRequirements.digit'), met: /\d/.test(formData.password) },
+    { label: t('register.passwordRequirements.special'), met: /[!@#$%^&*(),.?":{}|<>]/.test(formData.password) },
   ]
 
   const isPasswordValid = passwordRequirements.every((req) => req.met)
@@ -37,8 +40,8 @@ export default function RegisterPage() {
 
     if (!formData.firstName || !formData.lastName || !formData.email || !formData.password) {
       toast({
-        title: 'Erreur',
-        description: 'Veuillez remplir tous les champs',
+        title: tCommon('status.error'),
+        description: t('register.errors.fillAllFields'),
         variant: 'destructive',
       })
       return
@@ -46,8 +49,8 @@ export default function RegisterPage() {
 
     if (!isPasswordValid) {
       toast({
-        title: 'Erreur',
-        description: 'Le mot de passe ne respecte pas les critères de sécurité',
+        title: tCommon('status.error'),
+        description: t('register.errors.weakPassword'),
         variant: 'destructive',
       })
       return
@@ -55,8 +58,8 @@ export default function RegisterPage() {
 
     if (!doPasswordsMatch) {
       toast({
-        title: 'Erreur',
-        description: 'Les mots de passe ne correspondent pas',
+        title: tCommon('status.error'),
+        description: t('register.errors.passwordMismatch'),
         variant: 'destructive',
       })
       return
@@ -68,11 +71,11 @@ export default function RegisterPage() {
         email: formData.email,
         password: formData.password,
       })
-      setPendingMessage(result.message || "Votre compte a été créé et est en attente d'activation par votre responsable.")
+      setPendingMessage(result.message || t('register.defaultPendingMessage'))
     } catch (error: any) {
       toast({
-        title: 'Erreur',
-        description: error.response?.data?.error?.message || error.message || "Une erreur s'est produite lors de l'inscription",
+        title: tCommon('status.error'),
+        description: error.response?.data?.error?.message || error.message || t('register.errors.registrationFailed'),
         variant: 'destructive',
       })
     }
@@ -83,12 +86,12 @@ export default function RegisterPage() {
       <Card className="shadow-lg">
         <CardHeader className="space-y-1 items-center text-center">
           <MailCheck className="h-10 w-10 text-primary mb-2" />
-          <CardTitle className="text-2xl text-center">Compte créé</CardTitle>
+          <CardTitle className="text-2xl text-center">{t('register.accountCreatedTitle')}</CardTitle>
           <CardDescription className="text-center">{pendingMessage}</CardDescription>
         </CardHeader>
         <CardFooter className="flex flex-col gap-4">
           <Link to="/login" className="w-full">
-            <Button className="w-full">Retour à la connexion</Button>
+            <Button className="w-full">{t('register.backToLogin')}</Button>
           </Link>
         </CardFooter>
       </Card>
@@ -98,16 +101,16 @@ export default function RegisterPage() {
   return (
     <Card className="shadow-lg">
       <CardHeader className="space-y-1">
-        <CardTitle className="text-2xl text-center">Créer un compte</CardTitle>
+        <CardTitle className="text-2xl text-center">{t('register.title')}</CardTitle>
         <CardDescription className="text-center">
-          Remplissez le formulaire pour créer votre compte
+          {t('register.subtitle')}
         </CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit}>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="firstName">Prénom</Label>
+              <Label htmlFor="firstName">{t('register.firstName')}</Label>
               <Input
                 id="firstName"
                 placeholder="Niperc"
@@ -117,7 +120,7 @@ export default function RegisterPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="lastName">Nom</Label>
+              <Label htmlFor="lastName">{t('register.lastName')}</Label>
               <Input
                 id="lastName"
                 placeholder="Uokak"
@@ -128,18 +131,18 @@ export default function RegisterPage() {
             </div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email">{t('register.email')}</Label>
             <Input
               id="email"
               type="email"
-              placeholder="nom@entreprise.com"
+              placeholder={t('register.emailPlaceholder')}
               value={formData.email}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
               disabled={isLoading}
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="password">Mot de passe</Label>
+            <Label htmlFor="password">{t('register.password')}</Label>
             <div className="relative">
               <Input
                 id="password"
@@ -177,7 +180,7 @@ export default function RegisterPage() {
             )}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="confirmPassword">Confirmer le mot de passe</Label>
+            <Label htmlFor="confirmPassword">{t('register.confirmPassword')}</Label>
             <Input
               id="confirmPassword"
               type="password"
@@ -191,12 +194,12 @@ export default function RegisterPage() {
                 {doPasswordsMatch ? (
                   <>
                     <Check className="h-3 w-3 text-green-500" />
-                    <span className="text-green-600">Les mots de passe correspondent</span>
+                    <span className="text-green-600">{t('register.passwordsMatch')}</span>
                   </>
                 ) : (
                   <>
                     <X className="h-3 w-3 text-red-500" />
-                    <span className="text-red-500">Les mots de passe ne correspondent pas</span>
+                    <span className="text-red-500">{t('register.passwordsDontMatch')}</span>
                   </>
                 )}
               </div>
@@ -206,12 +209,12 @@ export default function RegisterPage() {
         <CardFooter className="flex flex-col gap-4">
           <Button type="submit" className="w-full" disabled={isLoading}>
             {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Créer mon compte
+            {t('register.submit')}
           </Button>
           <p className="text-center text-sm text-muted-foreground">
-            Déjà un compte?{' '}
+            {t('register.alreadyHaveAccount')}{' '}
             <Link to="/login" className="text-primary hover:underline">
-              Se connecter
+              {t('register.signIn')}
             </Link>
           </p>
         </CardFooter>

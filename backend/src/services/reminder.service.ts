@@ -3,6 +3,7 @@ import { db, IS_PG } from '../database/db-helpers';
 import { NotificationService } from './notification.service';
 import { config } from '../config';
 import { logger } from '../utils/logger';
+import { teamAssignmentClauseForUserRow } from '../utils/teamAssignment';
 
 interface PendingAssignmentRow {
   assignment_id: number;
@@ -49,6 +50,7 @@ export class ReminderService {
          OR (ca.assignment_type = 'direction' AND u.direction_id = ca.target_id)
          OR (ca.assignment_type = 'service' AND u.service_id = ca.target_id)
          OR (ca.assignment_type = 'role' AND u.role = ca.target_role)
+         OR ${teamAssignmentClauseForUserRow('ca', 'u')}
        )
        LEFT JOIN enrollments e ON e.course_id = ca.course_id AND e.user_id = u.id
        WHERE ca.is_mandatory = ${db.bool(true)}

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -33,6 +34,8 @@ interface Notification {
 }
 
 export default function NotificationsPage() {
+  const { t } = useTranslation('notifications')
+  const { t: tCommon } = useTranslation('common')
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const [filter, setFilter] = useState<'all' | 'unread'>('all')
@@ -51,6 +54,7 @@ export default function NotificationsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notifications'] })
+      queryClient.invalidateQueries({ queryKey: ['notifications-unread-count'] })
     },
   })
 
@@ -60,7 +64,8 @@ export default function NotificationsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notifications'] })
-      toast({ title: 'Succès', description: 'Toutes les notifications ont été marquées comme lues' })
+      queryClient.invalidateQueries({ queryKey: ['notifications-unread-count'] })
+      toast({ title: tCommon('status.success'), description: t('markAllReadSuccessDescription') })
     },
   })
 
@@ -70,7 +75,8 @@ export default function NotificationsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notifications'] })
-      toast({ title: 'Succès', description: 'Notification supprimée' })
+      queryClient.invalidateQueries({ queryKey: ['notifications-unread-count'] })
+      toast({ title: tCommon('status.success'), description: t('deleteSuccessDescription') })
     },
   })
 
@@ -114,9 +120,9 @@ export default function NotificationsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Notifications</h1>
+          <h1 className="text-3xl font-bold">{t('title')}</h1>
           <p className="text-muted-foreground">
-            {unreadCount > 0 ? `${unreadCount} non lue(s)` : 'Toutes vos notifications'}
+            {unreadCount > 0 ? t('unreadCount', { count: unreadCount }) : t('allRead')}
           </p>
         </div>
         <div className="flex gap-2">
@@ -127,13 +133,13 @@ export default function NotificationsPage() {
               disabled={markAllReadMutation.isPending}
             >
               <CheckCheck className="h-4 w-4 mr-2" />
-              Tout marquer comme lu
+              {t('markAllRead')}
             </Button>
           )}
           <Link to="/settings">
             <Button variant="outline">
               <Settings className="h-4 w-4 mr-2" />
-              Préférences
+              {t('preferences')}
             </Button>
           </Link>
         </div>
@@ -143,10 +149,10 @@ export default function NotificationsPage() {
       <Tabs value={filter} onValueChange={(v) => setFilter(v as 'all' | 'unread')}>
         <TabsList>
           <TabsTrigger value="all">
-            Toutes ({notifications.length})
+            {t('tabs.all', { count: notifications.length })}
           </TabsTrigger>
           <TabsTrigger value="unread">
-            Non lues ({unreadCount})
+            {t('tabs.unread', { count: unreadCount })}
           </TabsTrigger>
         </TabsList>
 
@@ -155,11 +161,11 @@ export default function NotificationsPage() {
             <Card>
               <CardContent className="py-12 text-center">
                 <Bell className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                <h3 className="text-lg font-medium mb-2">Aucune notification</h3>
+                <h3 className="text-lg font-medium mb-2">{t('empty.title')}</h3>
                 <p className="text-muted-foreground">
                   {filter === 'unread'
-                    ? 'Vous avez lu toutes vos notifications'
-                    : 'Vous n\'avez pas encore de notifications'}
+                    ? t('empty.unread')
+                    : t('empty.all')}
                 </p>
               </CardContent>
             </Card>
@@ -186,7 +192,7 @@ export default function NotificationsPage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-start justify-between gap-2">
                             <div>
-                              <h4 className="font-medium">{notification.subject || 'Notification'}</h4>
+                              <h4 className="font-medium">{notification.subject || t('defaultSubject')}</h4>
                               <p className="text-sm text-muted-foreground mt-1">
                                 {notification.body}
                               </p>
@@ -194,7 +200,7 @@ export default function NotificationsPage() {
                             <div className="flex items-center gap-2 shrink-0">
                               {!notification.read_at && (
                                 <Badge variant="default" className="bg-primary">
-                                  Nouveau
+                                  {t('new')}
                                 </Badge>
                               )}
                               <Button

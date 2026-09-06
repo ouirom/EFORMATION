@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { TourStep } from '@/lib/tourSteps'
@@ -16,6 +17,8 @@ interface Rect {
 }
 
 export function ProductTour({ steps, onFinish }: ProductTourProps) {
+  const { t } = useTranslation('tour')
+  const { t: tShared } = useTranslation('shared')
   const [stepIndex, setStepIndex] = useState(0)
   const [rect, setRect] = useState<Rect | null>(null)
 
@@ -129,17 +132,17 @@ export function ProductTour({ steps, onFinish }: ProductTourProps) {
         style={tooltipStyle}
       >
         <div className="flex items-start justify-between gap-2 mb-2">
-          <h3 className="font-semibold">{step.title}</h3>
+          <h3 className="font-semibold">{t(`${step.key}.title`)}</h3>
           <button
             type="button"
             onClick={onFinish}
             className="shrink-0 text-muted-foreground hover:text-foreground"
-            aria-label="Fermer la visite guidée"
+            aria-label={tShared('productTour.close')}
           >
             <X className="h-4 w-4" />
           </button>
         </div>
-        <p className="text-sm text-muted-foreground mb-4">{step.content}</p>
+        <p className="text-sm text-muted-foreground mb-4">{t(`${step.key}.content`)}</p>
         <div className="flex items-center justify-between">
           <span className="text-xs text-muted-foreground">
             {stepIndex + 1} / {steps.length}
@@ -147,11 +150,11 @@ export function ProductTour({ steps, onFinish }: ProductTourProps) {
           <div className="flex items-center gap-2">
             {stepIndex > 0 && (
               <Button variant="outline" size="sm" onClick={goPrev}>
-                Précédent
+                {tShared('productTour.previous')}
               </Button>
             )}
             <Button size="sm" onClick={goNext}>
-              {stepIndex < steps.length - 1 ? 'Suivant' : 'Terminer'}
+              {stepIndex < steps.length - 1 ? tShared('productTour.next') : tShared('productTour.finish')}
             </Button>
           </div>
         </div>

@@ -1,0 +1,71 @@
+{
+  "list": {
+    "title": "Sessions Live",
+    "subtitle": "Participez à des sessions interactives en direct",
+    "createSession": "Créer une session",
+    "liveNow": "EN DIRECT",
+    "participantsCount": "{{count}} participants",
+    "joinNow": "Rejoindre maintenant",
+    "searchPlaceholder": "Rechercher une session...",
+    "tabs": {
+      "upcoming": "À venir ({{count}})",
+      "live": "En direct",
+      "recordings": "Enregistrements ({{count}})"
+    },
+    "empty": {
+      "upcomingTitle": "Aucune session programmée",
+      "upcomingDescription": "Les prochaines sessions apparaîtront ici",
+      "liveTitle": "Aucune session en direct",
+      "liveDescription": "Consultez les sessions à venir",
+      "recordingsTitle": "Aucun enregistrement",
+      "recordingsDescription": "Les sessions passées seront disponibles ici"
+    },
+    "status": {
+      "scheduled": "Programmée",
+      "live": "En direct",
+      "ended": "Terminée"
+    },
+    "defaultInstructor": "Formateur",
+    "noInstructorAssigned": "Formateur non assigné",
+    "notScheduled": "Non planifiée",
+    "join": "Rejoindre",
+    "viewRecording": "Voir l'enregistrement",
+    "enroll": "S'inscrire"
+  },
+  "detail": {
+    "notFoundTitle": "Session non trouvée",
+    "notFoundHint": "Cette session live n'existe pas ou n'est pas accessible.",
+    "backToSessions": "Retour aux sessions live",
+    "live": "En direct",
+    "defaultInstructorTitle": "Formateur",
+    "participantsLabel": "Participants",
+    "openMeeting": "Ouvrir la réunion",
+    "join": "Rejoindre",
+    "enrollmentConfirmed": "Inscription confirmée",
+    "youJoined": "Vous avez rejoint la session",
+    "enrollErrorTitle": "Erreur",
+    "enrollErrorDescription": "Impossible de rejoindre la session",
+    "sessionEnded": "Cette session est terminée, aucun enregistrement n'est disponible.",
+    "watchRecording": "Voir l'enregistrement",
+    "notFound2": "Session introuvable",
+    "defaultInstructorLabel": "Formateur",
+    "noInstructorAssigned": "Formateur non assigné",
+    "notScheduled": "Non planifiée",
+    "participantsCountWithMax": "{{count}}{{max}} participants",
+    "enrolledWaiting": "Vous êtes inscrit(e). La session commencera le {{date}}.",
+    "enrolling": "Inscription...",
+    "enroll": "S'inscrire"
+  },
+  "embed": {
+    "recordingImpossibleTitle": "Enregistrement impossible",
+    "startRecordingError": "Impossible de démarrer l'enregistrement",
+    "stopRecordingError": "Impossible d'arrêter l'enregistrement",
+    "connecting": "Connexion à la session...",
+    "connectionError": "Impossible de rejoindre la visioconférence intégrée.",
+    "back": "Retour",
+    "stopRecording": "Arrêter l'enregistrement",
+    "startRecording": "Démarrer l'enregistrement",
+    "exitFullscreen": "Quitter le plein écran",
+    "fullscreen": "Plein écran"
+  }
+}

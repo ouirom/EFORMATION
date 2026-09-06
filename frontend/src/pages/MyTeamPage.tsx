@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -13,6 +14,7 @@ import {
 } from '@/components/ui/select'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { PageLoading } from '@/components/ui/loading'
+import { QueryError } from '@/components/ui/query-error'
 import { useToast } from '@/components/ui/use-toast'
 import { AlertTriangle, Users, Mail, Bell } from 'lucide-react'
 import { api } from '@/services/api'
@@ -26,8 +28,6 @@ interface ReportSettings {
   channelInApp: boolean
   lastSentAt: string | null
 }
-
-const WEEKDAYS = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi']
 
 interface TeamMember {
   id: number
@@ -43,10 +43,13 @@ interface TeamMember {
 }
 
 export default function MyTeamPage() {
+  const { t } = useTranslation('myTeam')
+  const { t: tCommon } = useTranslation('common')
   const { toast } = useToast()
   const queryClient = useQueryClient()
+  const WEEKDAYS = t('weekdays', { returnObjects: true }) as string[]
 
-  const { data: team = [], isLoading } = useQuery<TeamMember[]>({
+  const { data: team = [], isLoading, error, refetch } = useQuery<TeamMember[]>({
     queryKey: ['my-team'],
     queryFn: async () => {
       const response = await api.get('/analytics/my-team')
@@ -73,11 +76,11 @@ export default function MyTeamPage() {
   const saveMutation = useMutation({
     mutationFn: (data: ReportSettings) => api.put('/analytics/my-team/report-settings', data),
     onSuccess: () => {
-      toast({ title: 'Préférences enregistrées', description: 'Vos réglages de rapport ont été mis à jour.' })
+      toast({ title: t('report.savedTitle'), description: t('report.savedDescription') })
       queryClient.invalidateQueries({ queryKey: ['my-team-report-settings'] })
     },
     onError: () => {
-      toast({ title: 'Erreur', description: "Impossible d'enregistrer vos préférences", variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: t('report.saveErrorDescription'), variant: 'destructive' })
     },
   })
 
@@ -85,27 +88,31 @@ export default function MyTeamPage() {
     return <PageLoading />
   }
 
+  if (error) {
+    return <QueryError onRetry={() => refetch()} />
+  }
+
   const overdueTotal = team.reduce((sum, m) => sum + m.overdueCount, 0)
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">Mon équipe</h1>
+        <h1 className="text-3xl font-bold">{t('title')}</h1>
         <p className="text-muted-foreground">
-          Progression et activité des collaborateurs qui vous sont rattachés
+          {t('subtitle')}
         </p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Rapport périodique</CardTitle>
+          <CardTitle className="text-base">{t('report.title')}</CardTitle>
           <CardDescription>
-            Recevez un résumé automatique de la progression de votre équipe, dans l'interface et/ou par email
+            {t('report.description')}
           </CardDescription>
         </CardHeader>
         <CardContent>
           {settingsLoading ? (
-            <p className="text-sm text-muted-foreground">Chargement...</p>
+            <p className="text-sm text-muted-foreground">{t('report.loading')}</p>
           ) : (
             <div className="space-y-4">
               <div className="flex items-center gap-2">
@@ -116,35 +123,35 @@ export default function MyTeamPage() {
                   onChange={(e) => setForm({ ...form, isEnabled: e.target.checked })}
                   className="h-4 w-4 rounded border-gray-300"
                 />
-                <Label htmlFor="reportEnabled">Recevoir un rapport automatique</Label>
+                <Label htmlFor="reportEnabled">{t('report.enable')}</Label>
               </div>
 
               {form.isEnabled && (
                 <>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-md">
                     <div className="space-y-2">
-                      <Label>Fréquence</Label>
+                      <Label htmlFor="report-frequency">{t('report.frequency')}</Label>
                       <Select
                         value={form.frequency}
                         onValueChange={(value: string) => setForm({ ...form, frequency: value as 'daily' | 'weekly' })}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger id="report-frequency">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="daily">Quotidien</SelectItem>
-                          <SelectItem value="weekly">Hebdomadaire</SelectItem>
+                          <SelectItem value="daily">{t('report.daily')}</SelectItem>
+                          <SelectItem value="weekly">{t('report.weekly')}</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
                     {form.frequency === 'weekly' && (
                       <div className="space-y-2">
-                        <Label>Jour</Label>
+                        <Label htmlFor="report-weekday">{t('report.day')}</Label>
                         <Select
                           value={String(form.weekday ?? 1)}
                           onValueChange={(value: string) => setForm({ ...form, weekday: parseInt(value, 10) })}
                         >
-                          <SelectTrigger>
+                          <SelectTrigger id="report-weekday">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -158,7 +165,7 @@ export default function MyTeamPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Canaux</Label>
+                    <Label>{t('report.channels')}</Label>
                     <div className="flex flex-col gap-2">
                       <label className="flex items-center gap-2 text-sm">
                         <input
@@ -167,7 +174,7 @@ export default function MyTeamPage() {
                           onChange={(e) => setForm({ ...form, channelInApp: e.target.checked })}
                           className="h-4 w-4 rounded border-gray-300"
                         />
-                        <Bell className="h-4 w-4 text-muted-foreground" /> Notification dans l'application
+                        <Bell className="h-4 w-4 text-muted-foreground" /> {t('report.channelInApp')}
                       </label>
                       <label className="flex items-center gap-2 text-sm">
                         <input
@@ -176,7 +183,7 @@ export default function MyTeamPage() {
                           onChange={(e) => setForm({ ...form, channelEmail: e.target.checked })}
                           className="h-4 w-4 rounded border-gray-300"
                         />
-                        <Mail className="h-4 w-4 text-muted-foreground" /> Email
+                        <Mail className="h-4 w-4 text-muted-foreground" /> {t('report.channelEmail')}
                       </label>
                     </div>
                   </div>
@@ -185,12 +192,12 @@ export default function MyTeamPage() {
 
               {settings?.lastSentAt && (
                 <p className="text-xs text-muted-foreground">
-                  Dernier rapport envoyé {formatRelativeTime(settings.lastSentAt)}
+                  {t('report.lastSent', { time: formatRelativeTime(settings.lastSentAt) })}
                 </p>
               )}
 
               <Button onClick={() => saveMutation.mutate(form)} disabled={saveMutation.isPending}>
-                {saveMutation.isPending ? 'Enregistrement...' : 'Enregistrer'}
+                {saveMutation.isPending ? t('report.saving') : t('report.save')}
               </Button>
             </div>
           )}
@@ -206,7 +213,7 @@ export default function MyTeamPage() {
               </div>
               <div>
                 <p className="text-2xl font-bold">{team.length}</p>
-                <p className="text-sm text-muted-foreground">Collaborateurs</p>
+                <p className="text-sm text-muted-foreground">{t('stats.collaborators')}</p>
               </div>
             </div>
           </CardContent>
@@ -221,7 +228,7 @@ export default function MyTeamPage() {
                 <p className="text-2xl font-bold">
                   {team.length > 0 ? Math.round(team.reduce((s, m) => s + m.avgProgress, 0) / team.length) : 0}%
                 </p>
-                <p className="text-sm text-muted-foreground">Progression moyenne</p>
+                <p className="text-sm text-muted-foreground">{t('stats.averageProgress')}</p>
               </div>
             </div>
           </CardContent>
@@ -234,7 +241,7 @@ export default function MyTeamPage() {
               </div>
               <div>
                 <p className="text-2xl font-bold">{overdueTotal}</p>
-                <p className="text-sm text-muted-foreground">Formations obligatoires en retard</p>
+                <p className="text-sm text-muted-foreground">{t('stats.overdueMandatory')}</p>
               </div>
             </div>
           </CardContent>
@@ -246,19 +253,19 @@ export default function MyTeamPage() {
           {team.length === 0 ? (
             <div className="p-12 text-center text-muted-foreground">
               <Users className="h-10 w-10 mx-auto mb-3 opacity-50" />
-              Aucun collaborateur rattaché n'a été trouvé pour votre profil.
+              {t('table.empty')}
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr className="border-b bg-muted/50">
-                    <th className="text-left p-4 font-medium">Collaborateur</th>
-                    <th className="text-left p-4 font-medium">Rôle</th>
-                    <th className="text-left p-4 font-medium">Cours suivis</th>
-                    <th className="text-left p-4 font-medium">Progression moyenne</th>
-                    <th className="text-left p-4 font-medium">En retard</th>
-                    <th className="text-left p-4 font-medium">Dernière activité</th>
+                    <th className="text-left p-4 font-medium">{t('table.collaborator')}</th>
+                    <th className="text-left p-4 font-medium">{t('table.role')}</th>
+                    <th className="text-left p-4 font-medium">{t('table.coursesFollowed')}</th>
+                    <th className="text-left p-4 font-medium">{t('table.averageProgress')}</th>
+                    <th className="text-left p-4 font-medium">{t('table.overdue')}</th>
+                    <th className="text-left p-4 font-medium">{t('table.lastActivity')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -280,7 +287,7 @@ export default function MyTeamPage() {
                         <Badge className={getRoleColor(member.role)}>{getRoleLabel(member.role)}</Badge>
                       </td>
                       <td className="p-4 text-sm">
-                        {member.completedCount} / {member.enrolledCount} terminés
+                        {t('table.completedOf', { completed: member.completedCount, enrolled: member.enrolledCount })}
                       </td>
                       <td className="p-4">
                         <div className="flex items-center gap-2">
@@ -301,7 +308,7 @@ export default function MyTeamPage() {
                         )}
                       </td>
                       <td className="p-4 text-sm text-muted-foreground">
-                        {member.lastActivity ? formatRelativeTime(member.lastActivity) : 'Jamais'}
+                        {member.lastActivity ? formatRelativeTime(member.lastActivity) : t('table.never')}
                       </td>
                     </tr>
                   ))}

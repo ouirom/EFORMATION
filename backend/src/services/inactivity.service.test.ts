@@ -1,18 +1,18 @@
 import { InactivitySuspensionService, InactivityPolicyService } from './inactivity.service';
 import { DatabaseService } from './database.service';
-import { NotificationService } from './notification.service';
+import { PendingNotificationService } from './pending-notification.service';
 
 jest.mock('./database.service');
-jest.mock('./notification.service');
+jest.mock('./pending-notification.service');
 
 const mockedQuery = DatabaseService.query as jest.Mock;
 const mockedExecute = DatabaseService.execute as jest.Mock;
-const mockedSend = NotificationService.send as jest.Mock;
+const mockedQueue = PendingNotificationService.queue as jest.Mock;
 
 describe('InactivitySuspensionService.runDailySuspensions', () => {
   beforeEach(() => {
     mockedExecute.mockResolvedValue({ rowsAffected: 1 });
-    mockedSend.mockResolvedValue({ id: 1, status: 'sent', channel: 'email' });
+    mockedQueue.mockResolvedValue({ id: 1, subject: 'subject', recipientEmail: 'stale@test.com' });
   });
 
   it('suspends stale users matched by each configured policy and notifies them', async () => {
@@ -35,7 +35,7 @@ describe('InactivitySuspensionService.runDailySuspensions', () => {
       expect.stringContaining("status = 'suspended'"),
       expect.objectContaining({ id: 3 })
     );
-    expect(mockedSend).toHaveBeenCalledWith(expect.objectContaining({ userId: 3, channel: 'email' }));
+    expect(mockedQueue).toHaveBeenCalledWith(expect.objectContaining({ userId: 3, eventType: 'account_suspended' }));
   });
 
   it('does nothing when no policies are configured', async () => {
@@ -47,7 +47,7 @@ describe('InactivitySuspensionService.runDailySuspensions', () => {
     const result = await InactivitySuspensionService.runDailySuspensions();
 
     expect(result.suspended).toBe(0);
-    expect(mockedSend).not.toHaveBeenCalled();
+    expect(mockedQueue).not.toHaveBeenCalled();
   });
 
   it('does not suspend anyone when no user is stale enough', async () => {

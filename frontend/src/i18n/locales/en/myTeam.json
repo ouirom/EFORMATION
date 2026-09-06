@@ -1,0 +1,40 @@
+{
+  "weekdays": ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
+  "title": "My Team",
+  "subtitle": "Progress and activity of your direct reports",
+  "report": {
+    "title": "Periodic report",
+    "description": "Receive an automatic summary of your team's progress, in-app and/or by email",
+    "loading": "Loading...",
+    "enable": "Receive an automatic report",
+    "frequency": "Frequency",
+    "daily": "Daily",
+    "weekly": "Weekly",
+    "day": "Day",
+    "channels": "Channels",
+    "channelInApp": "In-app notification",
+    "channelEmail": "Email",
+    "lastSent": "Last report sent {{time}}",
+    "saving": "Saving...",
+    "save": "Save",
+    "savedTitle": "Preferences saved",
+    "savedDescription": "Your report settings have been updated.",
+    "saveErrorDescription": "Unable to save your preferences"
+  },
+  "stats": {
+    "collaborators": "Team members",
+    "averageProgress": "Average progress",
+    "overdueMandatory": "Overdue mandatory courses"
+  },
+  "table": {
+    "empty": "No direct reports were found for your profile.",
+    "collaborator": "Team member",
+    "role": "Role",
+    "coursesFollowed": "Courses followed",
+    "averageProgress": "Average progress",
+    "overdue": "Overdue",
+    "lastActivity": "Last activity",
+    "completedOf": "{{completed}} / {{enrolled}} completed",
+    "never": "Never"
+  }
+}

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '../services/api';
@@ -6,6 +7,7 @@ import { Button } from '../components/ui/button';
 import { Card } from '../components/ui/card';
 import { QuizQuestionSelector } from '../components/QuizQuestionSelector';
 import { Badge } from '../components/ui/badge';
+import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { ChevronUp, ChevronDown, Trash2, Plus } from 'lucide-react';
 
 interface Question {
@@ -24,9 +26,12 @@ interface Quiz {
 }
 
 export const QuizManageQuestionsPage: React.FC = () => {
+  const { t } = useTranslation('courses');
+  const { t: tCommon } = useTranslation('common');
   const { quizId } = useParams<{ quizId: string }>();
   const navigate = useNavigate();
   const [showSelector, setShowSelector] = useState(false);
+  const [questionPendingDelete, setQuestionPendingDelete] = useState<number | null>(null);
   const queryClient = useQueryClient();
 
   const quizIdNum = parseInt(quizId || '0', 10);
@@ -61,11 +66,7 @@ export const QuizManageQuestionsPage: React.FC = () => {
   });
 
   const handleRemoveQuestion = (questionId: number) => {
-    if (
-      window.confirm('Êtes-vous sûr de vouloir supprimer cette question du quiz?')
-    ) {
-      removeQuestionMutation.mutate(questionId);
-    }
+    setQuestionPendingDelete(questionId);
   };
 
   const handleMoveUp = (questionId: number) => {
@@ -76,9 +77,9 @@ export const QuizManageQuestionsPage: React.FC = () => {
     reorderQuestionMutation.mutate({ questionId, direction: 'down' });
   };
 
-  if (isLoading) return <div className="p-6">Chargement...</div>;
-  if (isError) return <div className="p-6 text-red-600">Erreur lors du chargement</div>;
-  if (!quiz) return <div className="p-6">Quiz non trouvé</div>;
+  if (isLoading) return <div className="p-6">{t('quizManageQuestions.loading')}</div>;
+  if (isError) return <div className="p-6 text-red-600">{t('quizManageQuestions.loadError')}</div>;
+  if (!quiz) return <div className="p-6">{t('quizManageQuestions.notFound')}</div>;
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
@@ -87,11 +88,11 @@ export const QuizManageQuestionsPage: React.FC = () => {
           onClick={() => navigate(-1)}
           className="text-blue-600 hover:text-blue-800 mb-4"
         >
-          ← Retour
+          {t('quizManageQuestions.back')}
         </button>
         <h1 className="text-3xl font-bold mb-2">{quiz.title}</h1>
         <p className="text-gray-600">
-          Gérer les questions du quiz ({quiz.questions?.length || 0} questions)
+          {t('quizManageQuestions.manageQuestions', { count: quiz.questions?.length || 0 })}
         </p>
       </div>
 
@@ -107,13 +108,13 @@ export const QuizManageQuestionsPage: React.FC = () => {
       <div className="flex gap-2 mb-6">
         <Button onClick={() => setShowSelector(!showSelector)} className="flex items-center gap-2">
           <Plus className="w-4 h-4" />
-          {showSelector ? 'Masquer le sélecteur' : 'Ajouter des questions'}
+          {showSelector ? t('quizManageQuestions.hideSelector') : t('quizManageQuestions.addQuestions')}
         </Button>
       </div>
 
       {!quiz.questions || quiz.questions.length === 0 ? (
         <Card className="p-6 text-center text-gray-500">
-          Aucune question dans ce quiz. Cliquez sur "Ajouter des questions" pour en ajouter.
+          {t('quizManageQuestions.empty')}
         </Card>
       ) : (
         <div className="space-y-3">
@@ -123,7 +124,7 @@ export const QuizManageQuestionsPage: React.FC = () => {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-2">
                     <span className="font-semibold text-gray-600">
-                      Q{index + 1}
+                      {t('quizManageQuestions.questionLabel', { number: index + 1 })}
                     </span>
                     <Badge variant="secondary">{question.type}</Badge>
                   </div>
@@ -151,7 +152,7 @@ export const QuizManageQuestionsPage: React.FC = () => {
                     onClick={() => handleMoveUp(question.id)}
                     disabled={index === 0}
                     className="p-1 hover:bg-gray-100 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Déplacer vers le haut"
+                    title={t('quizManageQuestions.moveUp')}
                   >
                     <ChevronUp className="w-4 h-4" />
                   </button>
@@ -159,14 +160,14 @@ export const QuizManageQuestionsPage: React.FC = () => {
                     onClick={() => handleMoveDown(question.id)}
                     disabled={index === (quiz.questions?.length || 0) - 1}
                     className="p-1 hover:bg-gray-100 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                    title="Déplacer vers le bas"
+                    title={t('quizManageQuestions.moveDown')}
                   >
                     <ChevronDown className="w-4 h-4" />
                   </button>
                   <button
                     onClick={() => handleRemoveQuestion(question.id)}
                     className="p-1 hover:bg-red-50 hover:text-red-600 rounded text-gray-600"
-                    title="Supprimer"
+                    title={t('quizManageQuestions.remove')}
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -176,6 +177,20 @@ export const QuizManageQuestionsPage: React.FC = () => {
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={questionPendingDelete !== null}
+        onOpenChange={(open) => !open && setQuestionPendingDelete(null)}
+        title={t('quizManageQuestions.remove')}
+        description={t('quizManageQuestions.confirmRemove')}
+        confirmLabel={tCommon('actions.remove')}
+        onConfirm={() => {
+          if (questionPendingDelete !== null) {
+            removeQuestionMutation.mutate(questionPendingDelete);
+          }
+          setQuestionPendingDelete(null);
+        }}
+      />
     </div>
   );
 };

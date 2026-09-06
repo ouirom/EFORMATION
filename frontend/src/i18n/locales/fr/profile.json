@@ -1,0 +1,104 @@
+{
+  "toasts": {
+    "profileUpdatedDescription": "Profil mis à jour avec succès",
+    "profileUpdateErrorDescription": "Impossible de mettre à jour le profil",
+    "passwordChangedDescription": "Mot de passe modifié avec succès",
+    "passwordChangeErrorDescription": "Impossible de modifier le mot de passe",
+    "selectImageDescription": "Veuillez sélectionner une image",
+    "imageTooLargeDescription": "L'image ne doit pas dépasser 5 Mo",
+    "avatarUpdatedDescription": "Photo de profil mise à jour",
+    "avatarUpdateErrorDescription": "Impossible de mettre à jour la photo",
+    "fillAllFieldsDescription": "Veuillez remplir tous les champs",
+    "passwordMismatchDescription": "Les mots de passe ne correspondent pas",
+    "passwordTooShortDescription": "Le mot de passe doit contenir au moins 8 caractères"
+  },
+  "defaultUserName": "Utilisateur",
+  "defaultRole": "Apprenant",
+  "defaultJobTitle": "Défaut",
+  "level": "Niveau {{level}}",
+  "xp": "{{xp}} XP",
+  "edit": "Modifier",
+  "changePasswordButton": "Mot de passe",
+  "logout": "Déconnexion",
+  "enterpriseNumber": "Entreprise #{{id}}",
+  "directionNumber": "Direction #{{id}}",
+  "roleLabel": "Rôle: {{role}}",
+  "stats": {
+    "coursesCompleted": "Cours terminés",
+    "learningHours": "Heures d'apprentissage",
+    "badgesEarned": "Badges obtenus",
+    "consecutiveDays": "Jours consécutifs",
+    "record": "Record: {{value}}"
+  },
+  "xpProgress": "{{xp}} / {{max}} XP",
+  "xpRemaining": "Plus que {{remaining}} XP pour le niveau {{nextLevel}}",
+  "serialNumberShort": "N° {{number}}",
+  "tabs": {
+    "badges": "Badges",
+    "certificates": "Certificats",
+    "activity": "Activité"
+  },
+  "recentBadges": {
+    "title": "Badges récents",
+    "description": "Vos dernières récompenses",
+    "empty": "Aucun badge obtenu pour l'instant"
+  },
+  "certificatesTab": {
+    "title": "Certificats",
+    "description": "Vos certifications obtenues",
+    "view": "Voir",
+    "empty": "Aucun certificat obtenu pour l'instant"
+  },
+  "activityTab": {
+    "title": "Activité récente",
+    "empty": "Aucune activité récente",
+    "timeAgo": "il y a {{time}}",
+    "actions": {
+      "courseCompleted": "Cours terminé",
+      "badgeEarned": "Badge obtenu",
+      "certificateIssued": "Certificat obtenu",
+      "quizPassed": "Quiz réussi",
+      "lessonCompleted": "Leçon complétée"
+    }
+  },
+  "editDialog": {
+    "title": "Modifier le profil",
+    "description": "Mettez à jour vos informations personnelles",
+    "fullName": "Nom complet",
+    "fullNamePlaceholder": "Votre nom complet",
+    "email": "Email",
+    "emailPlaceholder": "votre@email.com",
+    "cancel": "Annuler",
+    "saving": "Enregistrement...",
+    "save": "Enregistrer"
+  },
+  "passwordDialog": {
+    "title": "Changer le mot de passe",
+    "description": "Entrez votre mot de passe actuel et le nouveau mot de passe",
+    "currentPassword": "Mot de passe actuel",
+    "newPassword": "Nouveau mot de passe",
+    "newPasswordPlaceholder": "Minimum 8 caractères",
+    "confirmPassword": "Confirmer le mot de passe",
+    "confirmPasswordPlaceholder": "Confirmez le nouveau mot de passe",
+    "cancel": "Annuler",
+    "changing": "Modification...",
+    "change": "Modifier"
+  },
+  "settings": {
+    "title": "Paramètres",
+    "subtitle": "Gérez vos préférences de notifications",
+    "savedDescription": "Préférences enregistrées",
+    "saveErrorDescription": "Erreur lors de l'enregistrement",
+    "channels": {
+      "title": "Canaux de notification",
+      "description": "Choisissez les canaux par lesquels vous souhaitez recevoir les notifications. Les notifications dans l'application restent toujours visibles depuis la cloche en haut de l'écran, quel que soit votre choix ici.",
+      "email": { "label": "Email", "description": "Recevoir les notifications par email" },
+      "sms": { "label": "SMS", "description": "Recevoir les notifications par SMS" },
+      "whatsapp": { "label": "WhatsApp", "description": "Recevoir les notifications par WhatsApp" },
+      "pushWeb": { "label": "Notifications push (navigateur)", "description": "Recevoir des notifications push dans votre navigateur" },
+      "pushMobile": { "label": "Notifications push (mobile)", "description": "Recevoir des notifications push sur l'application mobile" }
+    },
+    "saving": "Enregistrement...",
+    "save": "Enregistrer"
+  }
+}

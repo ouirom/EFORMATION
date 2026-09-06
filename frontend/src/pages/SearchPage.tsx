@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useSearchParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -32,6 +33,7 @@ interface SearchResult {
 }
 
 export default function SearchPage() {
+  const { t } = useTranslation('search')
   const [searchParams, setSearchParams] = useSearchParams()
   const query = searchParams.get('q') || ''
   const type = searchParams.get('type') || 'all'
@@ -48,6 +50,24 @@ export default function SearchPage() {
       return response.data.data || []
     },
     enabled: query.length > 0,
+  })
+
+  // Records this search so it can surface later in "Recent searches" -- fires
+  // once per completed query/result-set, not on every keystroke or refetch.
+  useEffect(() => {
+    if (query.length > 0 && !isFetching) {
+      api.post('/search/log', { query, resultCount: results.length }).catch(() => {})
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, isFetching])
+
+  const { data: recentSearches = [] } = useQuery<{ query: string; searched_at: string }[]>({
+    queryKey: ['search-recent'],
+    queryFn: async () => {
+      const response = await api.get('/search/recent')
+      return response.data.data || []
+    },
+    enabled: !query,
   })
 
   const handleSearch = (e: React.FormEvent) => {
@@ -85,11 +105,11 @@ export default function SearchPage() {
 
   const getResultTypeBadge = (resultType: string) => {
     const labels: Record<string, string> = {
-      course: 'Formation',
-      user: 'Utilisateur',
-      blog: 'Article',
-      chat: 'Discussion',
-      live_session: 'Session live',
+      course: t('resultTypes.course'),
+      user: t('resultTypes.user'),
+      blog: t('resultTypes.blog'),
+      chat: t('resultTypes.chat'),
+      live_session: t('resultTypes.live_session'),
     }
     return labels[resultType] || resultType
   }
@@ -110,9 +130,9 @@ export default function SearchPage() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold">Recherche</h1>
+        <h1 className="text-3xl font-bold">{t('title')}</h1>
         <p className="text-muted-foreground">
-          Trouvez des formations, articles, utilisateurs et plus encore
+          {t('subtitle')}
         </p>
       </div>
 
@@ -124,7 +144,7 @@ export default function SearchPage() {
             <Input
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Rechercher des formations, articles, utilisateurs..."
+              placeholder={t('placeholder')}
               className="pl-10 pr-10 h-12 text-lg"
             />
             {searchInput && (
@@ -138,7 +158,7 @@ export default function SearchPage() {
             )}
           </div>
           <Button type="submit" size="lg" disabled={!searchInput.trim()}>
-            Rechercher
+            {t('searchButton')}
           </Button>
         </div>
       </form>
@@ -148,26 +168,26 @@ export default function SearchPage() {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
-              {isFetching ? 'Recherche en cours...' : `${results.length} résultat(s) pour "${query}"`}
+              {isFetching ? t('searching') : t('resultsCount', { count: results.length, query })}
             </p>
           </div>
 
           <Tabs value={type} onValueChange={handleTypeChange}>
             <TabsList>
               <TabsTrigger value="all">
-                Tout ({resultCounts.all})
+                {t('tabs.all', { count: resultCounts.all })}
               </TabsTrigger>
               <TabsTrigger value="course">
-                Formations ({resultCounts.course})
+                {t('tabs.course', { count: resultCounts.course })}
               </TabsTrigger>
               <TabsTrigger value="blog">
-                Articles ({resultCounts.blog})
+                {t('tabs.blog', { count: resultCounts.blog })}
               </TabsTrigger>
               <TabsTrigger value="user">
-                Utilisateurs ({resultCounts.user})
+                {t('tabs.user', { count: resultCounts.user })}
               </TabsTrigger>
               <TabsTrigger value="live_session">
-                Sessions ({resultCounts.live_session})
+                {t('tabs.liveSession', { count: resultCounts.live_session })}
               </TabsTrigger>
             </TabsList>
 
@@ -178,9 +198,9 @@ export default function SearchPage() {
                 <Card>
                   <CardContent className="py-12 text-center">
                     <Search className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                    <h3 className="text-lg font-medium mb-2">Aucun résultat trouvé</h3>
+                    <h3 className="text-lg font-medium mb-2">{t('noResults.title')}</h3>
                     <p className="text-muted-foreground">
-                      Essayez d'autres mots-clés ou vérifiez l'orthographe
+                      {t('noResults.description')}
                     </p>
                   </CardContent>
                 </Card>
@@ -204,7 +224,7 @@ export default function SearchPage() {
                                     {result.score >= 0.9 && (
                                       <Badge className="bg-yellow-500 text-xs">
                                         <Star className="h-3 w-3 mr-1" />
-                                        Meilleure correspondance
+                                        {t('bestMatch')}
                                       </Badge>
                                     )}
                                   </div>
@@ -266,57 +286,61 @@ export default function SearchPage() {
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Suggestions populaires</CardTitle>
-              <CardDescription>Recherches fréquentes sur la plateforme</CardDescription>
+              <CardTitle>{t('recentSearches.title')}</CardTitle>
+              <CardDescription>{t('recentSearches.description')}</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="flex flex-wrap gap-2">
-                {['React', 'Node.js', 'TypeScript', 'Python', 'DevOps', 'Sécurité', 'Leadership', 'Communication'].map((tag) => (
-                  <Button
-                    key={tag}
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => {
-                      setSearchInput(tag)
-                      setSearchParams({ q: tag, type: 'all' })
-                    }}
-                  >
-                    {tag}
-                  </Button>
-                ))}
-              </div>
+              {recentSearches.length === 0 ? (
+                <p className="text-sm text-muted-foreground">{t('recentSearches.none')}</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {Array.from(new Set(recentSearches.map((s) => s.query))).slice(0, 10).map((tag) => (
+                    <Button
+                      key={tag}
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        setSearchInput(tag)
+                        setSearchParams({ q: tag, type: 'all' })
+                      }}
+                    >
+                      {tag}
+                    </Button>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
-              <CardTitle>Parcourir par catégorie</CardTitle>
-              <CardDescription>Explorez notre contenu par thématique</CardDescription>
+              <CardTitle>{t('browseByCategory.title')}</CardTitle>
+              <CardDescription>{t('browseByCategory.description')}</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <Link to="/courses?category=development">
                   <div className="p-4 rounded-lg border hover:border-primary transition-colors text-center">
                     <BookOpen className="h-8 w-8 mx-auto mb-2 text-blue-500" />
-                    <p className="font-medium">Développement</p>
+                    <p className="font-medium">{t('browseByCategory.development')}</p>
                   </div>
                 </Link>
                 <Link to="/courses?category=design">
                   <div className="p-4 rounded-lg border hover:border-primary transition-colors text-center">
                     <FileText className="h-8 w-8 mx-auto mb-2 text-purple-500" />
-                    <p className="font-medium">Design</p>
+                    <p className="font-medium">{t('browseByCategory.design')}</p>
                   </div>
                 </Link>
                 <Link to="/courses?category=management">
                   <div className="p-4 rounded-lg border hover:border-primary transition-colors text-center">
                     <Users className="h-8 w-8 mx-auto mb-2 text-green-500" />
-                    <p className="font-medium">Management</p>
+                    <p className="font-medium">{t('browseByCategory.management')}</p>
                   </div>
                 </Link>
                 <Link to="/courses?category=marketing">
                   <div className="p-4 rounded-lg border hover:border-primary transition-colors text-center">
                     <Calendar className="h-8 w-8 mx-auto mb-2 text-orange-500" />
-                    <p className="font-medium">Marketing</p>
+                    <p className="font-medium">{t('browseByCategory.marketing')}</p>
                   </div>
                 </Link>
               </div>

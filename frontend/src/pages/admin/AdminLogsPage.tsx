@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -77,12 +78,13 @@ function formatMetadata(metadata: string | null) {
 }
 
 export default function AdminLogsPage() {
+  const { t } = useTranslation('admin')
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">Journaux</h1>
+        <h1 className="text-3xl font-bold">{t('logs.title')}</h1>
         <p className="text-muted-foreground">
-          Connexions, actions d'administration et suivi des formations
+          {t('logs.subtitle')}
         </p>
       </div>
 
@@ -90,15 +92,15 @@ export default function AdminLogsPage() {
         <TabsList>
           <TabsTrigger value="connections" className="gap-2">
             <LogIn className="h-4 w-4" />
-            Connexions
+            {t('logs.tabs.connections')}
           </TabsTrigger>
           <TabsTrigger value="processing" className="gap-2">
             <Settings className="h-4 w-4" />
-            Traitement
+            {t('logs.tabs.processing')}
           </TabsTrigger>
           <TabsTrigger value="training" className="gap-2">
             <GraduationCap className="h-4 w-4" />
-            Formations
+            {t('logs.tabs.training')}
           </TabsTrigger>
         </TabsList>
 
@@ -139,6 +141,8 @@ function EventLogTable({
   exportFilenamePrefix: string
   showActionFilter?: boolean
 }) {
+  const { t } = useTranslation('admin')
+  const { t: tCommon } = useTranslation('common')
   const { toast } = useToast()
   const [page, setPage] = useState(1)
   const [filters, setFilters] = useState({ userId: '', action: '', dateFrom: '', dateTo: '' })
@@ -178,7 +182,7 @@ function EventLogTable({
       link.parentNode?.removeChild(link)
       window.URL.revokeObjectURL(url)
     } catch {
-      toast({ title: 'Erreur', description: "Impossible d'exporter les logs", variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: t('logs.toasts.exportErrorDescription'), variant: 'destructive' })
     } finally {
       setIsExporting(false)
     }
@@ -189,18 +193,18 @@ function EventLogTable({
       <div className="flex justify-end">
         <Button onClick={handleExport} disabled={isExporting}>
           <Download className="h-4 w-4 mr-2" />
-          {isExporting ? 'Export...' : 'Exporter en CSV'}
+          {isExporting ? t('logs.exporting') : t('logs.exportCsv')}
         </Button>
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center justify-between">
-            Filtres
+            {t('logs.filters.title')}
             {Object.keys(activeFilters).length > 0 && (
               <Button variant="ghost" size="sm" onClick={clearFilters}>
                 <X className="h-4 w-4 mr-1" />
-                Réinitialiser
+                {t('logs.filters.reset')}
               </Button>
             )}
           </CardTitle>
@@ -208,8 +212,9 @@ function EventLogTable({
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="space-y-1">
-              <Label>ID Utilisateur</Label>
+              <Label htmlFor={`${queryKeyPrefix}-user-id`}>{t('logs.filters.userId')}</Label>
               <Input
+                id={`${queryKeyPrefix}-user-id`}
                 type="number"
                 value={filters.userId}
                 onChange={(e) => handleFilterChange('userId', e.target.value)}
@@ -218,13 +223,14 @@ function EventLogTable({
             </div>
             {showActionFilter && (
               <div className="space-y-1">
-                <Label>Action</Label>
+                <Label htmlFor={`${queryKeyPrefix}-action`}>{t('logs.filters.action')}</Label>
                 <select
+                  id={`${queryKeyPrefix}-action`}
                   value={filters.action}
                   onChange={(e) => handleFilterChange('action', e.target.value)}
                   className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
                 >
-                  <option value="">Toutes</option>
+                  <option value="">{t('logs.filters.allActions')}</option>
                   {actions.map((a) => (
                     <option key={a} value={a}>{a}</option>
                   ))}
@@ -232,16 +238,18 @@ function EventLogTable({
               </div>
             )}
             <div className="space-y-1">
-              <Label>Du</Label>
+              <Label htmlFor={`${queryKeyPrefix}-date-from`}>{t('logs.filters.from')}</Label>
               <Input
+                id={`${queryKeyPrefix}-date-from`}
                 type="date"
                 value={filters.dateFrom}
                 onChange={(e) => handleFilterChange('dateFrom', e.target.value)}
               />
             </div>
             <div className="space-y-1">
-              <Label>Au</Label>
+              <Label htmlFor={`${queryKeyPrefix}-date-to`}>{t('logs.filters.to')}</Label>
               <Input
+                id={`${queryKeyPrefix}-date-to`}
                 type="date"
                 value={filters.dateTo}
                 onChange={(e) => handleFilterChange('dateTo', e.target.value)}
@@ -255,24 +263,24 @@ function EventLogTable({
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
             <ScrollText className="h-5 w-5" />
-            {meta?.total ?? 0} entrée(s)
+            {t('logs.eventTable.entriesCount', { count: meta?.total ?? 0 })}
           </CardTitle>
         </CardHeader>
         <CardContent>
           {isLoading ? (
             <PageLoading />
           ) : logs.length === 0 ? (
-            <p className="text-center py-8 text-muted-foreground">Aucun log trouvé pour ces filtres</p>
+            <p className="text-center py-8 text-muted-foreground">{t('logs.eventTable.noResults')}</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b text-left text-muted-foreground">
-                    <th className="pb-2 pr-4">Date</th>
-                    <th className="pb-2 pr-4">Utilisateur</th>
-                    <th className="pb-2 pr-4">Action</th>
-                    <th className="pb-2 pr-4">Entité</th>
-                    <th className="pb-2">Détails</th>
+                    <th className="pb-2 pr-4">{t('logs.eventTable.date')}</th>
+                    <th className="pb-2 pr-4">{t('logs.eventTable.user')}</th>
+                    <th className="pb-2 pr-4">{t('logs.eventTable.action')}</th>
+                    <th className="pb-2 pr-4">{t('logs.eventTable.entity')}</th>
+                    <th className="pb-2">{t('logs.eventTable.details')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -286,7 +294,7 @@ function EventLogTable({
                             <p className="text-xs text-muted-foreground">{log.user_email}</p>
                           </div>
                         ) : (
-                          <span className="text-muted-foreground">Système</span>
+                          <span className="text-muted-foreground">{t('logs.eventTable.system')}</span>
                         )}
                       </td>
                       <td className="py-2 pr-4">
@@ -308,7 +316,7 @@ function EventLogTable({
           {meta && meta.totalPages > 1 && (
             <div className="flex items-center justify-between mt-4 pt-4 border-t">
               <p className="text-sm text-muted-foreground">
-                Page {meta.page} / {meta.totalPages}
+                {t('logs.eventTable.pageOf', { page: meta.page, totalPages: meta.totalPages })}
               </p>
               <div className="flex gap-2">
                 <Button
@@ -353,15 +361,17 @@ interface TrainingEntry {
   resume_count: number
 }
 
-function formatDuration(seconds: number) {
-  if (!seconds) return '0 min'
+function formatDuration(seconds: number, t: (key: string, options?: Record<string, unknown>) => string) {
+  if (!seconds) return t('logs.trainingTable.durationMinutes', { count: 0 })
   const minutes = Math.round(seconds / 60)
   const hours = Math.floor(minutes / 60)
-  if (hours > 0) return `${hours}h ${minutes % 60}min`
-  return `${minutes} min`
+  if (hours > 0) return t('logs.trainingTable.durationHoursMinutes', { hours, minutes: minutes % 60 })
+  return t('logs.trainingTable.durationMinutes', { count: minutes })
 }
 
 function TrainingLogTable() {
+  const { t } = useTranslation('admin')
+  const { t: tCommon } = useTranslation('common')
   const { toast } = useToast()
   const [page, setPage] = useState(1)
   const [filters, setFilters] = useState({ userId: '', courseId: '', dateFrom: '', dateTo: '' })
@@ -400,7 +410,7 @@ function TrainingLogTable() {
       link.parentNode?.removeChild(link)
       window.URL.revokeObjectURL(url)
     } catch {
-      toast({ title: 'Erreur', description: "Impossible d'exporter les logs", variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: t('logs.toasts.exportErrorDescription'), variant: 'destructive' })
     } finally {
       setIsExporting(false)
     }
@@ -411,18 +421,18 @@ function TrainingLogTable() {
       <div className="flex justify-end">
         <Button onClick={handleExport} disabled={isExporting}>
           <Download className="h-4 w-4 mr-2" />
-          {isExporting ? 'Export...' : 'Exporter en CSV'}
+          {isExporting ? t('logs.exporting') : t('logs.exportCsv')}
         </Button>
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center justify-between">
-            Filtres
+            {t('logs.filters.title')}
             {Object.keys(activeFilters).length > 0 && (
               <Button variant="ghost" size="sm" onClick={clearFilters}>
                 <X className="h-4 w-4 mr-1" />
-                Réinitialiser
+                {t('logs.filters.reset')}
               </Button>
             )}
           </CardTitle>
@@ -430,8 +440,9 @@ function TrainingLogTable() {
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="space-y-1">
-              <Label>ID Utilisateur</Label>
+              <Label htmlFor="training-logs-user-id">{t('logs.filters.userId')}</Label>
               <Input
+                id="training-logs-user-id"
                 type="number"
                 value={filters.userId}
                 onChange={(e) => handleFilterChange('userId', e.target.value)}
@@ -439,8 +450,9 @@ function TrainingLogTable() {
               />
             </div>
             <div className="space-y-1">
-              <Label>ID Formation</Label>
+              <Label htmlFor="training-logs-course-id">{t('logs.filters.courseId')}</Label>
               <Input
+                id="training-logs-course-id"
                 type="number"
                 value={filters.courseId}
                 onChange={(e) => handleFilterChange('courseId', e.target.value)}
@@ -448,16 +460,18 @@ function TrainingLogTable() {
               />
             </div>
             <div className="space-y-1">
-              <Label>Dernier accès du</Label>
+              <Label htmlFor="training-logs-date-from">{t('logs.filters.lastAccessFrom')}</Label>
               <Input
+                id="training-logs-date-from"
                 type="date"
                 value={filters.dateFrom}
                 onChange={(e) => handleFilterChange('dateFrom', e.target.value)}
               />
             </div>
             <div className="space-y-1">
-              <Label>au</Label>
+              <Label htmlFor="training-logs-date-to">{t('logs.filters.lastAccessTo')}</Label>
               <Input
+                id="training-logs-date-to"
                 type="date"
                 value={filters.dateTo}
                 onChange={(e) => handleFilterChange('dateTo', e.target.value)}
@@ -471,25 +485,25 @@ function TrainingLogTable() {
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
             <GraduationCap className="h-5 w-5" />
-            {meta?.total ?? 0} parcours de formation
+            {t('logs.trainingTable.pathsCount', { count: meta?.total ?? 0 })}
           </CardTitle>
         </CardHeader>
         <CardContent>
           {isLoading ? (
             <PageLoading />
           ) : rows.length === 0 ? (
-            <p className="text-center py-8 text-muted-foreground">Aucune donnée de formation pour ces filtres</p>
+            <p className="text-center py-8 text-muted-foreground">{t('logs.trainingTable.noResults')}</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b text-left text-muted-foreground">
-                    <th className="pb-2 pr-4">Utilisateur</th>
-                    <th className="pb-2 pr-4">Formation</th>
-                    <th className="pb-2 pr-4">Temps total</th>
-                    <th className="pb-2 pr-4">Progression</th>
-                    <th className="pb-2 pr-4">Reprises</th>
-                    <th className="pb-2">Dernier accès</th>
+                    <th className="pb-2 pr-4">{t('logs.trainingTable.user')}</th>
+                    <th className="pb-2 pr-4">{t('logs.trainingTable.training')}</th>
+                    <th className="pb-2 pr-4">{t('logs.trainingTable.totalTime')}</th>
+                    <th className="pb-2 pr-4">{t('logs.trainingTable.progress')}</th>
+                    <th className="pb-2 pr-4">{t('logs.trainingTable.resumes')}</th>
+                    <th className="pb-2">{t('logs.trainingTable.lastAccess')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -500,7 +514,7 @@ function TrainingLogTable() {
                         <p className="text-xs text-muted-foreground">{r.user_email}</p>
                       </td>
                       <td className="py-2 pr-4">{r.course_title}</td>
-                      <td className="py-2 pr-4 whitespace-nowrap">{formatDuration(r.total_seconds)}</td>
+                      <td className="py-2 pr-4 whitespace-nowrap">{formatDuration(r.total_seconds, t)}</td>
                       <td className="py-2 pr-4">
                         <div className="flex items-center gap-2 min-w-[140px]">
                           <Progress value={r.progress_percent ?? 0} className="h-2 w-20" />
@@ -527,7 +541,7 @@ function TrainingLogTable() {
           {meta && meta.totalPages > 1 && (
             <div className="flex items-center justify-between mt-4 pt-4 border-t">
               <p className="text-sm text-muted-foreground">
-                Page {meta.page} / {meta.totalPages}
+                {t('logs.eventTable.pageOf', { page: meta.page, totalPages: meta.totalPages })}
               </p>
               <div className="flex gap-2">
                 <Button

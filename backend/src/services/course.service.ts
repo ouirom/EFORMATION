@@ -2,6 +2,8 @@ import { DatabaseService } from './database.service';
 import { db, IS_PG } from '../database/db-helpers';
 import { Course, Module, Lesson, Content, AudienceScope, PaginationParams, FilterParams } from '../types';
 import { NotFoundError, ForbiddenError } from '../middleware/error.middleware';
+import { ROLE_HIERARCHY } from '../middleware/auth.middleware';
+import { teamAssignmentClause } from '../utils/teamAssignment';
 import { logger } from '../utils/logger';
 
 interface CreateCourseDTO {
@@ -47,7 +49,10 @@ export class CourseService {
         category: data.category || null,
         level: data.level || 'beginner',
         duration: data.duration || null,
-        audienceScope: data.audienceScope ? JSON.stringify(data.audienceScope) : null,
+        // Every course gets an explicit scope now -- 'general' (open to the whole tenant)
+        // when the caller doesn't pick anything more specific, rather than a bare NULL
+        // whose "open to everyone" meaning was previously just an accident of omission.
+        audienceScope: JSON.stringify(data.audienceScope || { level: 'general' }),
         prerequisites: data.prerequisites ? JSON.stringify(data.prerequisites) : null,
         createdBy: data.createdBy,
       }
@@ -67,7 +72,7 @@ export class CourseService {
               (SELECT COUNT(*) FROM course_evaluations WHERE course_id = c.id) as review_count
        FROM courses c
        LEFT JOIN users u ON c.created_by = u.id
-       WHERE c.id = @courseId AND c.tenant_id = @tenantId`,
+       WHERE c.id = @courseId AND c.tenant_id = @tenantId AND c.deleted_at IS NULL`,
       { courseId, tenantId }
     );
 
@@ -78,6 +83,7 @@ export class CourseService {
     const course = courses[0];
     return {
       id: course.id,
+      publicId: course.public_id,
       tenantId: course.tenant_id,
       title: course.title,
       description: course.description,
@@ -94,7 +100,7 @@ export class CourseService {
       moduleCount: course.module_count,
       avgRating: course.avg_rating,
       reviewCount: course.review_count,
-    } as Course & { creatorName: string; moduleCount: number; avgRating: number; reviewCount: number };
+    } as Course & { publicId: string; creatorName: string; moduleCount: number; avgRating: number; reviewCount: number };
   }
 
   /**
@@ -113,7 +119,7 @@ export class CourseService {
     const { page, limit, sortBy = 'created_at', sortOrder = 'desc' } = pagination;
     const offset = (page - 1) * limit;
 
-    let whereClause = 'WHERE c.tenant_id = @tenantId';
+    let whereClause = 'WHERE c.tenant_id = @tenantId AND c.deleted_at IS NULL';
     const params: Record<string, any> = { tenantId, limit, offset };
 
     // Apply filters
@@ -128,21 +134,21 @@ export class CourseService {
       whereClause += ` AND c.is_published = ${db.bool(false)}`;
     }
 
-    // Apply audience scope filtering for non-admin users
-    if (userRole && userRole !== 'admin') {
-      const audienceLevel = db.jsonExtract('c.audience_scope', 'level');
-      whereClause += ` AND (
-        c.is_published = ${db.bool(true)} AND (
-          c.audience_scope IS NULL
-          OR ${audienceLevel} = 'enterprise'
-          ${userDirectionId ? `OR (${audienceLevel} = 'direction' AND ${db.jsonArrayContains('c.audience_scope', 'ids', '@userDirectionId')})` : ''}
-          ${userServiceId ? `OR (${audienceLevel} = 'service' AND ${db.jsonArrayContains('c.audience_scope', 'ids', '@userServiceId')})` : ''}
-          OR (${audienceLevel} = 'role' AND ${db.jsonArrayContains('c.audience_scope', 'roles', '@userRole')})
-        )
-      )`;
-      params.userDirectionId = userDirectionId;
-      params.userServiceId = userServiceId;
-      params.userRole = userRole;
+    // Audience-scope filtering, shared with canAccessCourse/getLessonCatalog via
+    // audienceScopeCondition (course management roles are exempt -- see its own doc
+    // comment -- so they see every course in their tenant, including their own
+    // unpublished drafts, not just what a learner would be allowed to browse).
+    if (userRole) {
+      const audience = this.audienceScopeCondition('c', {
+        role: userRole,
+        enterpriseId: userEnterpriseId,
+        directionId: userDirectionId,
+        serviceId: userServiceId,
+      });
+      if (audience.clause !== '1=1') {
+        whereClause += ` AND ${audience.clause}`;
+        Object.assign(params, audience.params);
+      }
     }
 
     // Count total
@@ -160,7 +166,9 @@ export class CourseService {
       `SELECT c.*, u.display_name as creator_name,
               (SELECT COUNT(*) FROM modules WHERE course_id = c.id) as module_count,
               (SELECT AVG(CAST(rating AS FLOAT)) FROM course_evaluations WHERE course_id = c.id) as avg_rating,
-              (SELECT COUNT(*) FROM course_assignments WHERE course_id = c.id) as enrolled_count
+              (SELECT COUNT(*) FROM course_evaluations WHERE course_id = c.id) as review_count,
+              (SELECT COUNT(*) FROM course_assignments WHERE course_id = c.id) as enrolled_count,
+              (SELECT COUNT(*) FROM lessons l JOIN modules m ON m.course_id = c.id AND l.module_id = m.id WHERE l.deleted_at IS NULL) as lessons_count
        FROM courses c
        LEFT JOIN users u ON c.created_by = u.id
        ${whereClause}
@@ -172,6 +180,7 @@ export class CourseService {
     return {
       data: courses.map((course: any) => ({
         id: course.id,
+        publicId: course.public_id,
         tenantId: course.tenant_id,
         title: course.title,
         description: course.description,
@@ -187,10 +196,171 @@ export class CourseService {
         creatorName: course.creator_name,
         moduleCount: course.module_count,
         avgRating: course.avg_rating,
+        reviewCount: course.review_count,
         enrolledCount: course.enrolled_count,
+        lessonsCount: course.lessons_count,
       })),
       total: countResult[0].total,
     };
+  }
+
+  /**
+   * SQL condition (for use in a WHERE clause against a `courses`-aliased table) that's
+   * true iff `user`'s org unit/role matches the course's audience_scope: 'general' (or a
+   * NULL audience_scope, treated identically -- courses created before this field had a
+   * UI default to NULL and stay equivalent to 'general' indefinitely, no backfill needed)
+   * is open to everyone; 'enterprise'/'direction'/'service' check the user's own id is
+   * listed in `ids`; 'role' checks the user's role is listed in `roles`. Course management
+   * roles (manager and above in ROLE_HIERARCHY, i.e. manager/director/admin/super_admin)
+   * always match -- they need to see every course in their tenant, including their own
+   * unpublished drafts, not just what a learner would be allowed to browse.
+   */
+  private static audienceScopeCondition(
+    alias: string,
+    user: { role: string; enterpriseId?: number; directionId?: number; serviceId?: number }
+  ): { clause: string; params: Record<string, any> } {
+    // Role-hierarchy check (manager and above, e.g. super_admin) rather than a hardcoded
+    // list -- a flat list of role names silently excludes any role ranked above 'manager'
+    // that isn't spelled out here (this is exactly what happened with 'super_admin' before).
+    if ((ROLE_HIERARCHY[user.role] || 0) >= ROLE_HIERARCHY.manager) {
+      return { clause: '1=1', params: {} };
+    }
+
+    const audienceLevel = db.jsonExtract(`${alias}.audience_scope`, 'level');
+    const clause = `(
+      ${alias}.is_published = ${db.bool(true)} AND (
+        ${alias}.audience_scope IS NULL
+        OR ${audienceLevel} = 'general'
+        ${user.enterpriseId ? `OR (${audienceLevel} = 'enterprise' AND ${db.jsonArrayContains(`${alias}.audience_scope`, 'ids', '@userEnterpriseId')})` : ''}
+        ${user.directionId ? `OR (${audienceLevel} = 'direction' AND ${db.jsonArrayContains(`${alias}.audience_scope`, 'ids', '@userDirectionId')})` : ''}
+        ${user.serviceId ? `OR (${audienceLevel} = 'service' AND ${db.jsonArrayContains(`${alias}.audience_scope`, 'ids', '@userServiceId')})` : ''}
+        OR (${audienceLevel} = 'role' AND ${db.jsonArrayContains(`${alias}.audience_scope`, 'roles', '@userRole')})
+      )
+    )`;
+
+    return {
+      clause,
+      params: {
+        userEnterpriseId: user.enterpriseId,
+        userDirectionId: user.directionId,
+        userServiceId: user.serviceId,
+        userRole: user.role,
+      },
+    };
+  }
+
+  /**
+   * Whether a given user is allowed to read a course's content (full structure,
+   * individual lessons). findAll() already keeps courses a learner shouldn't see out
+   * of their catalog listing, but that's a listing filter only -- nothing previously
+   * stopped a learner from reading any course/lesson in the tenant by guessing/
+   * incrementing the id in the URL. Extends the audience-scope rule with two paths
+   * findAll doesn't need to handle: an existing enrollment (e.g. an admin enrolled the
+   * user directly, outside the course's audience_scope), and a course assignment
+   * individually targeting the user or their org unit/role (assigning a course doesn't
+   * create an enrollment row until the learner actually starts it -- see
+   * lesson.routes.ts's "safety net" enrollment-on-first-progress).
+   */
+  private static accessibleCoursesCondition(
+    alias: string,
+    user: { id: number; role: string; enterpriseId?: number; directionId?: number; serviceId?: number }
+  ): { clause: string; params: Record<string, any> } {
+    const audience = this.audienceScopeCondition(alias, user);
+    if (audience.clause === '1=1') {
+      return audience;
+    }
+
+    const clause = `(
+      ${audience.clause}
+      OR EXISTS (SELECT 1 FROM enrollments e WHERE e.course_id = ${alias}.id AND e.user_id = @userId AND e.tenant_id = @tenantId)
+      OR EXISTS (
+        SELECT 1 FROM course_assignments ca
+        WHERE ca.course_id = ${alias}.id AND ca.tenant_id = @tenantId AND (
+          (ca.assignment_type = 'user' AND ca.target_id = @userId)
+          ${user.enterpriseId ? `OR (ca.assignment_type = 'enterprise' AND ca.target_id = @userEnterpriseId)` : ''}
+          ${user.directionId ? `OR (ca.assignment_type = 'direction' AND ca.target_id = @userDirectionId)` : ''}
+          ${user.serviceId ? `OR (ca.assignment_type = 'service' AND ca.target_id = @userServiceId)` : ''}
+          OR (ca.assignment_type = 'role' AND ca.target_role = @userRole)
+          OR ${teamAssignmentClause('ca', 'userId', user.enterpriseId ? 'userEnterpriseId' : null, user.directionId ? 'userDirectionId' : null, user.serviceId ? 'userServiceId' : null)}
+        )
+      )
+    )`;
+
+    return {
+      clause,
+      params: { ...audience.params, userId: user.id },
+    };
+  }
+
+  static async canAccessCourse(
+    tenantId: number,
+    courseId: number,
+    user: { id: number; role: string; enterpriseId?: number; directionId?: number; serviceId?: number }
+  ): Promise<boolean> {
+    const { clause, params } = this.accessibleCoursesCondition('c', user);
+    const rows = await DatabaseService.query<{ id: number }>(
+      `SELECT c.id FROM courses c
+       WHERE c.id = @courseId AND c.tenant_id = @tenantId AND c.deleted_at IS NULL AND ${clause}`,
+      { courseId, tenantId, ...params }
+    );
+    return rows.length > 0;
+  }
+
+  /**
+   * Lessons across every course `user` may access (see accessibleCoursesCondition),
+   * with that user's own progress on each and optional filters -- backs the dashboard's
+   * lesson catalog ("continue where I left off" + browse-all).
+   */
+  static async getLessonCatalog(
+    tenantId: number,
+    user: { id: number; role: string; enterpriseId?: number; directionId?: number; serviceId?: number },
+    options: { status?: string; courseId?: number; mandatory?: boolean; page: number; limit: number }
+  ): Promise<{ data: any[]; total: number }> {
+    const { clause, params: accessParams } = this.accessibleCoursesCondition('c', user);
+    const { page, limit } = options;
+    const offset = (page - 1) * limit;
+
+    let whereClause = `WHERE l.tenant_id = @tenantId AND l.deleted_at IS NULL AND c.deleted_at IS NULL AND ${clause}`;
+    const params: Record<string, any> = { tenantId, userId: user.id, limit, offset, ...accessParams };
+
+    if (options.courseId) {
+      whereClause += ' AND c.id = @courseId';
+      params.courseId = options.courseId;
+    }
+    if (options.status) {
+      whereClause += ' AND lp.status = @status';
+      params.status = options.status;
+    }
+    if (options.mandatory) {
+      whereClause += ` AND l.is_mandatory = ${db.bool(true)}`;
+    }
+
+    const countResult = await DatabaseService.query<{ total: number }>(
+      `SELECT COUNT(*) as total
+       FROM lessons l
+       JOIN modules m ON l.module_id = m.id
+       JOIN courses c ON m.course_id = c.id
+       LEFT JOIN lesson_progress lp ON lp.lesson_id = l.id AND lp.user_id = @userId AND lp.tenant_id = @tenantId
+       ${whereClause}`,
+      params
+    );
+
+    const lessons = await DatabaseService.query<any>(
+      `SELECT l.id, l.public_id, l.title, l.type, l.duration_min, l.position, l.is_mandatory,
+              m.id as module_id, m.title as module_title,
+              c.id as course_id, c.public_id as course_public_id, c.title as course_title,
+              lp.status as progress_status, lp.progress_percent, lp.time_spent_seconds
+       FROM lessons l
+       JOIN modules m ON l.module_id = m.id
+       JOIN courses c ON m.course_id = c.id
+       LEFT JOIN lesson_progress lp ON lp.lesson_id = l.id AND lp.user_id = @userId AND lp.tenant_id = @tenantId
+       ${whereClause}
+       ORDER BY CASE WHEN lp.last_accessed_at IS NULL THEN 1 ELSE 0 END, lp.last_accessed_at DESC, c.title, m.position, l.position
+       OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY`,
+      params
+    );
+
+    return { data: lessons, total: countResult[0].total };
   }
 
   /**
@@ -198,9 +368,9 @@ export class CourseService {
    */
   static async getCategories(tenantId: number): Promise<{ id: string; name: string; count: number }[]> {
     const results = await DatabaseService.query<{ category: string; count: number }>(
-      `SELECT category, COUNT(*) as count 
-       FROM courses 
-       WHERE tenant_id = @tenantId AND category IS NOT NULL AND category != ''
+      `SELECT category, COUNT(*) as count
+       FROM courses
+       WHERE tenant_id = @tenantId AND deleted_at IS NULL AND category IS NOT NULL AND category != ''
        GROUP BY category
        ORDER BY count DESC`,
       { tenantId }
@@ -308,88 +478,21 @@ export class CourseService {
       throw ForbiddenError('You can only delete your own courses');
     }
 
-    // Delete in cascade order to respect foreign key constraints
-    
-    // 1. Delete learning analytics
+    // Soft-delete only -- a course that's been taken by learners has real history
+    // attached to it (certificates, evaluations, enrollments, lesson_progress).
+    // Hard-deleting used to cascade through all of that; now the course and its
+    // lessons are just marked deleted_at and drop out of listings, while every
+    // learner record stays intact and lookups by id (e.g. an issued certificate's
+    // course reference) keep resolving.
     await DatabaseService.execute(
-      'DELETE FROM learning_analytics WHERE course_id = @courseId AND tenant_id = @tenantId',
+      `UPDATE lessons SET deleted_at = ${db.now()}
+       WHERE tenant_id = @tenantId
+         AND module_id IN (SELECT id FROM modules WHERE course_id = @courseId AND tenant_id = @tenantId)`,
       { courseId, tenantId }
     );
 
-    // 2. Delete course evaluations
     await DatabaseService.execute(
-      'DELETE FROM course_evaluations WHERE course_id = @courseId AND tenant_id = @tenantId',
-      { courseId, tenantId }
-    );
-
-    // 3. Delete certificates
-    await DatabaseService.execute(
-      'DELETE FROM certificates WHERE course_id = @courseId AND tenant_id = @tenantId',
-      { courseId, tenantId }
-    );
-
-    // 4. Delete course assignments
-    await DatabaseService.execute(
-      'DELETE FROM course_assignments WHERE course_id = @courseId AND tenant_id = @tenantId',
-      { courseId, tenantId }
-    );
-
-    // 5. Delete enrollments
-    await DatabaseService.execute(
-      'DELETE FROM enrollments WHERE course_id = @courseId AND tenant_id = @tenantId',
-      { courseId, tenantId }
-    );
-
-    // 6. Delete live sessions
-    await DatabaseService.execute(
-      'DELETE FROM live_sessions WHERE course_id = @courseId AND tenant_id = @tenantId',
-      { courseId, tenantId }
-    );
-
-    // 7. Delete modules and their related data (lessons, contents, quizzes, etc.)
-    const modules = await DatabaseService.query<any>(
-      'SELECT id FROM modules WHERE course_id = @courseId AND tenant_id = @tenantId',
-      { courseId, tenantId }
-    );
-
-    for (const module of modules) {
-      // Delete contents, quizzes, and lesson progress for lessons in this module
-      const lessons = await DatabaseService.query<any>(
-        'SELECT id FROM lessons WHERE module_id = @moduleId AND tenant_id = @tenantId',
-        { moduleId: module.id, tenantId }
-      );
-
-      for (const lesson of lessons) {
-        await DatabaseService.execute(
-          'DELETE FROM contents WHERE lesson_id = @lessonId AND tenant_id = @tenantId',
-          { lessonId: lesson.id, tenantId }
-        );
-        await DatabaseService.execute(
-          'DELETE FROM quizzes WHERE lesson_id = @lessonId AND tenant_id = @tenantId',
-          { lessonId: lesson.id, tenantId }
-        );
-        await DatabaseService.execute(
-          'DELETE FROM lesson_progress WHERE lesson_id = @lessonId AND tenant_id = @tenantId',
-          { lessonId: lesson.id, tenantId }
-        );
-      }
-
-      // Delete lessons
-      await DatabaseService.execute(
-        'DELETE FROM lessons WHERE module_id = @moduleId AND tenant_id = @tenantId',
-        { moduleId: module.id, tenantId }
-      );
-
-      // Delete module
-      await DatabaseService.execute(
-        'DELETE FROM modules WHERE id = @moduleId AND tenant_id = @tenantId',
-        { moduleId: module.id, tenantId }
-      );
-    }
-
-    // 8. Finally delete the course
-    await DatabaseService.execute(
-      'DELETE FROM courses WHERE id = @courseId AND tenant_id = @tenantId',
+      `UPDATE courses SET deleted_at = ${db.now()} WHERE id = @courseId AND tenant_id = @tenantId`,
       { courseId, tenantId }
     );
   }
@@ -429,43 +532,73 @@ export class CourseService {
       { courseId, tenantId }
     );
 
-    const fullModules = await Promise.all(
-      modules.map(async (module: any) => {
-        const lessons = await DatabaseService.query<any>(
-          `SELECT * FROM lessons WHERE module_id = @moduleId AND tenant_id = @tenantId ORDER BY position`,
-          { moduleId: module.id, tenantId }
-        );
+    if (modules.length === 0) {
+      return { ...course, modules: [] };
+    }
 
-        const fullLessons = await Promise.all(
-          lessons.map(async (lesson: any) => {
-            const contents = await DatabaseService.query<any>(
-              `SELECT c.*, f.filename, f.mime_type, f.storage_key
-               FROM contents c
-               LEFT JOIN file_assets f ON c.file_id = f.id
-               WHERE c.lesson_id = @lessonId AND c.tenant_id = @tenantId
-               ORDER BY c.position`,
-              { lessonId: lesson.id, tenantId }
-            );
+    const moduleIds: number[] = modules.map((m: any) => m.id);
+    const modulePlaceholders = moduleIds.map((_, i) => `@moduleId${i}`).join(', ');
+    const moduleParams: Record<string, any> = { tenantId };
+    moduleIds.forEach((id, i) => { moduleParams[`moduleId${i}`] = id; });
 
-            const quizzes = await DatabaseService.query<any>(
-              `SELECT * FROM quizzes WHERE lesson_id = @lessonId AND tenant_id = @tenantId`,
-              { lessonId: lesson.id, tenantId }
-            );
-
-            return {
-              ...lesson,
-              contents,
-              quizzes,
-            };
-          })
-        );
-
-        return {
-          ...module,
-          lessons: fullLessons,
-        };
-      })
+    const allLessons = await DatabaseService.query<any>(
+      `SELECT * FROM lessons WHERE module_id IN (${modulePlaceholders}) AND tenant_id = @tenantId AND deleted_at IS NULL ORDER BY module_id, position`,
+      moduleParams
     );
+
+    const lessonIds: number[] = allLessons.map((l: any) => l.id);
+
+    const contentsByLesson = new Map<number, any[]>();
+    const quizzesByLesson = new Map<number, any[]>();
+
+    if (lessonIds.length > 0) {
+      const lessonPlaceholders = lessonIds.map((_, i) => `@lessonId${i}`).join(', ');
+      const lessonParams: Record<string, any> = { tenantId };
+      lessonIds.forEach((id, i) => { lessonParams[`lessonId${i}`] = id; });
+
+      const [allContents, allQuizzes] = await Promise.all([
+        DatabaseService.query<any>(
+          `SELECT c.*, f.filename, f.mime_type, f.storage_key
+           FROM contents c
+           LEFT JOIN file_assets f ON c.file_id = f.id
+           WHERE c.lesson_id IN (${lessonPlaceholders}) AND c.tenant_id = @tenantId
+           ORDER BY c.lesson_id, c.position`,
+          lessonParams
+        ),
+        DatabaseService.query<any>(
+          `SELECT * FROM quizzes WHERE lesson_id IN (${lessonPlaceholders}) AND tenant_id = @tenantId`,
+          lessonParams
+        ),
+      ]);
+
+      for (const content of allContents) {
+        const list = contentsByLesson.get(content.lesson_id) || [];
+        list.push(content);
+        contentsByLesson.set(content.lesson_id, list);
+      }
+      for (const quiz of allQuizzes) {
+        const list = quizzesByLesson.get(quiz.lesson_id) || [];
+        list.push(quiz);
+        quizzesByLesson.set(quiz.lesson_id, list);
+      }
+    }
+
+    const lessonsByModule = new Map<number, any[]>();
+    for (const lesson of allLessons) {
+      const full = {
+        ...lesson,
+        contents: contentsByLesson.get(lesson.id) || [],
+        quizzes: quizzesByLesson.get(lesson.id) || [],
+      };
+      const list = lessonsByModule.get(lesson.module_id) || [];
+      list.push(full);
+      lessonsByModule.set(lesson.module_id, list);
+    }
+
+    const fullModules = modules.map((module: any) => ({
+      ...module,
+      lessons: lessonsByModule.get(module.id) || [],
+    }));
 
     return {
       ...course,
@@ -646,15 +779,19 @@ export class LessonService {
     type?: string;
     position: number;
     durationMin?: number;
+    isMandatory?: boolean;
+    presenceCheckPercent?: number | null;
+    resetTimeOnReopen?: boolean;
+    allowDocumentDownload?: boolean;
   }): Promise<Lesson> {
     const result = await DatabaseService.query<{ id: number }>(
       IS_PG
-        ? `INSERT INTO lessons (tenant_id, module_id, title, type, position, duration_min)
-           VALUES (@tenantId, @moduleId, @title, @type, @position, @durationMin)
+        ? `INSERT INTO lessons (tenant_id, module_id, title, type, position, duration_min, is_mandatory, presence_check_percent, reset_time_on_reopen, allow_document_download)
+           VALUES (@tenantId, @moduleId, @title, @type, @position, @durationMin, @isMandatory, @presenceCheckPercent, @resetTimeOnReopen, @allowDocumentDownload)
            RETURNING id`
-        : `INSERT INTO lessons (tenant_id, module_id, title, type, position, duration_min)
+        : `INSERT INTO lessons (tenant_id, module_id, title, type, position, duration_min, is_mandatory, presence_check_percent, reset_time_on_reopen, allow_document_download)
            OUTPUT INSERTED.id
-           VALUES (@tenantId, @moduleId, @title, @type, @position, @durationMin)`,
+           VALUES (@tenantId, @moduleId, @title, @type, @position, @durationMin, @isMandatory, @presenceCheckPercent, @resetTimeOnReopen, @allowDocumentDownload)`,
       {
         tenantId: data.tenantId,
         moduleId: data.moduleId,
@@ -662,6 +799,10 @@ export class LessonService {
         type: data.type || null,
         position: data.position,
         durationMin: data.durationMin || null,
+        isMandatory: data.isMandatory ?? false,
+        presenceCheckPercent: data.presenceCheckPercent ?? null,
+        resetTimeOnReopen: data.resetTimeOnReopen ?? false,
+        allowDocumentDownload: data.allowDocumentDownload ?? true,
       }
     );
 
@@ -676,7 +817,16 @@ export class LessonService {
   static async update(
     tenantId: number,
     lessonId: number,
-    data: { title?: string; type?: string; position?: number; durationMin?: number }
+    data: {
+      title?: string;
+      type?: string;
+      position?: number;
+      durationMin?: number;
+      isMandatory?: boolean;
+      presenceCheckPercent?: number | null;
+      resetTimeOnReopen?: boolean;
+      allowDocumentDownload?: boolean;
+    }
   ): Promise<Lesson> {
     const updateFields: string[] = [];
     const params: Record<string, any> = { tenantId, lessonId };
@@ -696,6 +846,22 @@ export class LessonService {
     if (data.durationMin !== undefined) {
       updateFields.push('duration_min = @durationMin');
       params.durationMin = data.durationMin;
+    }
+    if (data.isMandatory !== undefined) {
+      updateFields.push('is_mandatory = @isMandatory');
+      params.isMandatory = data.isMandatory;
+    }
+    if (data.presenceCheckPercent !== undefined) {
+      updateFields.push('presence_check_percent = @presenceCheckPercent');
+      params.presenceCheckPercent = data.presenceCheckPercent;
+    }
+    if (data.resetTimeOnReopen !== undefined) {
+      updateFields.push('reset_time_on_reopen = @resetTimeOnReopen');
+      params.resetTimeOnReopen = data.resetTimeOnReopen;
+    }
+    if (data.allowDocumentDownload !== undefined) {
+      updateFields.push('allow_document_download = @allowDocumentDownload');
+      params.allowDocumentDownload = data.allowDocumentDownload;
     }
 
     if (updateFields.length > 0) {
@@ -719,27 +885,10 @@ export class LessonService {
   }
 
   static async delete(tenantId: number, lessonId: number): Promise<void> {
-    // First delete related content records
+    // Soft-delete only -- preserves lesson_progress (a learner's completion history)
+    // instead of destroying it; the lesson just drops out of listings.
     await DatabaseService.execute(
-      'DELETE FROM contents WHERE lesson_id = @lessonId AND tenant_id = @tenantId',
-      { lessonId, tenantId }
-    );
-    
-    // Then delete quizzes
-    await DatabaseService.execute(
-      'DELETE FROM quizzes WHERE lesson_id = @lessonId AND tenant_id = @tenantId',
-      { lessonId, tenantId }
-    );
-    
-    // Then delete lesson progress records
-    await DatabaseService.execute(
-      'DELETE FROM lesson_progress WHERE lesson_id = @lessonId AND tenant_id = @tenantId',
-      { lessonId, tenantId }
-    );
-    
-    // Finally delete the lesson
-    await DatabaseService.execute(
-      'DELETE FROM lessons WHERE id = @lessonId AND tenant_id = @tenantId',
+      `UPDATE lessons SET deleted_at = ${db.now()} WHERE id = @lessonId AND tenant_id = @tenantId`,
       { lessonId, tenantId }
     );
   }

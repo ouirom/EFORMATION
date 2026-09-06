@@ -11,6 +11,9 @@ export default defineConfig({
   },
   server: {
     port: Number(process.env.PORT) || 3000,
+    // Bind to all network interfaces (not just localhost) so other devices on the
+    // same LAN can reach the dev server via this machine's IP.
+    host: true,
     proxy: {
       // Toutes les requêtes /api/* → backend Express (port 3001)
       '/api': {

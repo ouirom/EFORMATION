@@ -1,0 +1,21 @@
+{
+  "markAllReadSuccessDescription": "Toutes les notifications ont été marquées comme lues",
+  "deleteSuccessDescription": "Notification supprimée",
+  "title": "Notifications",
+  "unreadCount_one": "{{count}} non lue",
+  "unreadCount_other": "{{count}} non lues",
+  "allRead": "Toutes vos notifications",
+  "markAllRead": "Tout marquer comme lu",
+  "preferences": "Préférences",
+  "tabs": {
+    "all": "Toutes ({{count}})",
+    "unread": "Non lues ({{count}})"
+  },
+  "empty": {
+    "title": "Aucune notification",
+    "unread": "Vous avez lu toutes vos notifications",
+    "all": "Vous n'avez pas encore de notifications"
+  },
+  "defaultSubject": "Notification",
+  "new": "Nouveau"
+}

@@ -1,0 +1,78 @@
+{
+  "user": {
+    "logo": {
+      "title": "Welcome to E-Formation",
+      "content": "A short guided tour to discover the main features of your workspace."
+    },
+    "search": {
+      "title": "Quick search",
+      "content": "Instantly search for a course, a lesson, an article, or a live session, with a direct link to each result."
+    },
+    "navDashboard": {
+      "title": "Dashboard",
+      "content": "Track your progress, your learning time, and the badges you've earned."
+    },
+    "navCourses": {
+      "title": "Courses",
+      "content": "Browse the course catalog and resume the ones you've started."
+    },
+    "navLive": {
+      "title": "Live sessions",
+      "content": "Join interactive live sessions with your instructors."
+    },
+    "navBadges": {
+      "title": "Badges & Certificates",
+      "content": "View the badges you've unlocked and download your certificates of completion."
+    },
+    "notifications": {
+      "title": "Notifications",
+      "content": "Stay informed about news, reminders, and messages relevant to you."
+    },
+    "userMenu": {
+      "title": "Your profile",
+      "content": "Manage your profile and personal settings from this menu."
+    }
+  },
+  "admin": {
+    "logo": {
+      "title": "Admin workspace",
+      "content": "A short guided tour to discover the platform's administration tools."
+    },
+    "sectionToggle": {
+      "title": "Switch workspace",
+      "content": "Switch at any time between your user workspace and administration."
+    },
+    "search": {
+      "title": "Quick search",
+      "content": "Quickly find a course, a user, or a session, with a direct link to the relevant page."
+    },
+    "navAnalytics": {
+      "title": "Analytics",
+      "content": "Track the platform's usage and engagement statistics."
+    },
+    "navUsers": {
+      "title": "Users",
+      "content": "Manage accounts, roles, and organizational affiliations."
+    },
+    "navCourses": {
+      "title": "Courses",
+      "content": "Create, publish, and organize course content."
+    },
+    "navLiveSessions": {
+      "title": "Live sessions",
+      "content": "Schedule and host live training sessions."
+    },
+    "navLogs": {
+      "title": "Audit logs",
+      "content": "Review the history of sensitive actions for compliance and security."
+    },
+    "notifications": {
+      "title": "Notifications",
+      "content": "Find your administration alerts and notifications."
+    },
+    "userMenu": {
+      "title": "Your account",
+      "content": "Manage your admin account from this menu."
+    }
+  }
+}

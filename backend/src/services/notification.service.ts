@@ -29,6 +29,13 @@ interface ResolvedEmailConfig {
   from: string;
 }
 
+interface TenantBranding {
+  name: string;
+  logoUrl: string | null;
+  primaryColor: string;
+  secondaryColor: string;
+}
+
 // Per-tenant SMTP transporters, built from DB settings (or env fallback) and cached until invalidated.
 const emailTransporterCache = new Map<number, ResolvedEmailConfig | null>();
 
@@ -212,6 +219,28 @@ export class NotificationService {
   }
 
   /**
+   * Resolve the tenant's display name, logo and colors for use in outgoing emails.
+   * Falls back to the app's default navy/blue look when the tenant hasn't
+   * configured tenant_settings yet (row may not exist until an admin edits it).
+   */
+  private static async getTenantBranding(tenantId: number): Promise<TenantBranding> {
+    const rows = await DatabaseService.query<any>(
+      `SELECT t.name AS tenant_name, ts.logo_url, ts.primary_color, ts.secondary_color
+       FROM tenants t
+       LEFT JOIN tenant_settings ts ON ts.tenant_id = t.id
+       WHERE t.id = @tenantId`,
+      { tenantId }
+    );
+    const row = rows[0];
+    return {
+      name: row?.tenant_name || 'E-Formation',
+      logoUrl: row?.logo_url || null,
+      primaryColor: row?.primary_color || '#1a365d',
+      secondaryColor: row?.secondary_color || '#3182ce',
+    };
+  }
+
+  /**
    * Send email notification
    */
   private static async sendEmail(
@@ -221,7 +250,8 @@ export class NotificationService {
     body: string,
     actionUrl?: string
   ): Promise<string> {
-    const htmlBody = this.generateEmailHTML(subject, body, actionUrl);
+    const branding = await this.getTenantBranding(tenantId);
+    const htmlBody = this.generateEmailHTML(subject, body, branding, actionUrl);
 
     const emailConfig = await this.getEmailConfig(tenantId);
     if (!emailConfig) {
@@ -413,9 +443,18 @@ export class NotificationService {
   }
 
   /**
-   * Generate HTML email template
+   * Generate HTML email template, branded with the tenant's logo/name/colors
+   * (falls back to the default E-Formation navy look when unconfigured).
    */
-  private static generateEmailHTML(title: string, body: string, actionUrl?: string): string {
+  private static generateEmailHTML(title: string, body: string, branding: TenantBranding, actionUrl?: string): string {
+    const initial = (branding.name || 'E').trim().charAt(0).toUpperCase() || 'E';
+    const logoSrc = branding.logoUrl
+      ? (branding.logoUrl.startsWith('http') ? branding.logoUrl : `${config.frontendUrl}${branding.logoUrl}`)
+      : null;
+    const logoHtml = logoSrc
+      ? `<img src="${logoSrc}" alt="${branding.name}" style="height:44px;max-width:200px;object-fit:contain;">`
+      : `<div style="display:inline-block;width:44px;height:44px;line-height:44px;border-radius:10px;background:rgba(255,255,255,0.18);color:#ffffff;font-size:22px;font-weight:bold;text-align:center;font-family:Arial,sans-serif;">${initial}</div>`;
+
     return `
 <!DOCTYPE html>
 <html>
@@ -424,25 +463,33 @@ export class NotificationService {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${title}</title>
   <style>
-    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
-    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-    .header { background: #1a365d; color: white; padding: 20px; text-align: center; }
-    .content { padding: 30px 20px; background: #f9f9f9; }
-    .button { display: inline-block; background: #3182ce; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; margin-top: 20px; }
-    .footer { padding: 20px; text-align: center; font-size: 12px; color: #666; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #2d3748; margin: 0; padding: 0; background: #eef1f5; }
+    .wrapper { padding: 32px 16px; }
+    .container { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    .header { background: ${branding.primaryColor}; color: #ffffff; padding: 28px 24px; text-align: center; }
+    .header-brand { font-size: 15px; font-weight: 600; opacity: 0.9; margin-top: 10px; letter-spacing: 0.3px; }
+    .header h1 { margin: 14px 0 0; font-size: 20px; }
+    .content { padding: 32px 28px; }
+    .content p { margin: 0 0 16px; }
+    .button { display: inline-block; background: ${branding.secondaryColor}; color: #ffffff !important; padding: 12px 28px; text-decoration: none; border-radius: 6px; margin-top: 8px; font-weight: 600; }
+    .footer { padding: 20px 24px; text-align: center; font-size: 12px; color: #a0aec0; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="header">
-      <h1>${title}</h1>
-    </div>
-    <div class="content">
-      <p>${body.replace(/\n/g, '<br>')}</p>
-      ${actionUrl ? `<a href="${actionUrl}" class="button">View Details</a>` : ''}
-    </div>
-    <div class="footer">
-      <p>This is an automated notification. Please do not reply directly to this email.</p>
+  <div class="wrapper">
+    <div class="container">
+      <div class="header">
+        ${logoHtml}
+        <div class="header-brand">${branding.name}</div>
+        <h1>${title}</h1>
+      </div>
+      <div class="content">
+        <p>${body.replace(/\n/g, '<br>')}</p>
+        ${actionUrl ? `<a href="${actionUrl}" class="button">Voir les détails</a>` : ''}
+      </div>
+      <div class="footer">
+        <p>Ceci est une notification automatique. Merci de ne pas répondre directement à cet email.</p>
+      </div>
     </div>
   </div>
 </body>

@@ -1,0 +1,29 @@
+{
+  "title": "Internal Blog",
+  "subtitle": "Articles, news, and knowledge sharing",
+  "writePost": "Write a post",
+  "searchPlaceholder": "Search an article...",
+  "trending": "Trending",
+  "viewsCount": "{{count}} views",
+  "popularTags": "Popular tags",
+  "featured": "Featured",
+  "readTimeMinutes": "{{count}} min",
+  "allCategories": "All",
+  "noPosts": "No articles found",
+  "anonymousAuthor": "Anonymous",
+  "pagination": {
+    "pageOf": "Page {{page}} of {{totalPages}}",
+    "previous": "Previous",
+    "next": "Next"
+  },
+  "postNotFoundTitle": "Article not found",
+  "postNotFoundHint": "This article doesn't exist or is no longer available.",
+  "backToBlog": "Back to blog",
+  "status": {
+    "draft": "Draft",
+    "published": "Published"
+  },
+  "commentsTitle": "{{count}} comments",
+  "commentPlaceholder": "Write a comment...",
+  "noComments": "No comments yet"
+}

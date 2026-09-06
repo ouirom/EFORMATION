@@ -62,6 +62,7 @@ export const setupSocketIO = (io: SocketServer): void => {
       conversationId: number;
       body: string;
       attachments?: number[];
+      replyTo?: { id: number; body: string | null; senderName: string; deleted: boolean } | null;
     }) => {
       // Emit to all participants in the conversation
       io.to(`chat:${data.conversationId}`).emit('chat:message', {
@@ -70,6 +71,7 @@ export const setupSocketIO = (io: SocketServer): void => {
         senderName: user.email,
         body: data.body,
         attachments: data.attachments,
+        replyTo: data.replyTo || null,
         createdAt: new Date(),
       });
     });

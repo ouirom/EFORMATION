@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -38,16 +39,116 @@ interface BadgeType {
 // Matches badges.badge_type (backend/src/routes/badge.routes.ts) -- these are the
 // only values the automatic awarding logic (award-quiz/award-course) recognizes;
 // badges without one of these can still be awarded manually via POST /:id/award.
-const badgeTypes = [
-  { value: 'trophy', label: 'Trophée', icon: Trophy },
-  { value: 'quiz_completion', label: 'Quiz complété', icon: Target },
-  { value: 'perfect_score', label: 'Score parfait', icon: Star },
-  { value: 'course_start', label: 'Début de cours', icon: Flame },
-  { value: 'course_completion', label: 'Cours terminé', icon: Users },
+const badgeTypeValues = [
+  { value: 'trophy', icon: Trophy },
+  { value: 'quiz_completion', icon: Target },
+  { value: 'perfect_score', icon: Star },
+  { value: 'course_start', icon: Flame },
+  { value: 'course_completion', icon: Users },
 ]
 
+interface BadgeFormValues {
+  code: string
+  name: string
+  description: string
+  badgeType: string
+  criteria: string
+}
+
+// Defined at module scope so its identity stays stable across parent
+// re-renders -- a component defined inside another component's render body
+// gets recreated as a new type on every render, which makes React unmount
+// and remount its inputs on every keystroke, resetting cursor position.
+function BadgeForm({
+  t,
+  formData,
+  onChange,
+  badgeTypes,
+  isEditing,
+  criteriaError,
+}: {
+  t: (key: string) => string
+  formData: BadgeFormValues
+  onChange: (data: BadgeFormValues) => void
+  badgeTypes: { value: string; icon: any; label: string }[]
+  isEditing: boolean
+  criteriaError: string | null
+}) {
+  const idPrefix = isEditing ? 'edit-badge' : 'add-badge'
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <Label htmlFor={`${idPrefix}-code`}>{t('badges.form.code')}</Label>
+          <Input
+            id={`${idPrefix}-code`}
+            value={formData.code}
+            onChange={(e) => onChange({ ...formData, code: e.target.value })}
+            placeholder={t('badges.form.codePlaceholder')}
+            disabled={isEditing}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor={`${idPrefix}-name`}>{t('badges.form.name')}</Label>
+          <Input
+            id={`${idPrefix}-name`}
+            value={formData.name}
+            onChange={(e) => onChange({ ...formData, name: e.target.value })}
+            placeholder={t('badges.form.namePlaceholder')}
+          />
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor={`${idPrefix}-type`}>{t('badges.form.type')}</Label>
+        <Select value={formData.badgeType} onValueChange={(v) => onChange({ ...formData, badgeType: v })}>
+          <SelectTrigger id={`${idPrefix}-type`}>
+            <SelectValue placeholder={t('badges.form.typePlaceholder')} />
+          </SelectTrigger>
+          <SelectContent>
+            {badgeTypes.map((bt) => (
+              <SelectItem key={bt.value} value={bt.value}>
+                <div className="flex items-center gap-2">
+                  <bt.icon className="h-4 w-4" />
+                  {bt.label}
+                </div>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor={`${idPrefix}-description`}>{t('badges.form.description')}</Label>
+        <Textarea
+          id={`${idPrefix}-description`}
+          value={formData.description}
+          onChange={(e) => onChange({ ...formData, description: e.target.value })}
+          placeholder={t('badges.form.descriptionPlaceholder')}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor={`${idPrefix}-criteria`}>{t('badges.form.criteria')}</Label>
+        <Textarea
+          id={`${idPrefix}-criteria`}
+          value={formData.criteria}
+          onChange={(e) => onChange({ ...formData, criteria: e.target.value })}
+          placeholder='{"type": "quiz_pass"}'
+          className="font-mono text-sm"
+          rows={4}
+        />
+        {criteriaError && <p className="text-sm text-red-500">{criteriaError}</p>}
+      </div>
+    </div>
+  )
+}
+
 export default function AdminBadgesPage() {
+  const { t } = useTranslation('admin')
+  const { t: tCommon } = useTranslation('common')
   const { toast } = useToast()
+  const badgeTypes = badgeTypeValues.map((bt) => ({ ...bt, label: t(`badges.types.${bt.value}`) }))
   const queryClient = useQueryClient()
   const [searchTerm, setSearchTerm] = useState('')
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
@@ -83,10 +184,10 @@ export default function AdminBadgesPage() {
       queryClient.invalidateQueries({ queryKey: ['admin-badges'] })
       setIsCreateDialogOpen(false)
       resetForm()
-      toast({ title: 'Succès', description: 'Badge créé avec succès' })
+      toast({ title: tCommon('status.success'), description: t('badges.toasts.createdDescription') })
     },
     onError: () => {
-      toast({ title: 'Erreur', description: 'Erreur lors de la création', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: t('badges.toasts.createErrorDescription'), variant: 'destructive' })
     },
   })
 
@@ -103,10 +204,10 @@ export default function AdminBadgesPage() {
       queryClient.invalidateQueries({ queryKey: ['admin-badges'] })
       setEditingBadge(null)
       resetForm()
-      toast({ title: 'Succès', description: 'Badge mis à jour avec succès' })
+      toast({ title: tCommon('status.success'), description: t('badges.toasts.updatedDescription') })
     },
     onError: () => {
-      toast({ title: 'Erreur', description: 'Erreur lors de la mise à jour', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: t('badges.toasts.updateErrorDescription'), variant: 'destructive' })
     },
   })
 
@@ -116,10 +217,10 @@ export default function AdminBadgesPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-badges'] })
-      toast({ title: 'Succès', description: 'Badge supprimé' })
+      toast({ title: tCommon('status.success'), description: t('badges.toasts.deletedDescription') })
     },
     onError: () => {
-      toast({ title: 'Erreur', description: 'Erreur lors de la suppression', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: t('badges.toasts.deleteErrorDescription'), variant: 'destructive' })
     },
   })
 
@@ -150,7 +251,7 @@ export default function AdminBadgesPage() {
     try {
       JSON.parse(formData.criteria)
     } catch {
-      setCriteriaError('Le critère doit être un JSON valide, ex: {"type": "quiz_pass"}')
+      setCriteriaError(t('badges.invalidCriteriaJson'))
       return
     }
     setCriteriaError(null)
@@ -167,107 +268,50 @@ export default function AdminBadgesPage() {
   )
 
   const getBadgeTypeIcon = (badgeType: string | null) => {
-    const t = badgeTypes.find((b) => b.value === badgeType)
-    return t ? <t.icon className="h-4 w-4" /> : <Award className="h-4 w-4" />
+    const bt = badgeTypes.find((b) => b.value === badgeType)
+    return bt ? <bt.icon className="h-4 w-4" /> : <Award className="h-4 w-4" />
   }
 
   if (isLoading) {
     return <PageLoading />
   }
 
-  const BadgeForm = () => (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label>Code (identifiant unique)</Label>
-          <Input
-            value={formData.code}
-            onChange={(e) => setFormData({ ...formData, code: e.target.value })}
-            placeholder="Ex: EXPERT_REACT"
-            disabled={!!editingBadge}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label>Nom du badge</Label>
-          <Input
-            value={formData.name}
-            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            placeholder="Ex: Expert React"
-          />
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <Label>Type</Label>
-        <Select value={formData.badgeType} onValueChange={(v) => setFormData({ ...formData, badgeType: v })}>
-          <SelectTrigger>
-            <SelectValue placeholder="Sélectionner un type (optionnel)" />
-          </SelectTrigger>
-          <SelectContent>
-            {badgeTypes.map((t) => (
-              <SelectItem key={t.value} value={t.value}>
-                <div className="flex items-center gap-2">
-                  <t.icon className="h-4 w-4" />
-                  {t.label}
-                </div>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="space-y-2">
-        <Label>Description</Label>
-        <Textarea
-          value={formData.description}
-          onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-          placeholder="Description du badge..."
-        />
-      </div>
-
-      <div className="space-y-2">
-        <Label>Critère d'obtention (JSON)</Label>
-        <Textarea
-          value={formData.criteria}
-          onChange={(e) => setFormData({ ...formData, criteria: e.target.value })}
-          placeholder='{"type": "quiz_pass"}'
-          className="font-mono text-sm"
-          rows={4}
-        />
-        {criteriaError && <p className="text-sm text-red-500">{criteriaError}</p>}
-      </div>
-    </div>
-  )
-
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Gestion des badges</h1>
-          <p className="text-muted-foreground">Créez et gérez les badges de gamification</p>
+          <h1 className="text-3xl font-bold">{t('badges.title')}</h1>
+          <p className="text-muted-foreground">{t('badges.subtitle')}</p>
         </div>
         <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
           <DialogTrigger asChild>
             <Button onClick={resetForm}>
               <Plus className="h-4 w-4 mr-2" />
-              Nouveau badge
+              {t('badges.newBadge')}
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>Créer un badge</DialogTitle>
+              <DialogTitle>{t('badges.createDialog.title')}</DialogTitle>
               <DialogDescription>
-                Définissez les caractéristiques et critères d'obtention du badge
+                {t('badges.createDialog.description')}
               </DialogDescription>
             </DialogHeader>
-            <BadgeForm />
+            <BadgeForm
+              t={t}
+              formData={formData}
+              onChange={setFormData}
+              badgeTypes={badgeTypes}
+              isEditing={!!editingBadge}
+              criteriaError={criteriaError}
+            />
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
-                Annuler
+                {t('badges.createDialog.cancel')}
               </Button>
               <Button onClick={handleSubmit} disabled={createMutation.isPending}>
-                {createMutation.isPending ? 'Création...' : 'Créer le badge'}
+                {createMutation.isPending ? t('badges.createDialog.creating') : t('badges.createDialog.create')}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -284,7 +328,7 @@ export default function AdminBadgesPage() {
               </div>
               <div>
                 <p className="text-2xl font-bold">{badges.length}</p>
-                <p className="text-sm text-muted-foreground">Total badges</p>
+                <p className="text-sm text-muted-foreground">{t('badges.stats.total')}</p>
               </div>
             </div>
           </CardContent>
@@ -297,7 +341,7 @@ export default function AdminBadgesPage() {
               </div>
               <div>
                 <p className="text-2xl font-bold">{badges.filter((b) => b.badge_type === 'trophy').length}</p>
-                <p className="text-sm text-muted-foreground">Trophées</p>
+                <p className="text-sm text-muted-foreground">{t('badges.stats.trophies')}</p>
               </div>
             </div>
           </CardContent>
@@ -310,7 +354,7 @@ export default function AdminBadgesPage() {
               </div>
               <div>
                 <p className="text-2xl font-bold">{badges.reduce((sum, b) => sum + (b.awarded_count || 0), 0)}</p>
-                <p className="text-sm text-muted-foreground">Badges attribués</p>
+                <p className="text-sm text-muted-foreground">{t('badges.stats.awarded')}</p>
               </div>
             </div>
           </CardContent>
@@ -323,7 +367,7 @@ export default function AdminBadgesPage() {
               </div>
               <div>
                 <p className="text-2xl font-bold">{new Set(badges.map((b) => b.badge_type).filter(Boolean)).size}</p>
-                <p className="text-sm text-muted-foreground">Types</p>
+                <p className="text-sm text-muted-foreground">{t('badges.stats.types')}</p>
               </div>
             </div>
           </CardContent>
@@ -336,7 +380,7 @@ export default function AdminBadgesPage() {
         <Input
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          placeholder="Rechercher un badge..."
+          placeholder={t('badges.searchPlaceholder')}
           className="pl-9"
         />
       </div>
@@ -346,9 +390,9 @@ export default function AdminBadgesPage() {
         <Card>
           <CardContent className="py-12 text-center">
             <Award className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">Aucun badge trouvé</h3>
+            <h3 className="text-lg font-medium mb-2">{t('badges.empty.title')}</h3>
             <p className="text-muted-foreground">
-              Créez votre premier badge pour motiver vos apprenants
+              {t('badges.empty.description')}
             </p>
           </CardContent>
         </Card>
@@ -373,7 +417,7 @@ export default function AdminBadgesPage() {
                           <Badge variant="outline" className="text-xs">
                             {getBadgeTypeIcon(badge.badge_type)}
                             <span className="ml-1">
-                              {badgeTypes.find((t) => t.value === badge.badge_type)?.label || badge.code}
+                              {badgeTypes.find((bt) => bt.value === badge.badge_type)?.label || badge.code}
                             </span>
                           </Badge>
                         </div>
@@ -396,7 +440,7 @@ export default function AdminBadgesPage() {
                     </p>
                     <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
                       <span className="truncate">{JSON.stringify(badge.criteria)}</span>
-                      <span className="shrink-0">{badge.awarded_count || 0} attribués</span>
+                      <span className="shrink-0">{t('badges.awardedCount', { count: badge.awarded_count || 0 })}</span>
                     </div>
                   </div>
                 </div>
@@ -410,18 +454,25 @@ export default function AdminBadgesPage() {
       <Dialog open={!!editingBadge} onOpenChange={(open) => !open && setEditingBadge(null)}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Modifier le badge</DialogTitle>
+            <DialogTitle>{t('badges.editDialog.title')}</DialogTitle>
             <DialogDescription>
-              Mettez à jour les informations du badge
+              {t('badges.editDialog.description')}
             </DialogDescription>
           </DialogHeader>
-          <BadgeForm />
+          <BadgeForm
+            t={t}
+            formData={formData}
+            onChange={setFormData}
+            badgeTypes={badgeTypes}
+            isEditing={!!editingBadge}
+            criteriaError={criteriaError}
+          />
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingBadge(null)}>
-              Annuler
+              {t('badges.editDialog.cancel')}
             </Button>
             <Button onClick={handleSubmit} disabled={updateMutation.isPending}>
-              {updateMutation.isPending ? 'Mise à jour...' : 'Enregistrer'}
+              {updateMutation.isPending ? t('badges.editDialog.saving') : t('badges.editDialog.save')}
             </Button>
           </DialogFooter>
         </DialogContent>

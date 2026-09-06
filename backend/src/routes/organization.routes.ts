@@ -52,21 +52,21 @@ router.get('/current', authenticate, async (req: AuthRequest, res, next) => {
     );
     const settings = settingsRows[0] || DEFAULT_TENANT_SETTINGS;
 
-    const [[{ totalUsers }], [{ totalCourses }], [{ totalEnrollments }], [{ activeUsers }]] = await Promise.all([
-      DatabaseService.query<{ totalUsers: number }>(
-        'SELECT COUNT(*) as totalUsers FROM users WHERE tenant_id = @tenantId AND deleted_at IS NULL',
+    const [[{ total_users }], [{ total_courses }], [{ total_enrollments }], [{ active_users }]] = await Promise.all([
+      DatabaseService.query<{ total_users: number }>(
+        'SELECT COUNT(*) as total_users FROM users WHERE tenant_id = @tenantId AND deleted_at IS NULL',
         { tenantId }
       ),
-      DatabaseService.query<{ totalCourses: number }>(
-        'SELECT COUNT(*) as totalCourses FROM courses WHERE tenant_id = @tenantId',
+      DatabaseService.query<{ total_courses: number }>(
+        'SELECT COUNT(*) as total_courses FROM courses WHERE tenant_id = @tenantId',
         { tenantId }
       ),
-      DatabaseService.query<{ totalEnrollments: number }>(
-        'SELECT COUNT(*) as totalEnrollments FROM course_assignments WHERE tenant_id = @tenantId',
+      DatabaseService.query<{ total_enrollments: number }>(
+        'SELECT COUNT(*) as total_enrollments FROM course_assignments WHERE tenant_id = @tenantId',
         { tenantId }
       ),
-      DatabaseService.query<{ activeUsers: number }>(
-        `SELECT COUNT(*) as activeUsers FROM users WHERE tenant_id = @tenantId AND deleted_at IS NULL AND is_active = ${db.bool(true)}`,
+      DatabaseService.query<{ active_users: number }>(
+        `SELECT COUNT(*) as active_users FROM users WHERE tenant_id = @tenantId AND deleted_at IS NULL AND is_active = ${db.bool(true)}`,
         { tenantId }
       ),
     ]);
@@ -95,7 +95,12 @@ router.get('/current', authenticate, async (req: AuthRequest, res, next) => {
           maxUsersPerGroup: settings.max_users_per_group,
           certificateValidity: settings.certificate_validity,
         },
-        stats: { totalUsers, totalCourses, totalEnrollments, activeUsers },
+        stats: {
+          totalUsers: total_users,
+          totalCourses: total_courses,
+          totalEnrollments: total_enrollments,
+          activeUsers: active_users,
+        },
         createdAt: tenant.created_at,
       },
     });
@@ -561,31 +566,46 @@ router.delete('/services/:id', authenticate, authorize('admin', 'director'), asy
 // ==================== ORGANIZATION TREE ====================
 router.get('/tree', authenticate, async (req: AuthRequest, res, next) => {
   try {
+    const tenantId = req.user!.tenantId;
+
     const enterprises = await DatabaseService.query<any>(
       'SELECT * FROM enterprises WHERE tenant_id = @tenantId ORDER BY name',
-      { tenantId: req.user!.tenantId }
+      { tenantId }
     );
 
-    const tree = await Promise.all(
-      enterprises.map(async (enterprise: any) => {
-        const directions = await DatabaseService.query<any>(
-          'SELECT * FROM directions WHERE enterprise_id = @enterpriseId ORDER BY name',
-          { enterpriseId: enterprise.id }
-        );
+    if (enterprises.length === 0) {
+      return res.json({ success: true, data: [] });
+    }
 
-        const directionsWithServices = await Promise.all(
-          directions.map(async (direction: any) => {
-            const services = await DatabaseService.query<any>(
-              'SELECT * FROM services WHERE direction_id = @directionId ORDER BY name',
-              { directionId: direction.id }
-            );
-            return { ...direction, services };
-          })
-        );
+    const [allDirections, allServices] = await Promise.all([
+      DatabaseService.query<any>(
+        'SELECT * FROM directions WHERE tenant_id = @tenantId ORDER BY name',
+        { tenantId }
+      ),
+      DatabaseService.query<any>(
+        'SELECT * FROM services WHERE tenant_id = @tenantId ORDER BY name',
+        { tenantId }
+      ),
+    ]);
 
-        return { ...enterprise, directions: directionsWithServices };
-      })
-    );
+    const servicesByDirection = new Map<number, any[]>();
+    for (const service of allServices) {
+      const list = servicesByDirection.get(service.direction_id) || [];
+      list.push(service);
+      servicesByDirection.set(service.direction_id, list);
+    }
+
+    const directionsByEnterprise = new Map<number, any[]>();
+    for (const direction of allDirections) {
+      const list = directionsByEnterprise.get(direction.enterprise_id) || [];
+      list.push({ ...direction, services: servicesByDirection.get(direction.id) || [] });
+      directionsByEnterprise.set(direction.enterprise_id, list);
+    }
+
+    const tree = enterprises.map((enterprise: any) => ({
+      ...enterprise,
+      directions: directionsByEnterprise.get(enterprise.id) || [],
+    }));
 
     res.json({ success: true, data: tree });
   } catch (error) {

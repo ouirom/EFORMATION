@@ -17,16 +17,20 @@ Une plateforme complète de e-learning multi-tenant pour entreprises, avec IA p�
 - Création automatique de quiz
 
 ### 💬 Communication
-- Chat intégré en temps réel
-- Visioconférence avec WebRTC
+- Chat intégré en temps réel (avec pièces jointes)
+- Visioconférence intégrée via LiveKit (jetons signés côté serveur, config par tenant), avec enregistrement de session
 - Tableaux blancs collaboratifs
 - Salles de sous-groupes (breakout rooms)
 
 ### 🏆 Gamification
 - Badges et récompenses
-- Certificats avec QR code
+- Certificats avec QR code, filigrane et templates personnalisables
 - Classements et leaderboards
 - Points d'expérience (XP)
+
+### 👥 Organisation
+- Équipes (teams) transverses, indépendantes de la hiérarchie organisationnelle
+- Libellés de poste personnalisables (CRUD), distincts du rôle applicatif
 
 ### 📢 Notifications Multicanales
 - Email
@@ -36,8 +40,8 @@ Une plateforme complète de e-learning multi-tenant pour entreprises, avec IA p�
 
 ### 🔐 Sécurité & Administration
 - Multi-tenant avec hiérarchie organisationnelle
-- RBAC (5 rôles : admin, director, manager, supervisor, agent)
-- SSO (Azure AD, Google, SAML)
+- RBAC (8 rôles : super_admin, admin, director, manager, supervisor, agent, externe, stagiaire)
+- SSO (Azure AD, Google) et LDAP/Active Directory
 - Conformité RGPD
 - Journalisation et audit
 
@@ -52,11 +56,13 @@ Une plateforme complète de e-learning multi-tenant pour entreprises, avec IA p�
 ### Backend
 - **Runtime**: Node.js avec TypeScript
 - **Framework**: Express.js
-- **Base de données**: SQL Server
+- **Base de données**: PostgreSQL (via Knex) — SQL Server pris en charge en fallback pour les instances en authentification Windows uniquement (voir `DB_CLIENT` dans `.env.example`)
 - **Cache**: Redis
-- **File Storage**: MinIO/S3
+- **File Storage**: disque local (`UPLOAD_DIR`)
 - **Real-time**: Socket.IO
+- **Video**: LiveKit (auto-hébergé ou LiveKit Cloud)
 - **AI**: OpenAI GPT-4
+- **Monitoring**: Sentry (optionnel, activé via `SENTRY_DSN`)
 
 ### Frontend
 - **Framework**: React 18 avec TypeScript
@@ -69,11 +75,12 @@ Une plateforme complète de e-learning multi-tenant pour entreprises, avec IA p�
 ## 📋 Prérequis
 
 - Node.js 18+
-- SQL Server 2019+
+- PostgreSQL 14+ (ou SQL Server 2019+ en fallback, voir `DB_CLIENT`)
 - Redis (optionnel, pour le cache)
 - Compte OpenAI (pour les fonctionnalités IA)
 - Compte Twilio (pour SMS/WhatsApp)
 - Compte Firebase (pour les notifications push)
+- Projet LiveKit (Cloud ou auto-hébergé, pour la visioconférence)
 
 ## 🚀 Installation
 
@@ -102,33 +109,35 @@ cp .env.example .env
 
 Configurer les variables d'environnement :
 
+Le fichier `.env.example` documente l'intégralité des variables (LDAP, LiveKit, Sentry, etc.) avec leur valeur par défaut et une explication en commentaire — voici les plus importantes pour un premier démarrage :
+
 ```env
 # Application
 NODE_ENV=development
-PORT=3000
-API_PREFIX=/api/v1
+PORT=3001
 
-# Database (SQL Server)
-DB_SERVER=localhost
+# Database — 'pg' (défaut) route via Knex vers PostgreSQL ; 'mssql' reste disponible
+# en fallback pour les instances SQL Server en authentification Windows uniquement.
+DB_CLIENT=pg
+DB_HOST=localhost
+DB_PORT=5432
 DB_NAME=db_eformation
-DB_USER=
+DB_USER=postgres
 DB_PASSWORD=
-DB_TRUSTED_CONNECTION=true
 
-# JWT
-JWT_SECRET=your-super-secret-jwt-key-min-32-chars
-JWT_EXPIRES_IN=15m
-JWT_REFRESH_EXPIRES_IN=7d
+# JWT — valeurs uniques et non par défaut obligatoires hors développement/test
+JWT_SECRET=your-super-secret-jwt-key-change-in-production
+JWT_REFRESH_SECRET=your-refresh-secret-key-change-in-production
 
 # OpenAI
 OPENAI_API_KEY=sk-your-openai-api-key
 
-# Email
+# Email (SMTP)
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=your-email@gmail.com
-SMTP_PASS=your-app-password
-EMAIL_FROM="E-Formation" <noreply@eformation.com>
+SMTP_PASSWORD=your-app-password
+SMTP_FROM=noreply@eformation.com
 
 # Twilio (SMS/WhatsApp)
 TWILIO_ACCOUNT_SID=your-twilio-sid
@@ -142,13 +151,23 @@ FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY----
 FIREBASE_CLIENT_EMAIL=firebase@your-project.iam.gserviceaccount.com
 VAPID_PUBLIC_KEY=your-vapid-public-key
 VAPID_PRIVATE_KEY=your-vapid-private-key
+
+# LiveKit (visioconférence)
+LIVEKIT_URL=wss://your-project.livekit.cloud
+LIVEKIT_API_KEY=your-livekit-api-key
+LIVEKIT_API_SECRET=your-livekit-api-secret
 ```
 
 ### 4. Initialiser la base de données
 
 ```bash
-# Exécuter le script SQL Server
-sqlcmd -S localhost -d master -i db/bci_lms_schema_sqlserver.sql
+# Créer la base puis charger le schéma de référence (PostgreSQL)
+psql -U postgres -c "CREATE DATABASE db_eformation"
+psql -U postgres -d db_eformation -f db/bci_lms_schema_postgres.sql
+
+# Appliquer ensuite les migrations incrémentales, dans l'ordre numérique
+# (pas de runner automatique — chaque fichier de db/migrations/*.sql
+# s'applique manuellement, par exemple via un script node ponctuel utilisant `pg`)
 ```
 
 ### 5. Lancer l'application
@@ -158,8 +177,8 @@ sqlcmd -S localhost -d master -i db/bci_lms_schema_sqlserver.sql
 npm run dev
 
 # Ou séparément :
-npm run dev:backend  # Backend sur http://localhost:3000
-npm run dev:frontend # Frontend sur http://localhost:5173
+npm run dev:backend  # Backend sur http://localhost:3001
+npm run dev:frontend # Frontend sur http://localhost:3000
 ```
 
 ## 📁 Structure du Projet

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
@@ -28,9 +29,10 @@ import {
   CheckCircle,
 } from 'lucide-react'
 import { api } from '@/services/api'
-import { formatDuration } from '@/lib/utils'
+import { formatDuration, dateLocale } from '@/lib/utils'
 
 export default function CoursesPage() {
+  const { t } = useTranslation('courses')
   const [view, setView] = useState<'grid' | 'list'>('grid')
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState('all')
@@ -53,18 +55,13 @@ export default function CoursesPage() {
     refetchOnWindowFocus: true,
   })
 
-  // Fetch user's course progress
-  const { data: userProgress } = useQuery({
-    queryKey: ['user-course-progress'],
-    queryFn: async () => {
-      try {
-        const response = await api.get('/users/me/progress');
-        return response.data.data || [];
-      } catch (error) {
-        console.error('Error fetching user progress:', error);
-        return [];
-      }
-    },
+  // Fetch the user's real enrollment progress (progress_percent/completed_at
+  // from the enrollments table) -- the old /users/me/progress endpoint returns
+  // quiz-attempt stats keyed differently and has no `progress`/`isCompleted`
+  // field at all, so course cards always showed 0% and never "completed".
+  const { data: enrollments } = useQuery({
+    queryKey: ['user-course-enrollments'],
+    queryFn: () => api.courses.getMyEnrollments(),
     staleTime: 30 * 1000,
     refetchOnWindowFocus: true,
   })
@@ -85,12 +82,12 @@ export default function CoursesPage() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold">Catalogue de formations</h1>
+          <h1 className="text-3xl font-bold">{t('list.title')}</h1>
         </div>
         <Card className="border-red-200 bg-red-50">
           <CardContent className="pt-6">
             <p className="text-red-800">
-              Erreur lors du chargement des formations. Veuillez réessayer plus tard.
+              {t('list.loadError')}
             </p>
             <p className="text-sm text-red-600 mt-2">{(error as any)?.message}</p>
           </CardContent>
@@ -101,7 +98,7 @@ export default function CoursesPage() {
 
   const courses = data || []
   const myAssignedCourses = assignedCourses || []
-  const progressData = userProgress || []
+  const enrollmentData = enrollments || []
   const courseCategories = categories || [
     { id: 'tech', name: 'Technologie' },
     { id: 'management', name: 'Management' },
@@ -109,22 +106,24 @@ export default function CoursesPage() {
     { id: 'compliance', name: 'Conformité' },
   ]
 
-  // Enrich courses with progress data
+  // Enrich courses with real enrollment progress
   const enrichedCourses = courses.map((course: any) => {
-    const progress = progressData.find((p: any) => p.id === course.id || p.course_id === course.id);
+    const enrollment = enrollmentData.find((e: any) => e.course_id === course.id);
     return {
       ...course,
-      progress: progress?.progress || 0,
-      isCompleted: progress?.progress === 100 || progress?.isCompleted || false,
+      enrolled: !!enrollment,
+      progress: enrollment?.progress_percent || 0,
+      isCompleted: !!enrollment?.completed_at,
     };
   });
 
   const enrichedAssignedCourses = myAssignedCourses.map((course: any) => {
-    const progress = progressData.find((p: any) => p.id === course.id || p.course_id === course.id);
+    const enrollment = enrollmentData.find((e: any) => e.course_id === course.id);
     return {
       ...course,
-      progress: progress?.progress || 0,
-      isCompleted: progress?.progress === 100 || progress?.isCompleted || false,
+      enrolled: !!enrollment,
+      progress: enrollment?.progress_percent || 0,
+      isCompleted: !!enrollment?.completed_at,
     };
   });
 
@@ -144,27 +143,27 @@ export default function CoursesPage() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold">Catalogue de formations</h1>
+        <h1 className="text-3xl font-bold">{t('list.title')}</h1>
         <p className="text-muted-foreground">
-          Découvrez nos formations et développez vos compétences
+          {t('list.subtitle')}
         </p>
       </div>
 
       {/* Tabs */}
       <Tabs defaultValue="all" value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList>
-          <TabsTrigger value="all">Catalogue</TabsTrigger>
+          <TabsTrigger value="all">{t('list.tabs.all')}</TabsTrigger>
           <TabsTrigger value="assigned">
-            Mes formations
+            {t('list.tabs.assigned')}
             {myAssignedCourses.length > 0 && (
               <span className="ml-2 bg-primary text-primary-foreground px-2 py-0.5 rounded-full text-xs">
                 {myAssignedCourses.length}
               </span>
             )}
           </TabsTrigger>
-          <TabsTrigger value="mandatory">Obligatoires</TabsTrigger>
-          <TabsTrigger value="completed">Terminées</TabsTrigger>
-          <TabsTrigger value="recommended">Recommandées</TabsTrigger>
+          <TabsTrigger value="mandatory">{t('list.tabs.mandatory')}</TabsTrigger>
+          <TabsTrigger value="completed">{t('list.tabs.completed')}</TabsTrigger>
+          <TabsTrigger value="recommended">{t('list.tabs.recommended')}</TabsTrigger>
         </TabsList>
 
         {/* Filters */}
@@ -172,7 +171,7 @@ export default function CoursesPage() {
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Rechercher une formation..."
+              placeholder={t('list.searchPlaceholder')}
               className="pl-10"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -181,10 +180,10 @@ export default function CoursesPage() {
           <div className="flex gap-2">
             <Select value={category} onValueChange={setCategory}>
               <SelectTrigger className="w-[160px]">
-                <SelectValue placeholder="Catégorie" />
+                <SelectValue placeholder={t('list.categoryPlaceholder')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Toutes catégories</SelectItem>
+                <SelectItem value="all">{t('list.allCategories')}</SelectItem>
                 {courseCategories.map((cat: any) => (
                   <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
                 ))}
@@ -192,13 +191,13 @@ export default function CoursesPage() {
             </Select>
             <Select value={level} onValueChange={setLevel}>
               <SelectTrigger className="w-[140px]">
-                <SelectValue placeholder="Niveau" />
+                <SelectValue placeholder={t('list.levelPlaceholder')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Tous niveaux</SelectItem>
-                <SelectItem value="beginner">Débutant</SelectItem>
-                <SelectItem value="intermediate">Intermédiaire</SelectItem>
-                <SelectItem value="advanced">Avancé</SelectItem>
+                <SelectItem value="all">{t('list.allLevels')}</SelectItem>
+                <SelectItem value="beginner">{t('list.levels.beginner')}</SelectItem>
+                <SelectItem value="intermediate">{t('list.levels.intermediate')}</SelectItem>
+                <SelectItem value="advanced">{t('list.levels.advanced')}</SelectItem>
               </SelectContent>
             </Select>
             <div className="flex border rounded-md">
@@ -238,9 +237,9 @@ export default function CoursesPage() {
           ) : (
             <div className="text-center py-12">
               <BookOpen className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-              <h3 className="font-semibold mb-2">Aucune formation disponible</h3>
+              <h3 className="font-semibold mb-2">{t('list.empty.allTitle')}</h3>
               <p className="text-muted-foreground">
-                Essayez de modifier vos critères de recherche
+                {t('list.empty.allHint')}
               </p>
             </div>
           )}
@@ -260,9 +259,9 @@ export default function CoursesPage() {
           ) : (
             <div className="text-center py-12">
               <BookOpen className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-              <h3 className="font-semibold mb-2">Aucune formation attribuée</h3>
+              <h3 className="font-semibold mb-2">{t('list.empty.assignedTitle')}</h3>
               <p className="text-muted-foreground">
-                Vous n'avez pas encore de formations assignées
+                {t('list.empty.assignedHint')}
               </p>
             </div>
           )}
@@ -282,9 +281,9 @@ export default function CoursesPage() {
           ) : (
             <div className="text-center py-12">
               <Award className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-              <h3 className="font-semibold mb-2">Aucune formation obligatoire</h3>
+              <h3 className="font-semibold mb-2">{t('list.empty.mandatoryTitle')}</h3>
               <p className="text-muted-foreground">
-                Vous n'avez pas de formations obligatoires en cours
+                {t('list.empty.mandatoryHint')}
               </p>
             </div>
           )}
@@ -308,9 +307,9 @@ export default function CoursesPage() {
           ) : (
             <div className="text-center py-12">
               <Award className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-              <h3 className="font-semibold mb-2">Formations terminées</h3>
+              <h3 className="font-semibold mb-2">{t('list.empty.completedTitle')}</h3>
               <p className="text-muted-foreground">
-                Vos formations complétées apparaîtront ici
+                {t('list.empty.completedHint')}
               </p>
             </div>
           )}
@@ -321,6 +320,7 @@ export default function CoursesPage() {
 }
 
 function CourseGridCard({ course, showAssignment = false, isCompleted = false }: { course: any; showAssignment?: boolean; isCompleted?: boolean }) {
+  const { t } = useTranslation('courses')
   const levelColors: Record<string, string> = {
     beginner: 'bg-green-100 text-green-800',
     intermediate: 'bg-yellow-100 text-yellow-800',
@@ -335,40 +335,40 @@ function CourseGridCard({ course, showAssignment = false, isCompleted = false }:
           <div className="absolute inset-0 bg-green-600/80 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
             <div className="text-center">
               <CheckCircle className="h-12 w-12 text-white mx-auto mb-2" />
-              <p className="text-white font-semibold">Formation complétée</p>
+              <p className="text-white font-semibold">{t('list.card.completedFully')}</p>
             </div>
           </div>
         )}
         {!isCompleted && (
           <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-            <Link to={`/courses/${course.id}`}>
+            <Link to={`/courses/${course.publicId}`}>
               <Button>
                 <Play className="h-4 w-4 mr-2" />
-                Commencer
+                {t('list.card.start')}
               </Button>
             </Link>
           </div>
         )}
         <div className="absolute top-3 right-3 flex flex-col gap-1">
           {isCompleted && (
-            <Badge className="bg-green-600 text-white">✓ Terminée</Badge>
+            <Badge className="bg-green-600 text-white">{t('list.card.completed')}</Badge>
           )}
           {showAssignment && course.isMandatory && (
-            <Badge variant="destructive">Obligatoire</Badge>
+            <Badge variant="destructive">{t('list.card.mandatory')}</Badge>
           )}
           {showAssignment && course.dueDate && (
             <Badge variant="secondary" className="text-xs">
-              Échéance: {new Date(course.dueDate).toLocaleDateString('fr-FR')}
+              {t('list.card.dueDate', { date: new Date(course.dueDate).toLocaleDateString(dateLocale()) })}
             </Badge>
           )}
         </div>
       </div>
       <CardHeader className="pb-2">
         <div className="flex items-center gap-2 mb-2">
-          <Badge variant="outline">{course.category || 'Formation'}</Badge>
+          <Badge variant="outline">{course.category || t('list.card.defaultCategory')}</Badge>
           {course.level && (
             <span className={`text-xs px-2 py-0.5 rounded-full ${levelColors[course.level] || levelColors.beginner}`}>
-              {course.level === 'beginner' ? 'Débutant' : course.level === 'advanced' ? 'Avancé' : 'Intermédiaire'}
+              {course.level === 'beginner' ? t('list.levels.beginner') : course.level === 'advanced' ? t('list.levels.advanced') : t('list.levels.intermediate')}
             </span>
           )}
         </div>
@@ -383,7 +383,7 @@ function CourseGridCard({ course, showAssignment = false, isCompleted = false }:
           </span>
           <span className="flex items-center gap-1">
             <BookOpen className="h-4 w-4" />
-            {course.moduleCount || 0} modules
+            {t('list.card.modules', { count: course.moduleCount || 0 })}
           </span>
         </div>
       </CardContent>
@@ -392,13 +392,13 @@ function CourseGridCard({ course, showAssignment = false, isCompleted = false }:
           <div className="w-full text-center py-2">
             <div className="flex items-center justify-center gap-2 text-green-600 font-semibold">
               <CheckCircle className="h-4 w-4" />
-              Complétée à 100%
+              {t('list.card.completedFully')}
             </div>
           </div>
         ) : (
-          <Link to={`/courses/${course.id}`} className="w-full">
+          <Link to={`/courses/${course.publicId}`} className="w-full">
             <Button variant="outline" className="w-full">
-              Voir le détail
+              {t('list.card.viewDetail')}
             </Button>
           </Link>
         )}
@@ -408,6 +408,7 @@ function CourseGridCard({ course, showAssignment = false, isCompleted = false }:
 }
 
 function CourseListCard({ course, showAssignment = false, isCompleted = false }: { course: any; showAssignment?: boolean; isCompleted?: boolean }) {
+  const { t } = useTranslation('courses')
   return (
     <Card className={`overflow-hidden ${isCompleted ? 'border-green-300 bg-green-50' : ''}`}>
       <div className="flex flex-col md:flex-row">
@@ -418,7 +419,7 @@ function CourseListCard({ course, showAssignment = false, isCompleted = false }:
           )}
           {showAssignment && course.isMandatory && (
             <Badge variant="destructive" className="absolute top-2 right-2">
-              Obligatoire
+              {t('list.card.mandatory')}
             </Badge>
           )}
         </div>
@@ -426,13 +427,13 @@ function CourseListCard({ course, showAssignment = false, isCompleted = false }:
           <div className="flex items-start justify-between">
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <Badge variant="outline">{course.category || 'Formation'}</Badge>
+                <Badge variant="outline">{course.category || t('list.card.defaultCategory')}</Badge>
                 {isCompleted && (
-                  <Badge className="bg-green-600 text-white">✓ Terminée</Badge>
+                  <Badge className="bg-green-600 text-white">{t('list.card.completed')}</Badge>
                 )}
                 {showAssignment && course.dueDate && (
                   <Badge variant="secondary">
-                    Échéance: {new Date(course.dueDate).toLocaleDateString('fr-FR')}
+                    {t('list.card.dueDate', { date: new Date(course.dueDate).toLocaleDateString(dateLocale()) })}
                   </Badge>
                 )}
               </div>
@@ -441,36 +442,40 @@ function CourseListCard({ course, showAssignment = false, isCompleted = false }:
                 {course.description}
               </p>
             </div>
-            <div className="flex items-center gap-1">
-              <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-              <span className="font-medium">{course.rating || '4.5'}</span>
-            </div>
+            {course.reviewCount > 0 && (
+              <div className="flex items-center gap-1">
+                <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
+                <span className="font-medium">{Math.round(course.avgRating * 10) / 10}</span>
+              </div>
+            )}
           </div>
           <div className="mt-4 flex items-center justify-between">
             <div className="flex items-center gap-4 text-sm text-muted-foreground">
-              <span className="flex items-center gap-1">
-                <Clock className="h-4 w-4" />
-                {course.duration || '2h 30min'}
-              </span>
+              {course.duration && (
+                <span className="flex items-center gap-1">
+                  <Clock className="h-4 w-4" />
+                  {course.duration}h
+                </span>
+              )}
               <span className="flex items-center gap-1">
                 <Users className="h-4 w-4" />
-                {course.enrolledCount || 0} inscrits
+                {t('list.card.enrolledCount', { count: course.enrolledCount || 0 })}
               </span>
               <span className="flex items-center gap-1">
                 <BookOpen className="h-4 w-4" />
-                {course.lessonsCount || 10} leçons
+                {t('list.card.lessonsCount', { count: course.lessonsCount || 0 })}
               </span>
             </div>
             {isCompleted ? (
               <div className="flex items-center gap-2 text-green-600 font-semibold">
                 <CheckCircle className="h-4 w-4" />
-                Complétée
+                {t('list.card.completed')}
               </div>
             ) : (
-              <Link to={`/courses/${course.id}`}>
+              <Link to={`/courses/${course.publicId}`}>
                 <Button>
                   <Play className="h-4 w-4 mr-2" />
-                  {course.enrolled ? 'Continuer' : 'Commencer'}
+                  {course.enrolled ? t('list.card.continue') : t('list.card.start')}
                 </Button>
               </Link>
             )}

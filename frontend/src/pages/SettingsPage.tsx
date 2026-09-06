@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -21,18 +22,35 @@ interface Preferences {
   push_mobile: boolean
 }
 
-const CHANNELS: { key: keyof Preferences; label: string; description: string; icon: any }[] = [
-  { key: 'email', label: 'Email', description: 'Recevoir les notifications par email', icon: Mail },
-  { key: 'sms', label: 'SMS', description: 'Recevoir les notifications par SMS', icon: MessageSquare },
-  { key: 'whatsapp', label: 'WhatsApp', description: 'Recevoir les notifications par WhatsApp', icon: MessageSquare },
-  { key: 'push_web', label: 'Notifications push (navigateur)', description: 'Recevoir des notifications push dans votre navigateur', icon: Monitor },
-  { key: 'push_mobile', label: 'Notifications push (mobile)', description: 'Recevoir des notifications push sur l\'application mobile', icon: Smartphone },
-]
+const CHANNEL_ICONS: Record<keyof Preferences, any> = {
+  email: Mail,
+  sms: MessageSquare,
+  whatsapp: MessageSquare,
+  push_web: Monitor,
+  push_mobile: Smartphone,
+}
+
+const CHANNEL_TRANSLATION_KEYS: Record<keyof Preferences, string> = {
+  email: 'email',
+  sms: 'sms',
+  whatsapp: 'whatsapp',
+  push_web: 'pushWeb',
+  push_mobile: 'pushMobile',
+}
 
 export default function SettingsPage() {
+  const { t } = useTranslation('profile')
+  const { t: tCommon } = useTranslation('common')
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const [prefs, setPrefs] = useState<Preferences | null>(null)
+
+  const CHANNELS = (Object.keys(CHANNEL_TRANSLATION_KEYS) as (keyof Preferences)[]).map((key) => ({
+    key,
+    label: t(`settings.channels.${CHANNEL_TRANSLATION_KEYS[key]}.label`),
+    description: t(`settings.channels.${CHANNEL_TRANSLATION_KEYS[key]}.description`),
+    icon: CHANNEL_ICONS[key],
+  }))
 
   const { data, isLoading } = useQuery<Preferences>({
     queryKey: ['notification-preferences'],
@@ -52,10 +70,10 @@ export default function SettingsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notification-preferences'] })
-      toast({ title: 'Succès', description: 'Préférences enregistrées' })
+      toast({ title: tCommon('status.success'), description: t('settings.savedDescription') })
     },
     onError: () => {
-      toast({ title: 'Erreur', description: 'Erreur lors de l\'enregistrement', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: t('settings.saveErrorDescription'), variant: 'destructive' })
     },
   })
 
@@ -66,17 +84,15 @@ export default function SettingsPage() {
   return (
     <div className="space-y-6 max-w-2xl">
       <div>
-        <h1 className="text-3xl font-bold">Paramètres</h1>
-        <p className="text-muted-foreground">Gérez vos préférences de notifications</p>
+        <h1 className="text-3xl font-bold">{t('settings.title')}</h1>
+        <p className="text-muted-foreground">{t('settings.subtitle')}</p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Canaux de notification</CardTitle>
+          <CardTitle>{t('settings.channels.title')}</CardTitle>
           <CardDescription>
-            Choisissez les canaux par lesquels vous souhaitez recevoir les notifications. Les
-            notifications dans l'application restent toujours visibles depuis la cloche en haut de
-            l'écran, quel que soit votre choix ici.
+            {t('settings.channels.description')}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -85,11 +101,12 @@ export default function SettingsPage() {
               <div className="flex items-center gap-3">
                 <channel.icon className="h-5 w-5 text-muted-foreground shrink-0" />
                 <div>
-                  <Label className="font-medium">{channel.label}</Label>
+                  <Label htmlFor={`channel-${channel.key}`} className="font-medium">{channel.label}</Label>
                   <p className="text-sm text-muted-foreground">{channel.description}</p>
                 </div>
               </div>
               <Checkbox
+                id={`channel-${channel.key}`}
                 checked={prefs[channel.key]}
                 onCheckedChange={(checked) => setPrefs({ ...prefs, [channel.key]: checked })}
               />
@@ -99,7 +116,7 @@ export default function SettingsPage() {
       </Card>
 
       <Button onClick={() => saveMutation.mutate(prefs)} disabled={saveMutation.isPending}>
-        {saveMutation.isPending ? 'Enregistrement...' : 'Enregistrer'}
+        {saveMutation.isPending ? t('settings.saving') : t('settings.save')}
       </Button>
     </div>
   )

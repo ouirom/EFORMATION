@@ -6,11 +6,14 @@ import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import jwt from 'jsonwebtoken';
-import { authenticate, authorize, AuthRequest, UserPayload } from '../middleware/auth.middleware';
+import { authenticate, authorize, AuthRequest, UserPayload, ROLE_HIERARCHY } from '../middleware/auth.middleware';
 import { DatabaseService } from '../services/database.service';
-import { BadRequestError, NotFoundError, UnauthorizedError } from '../middleware/error.middleware';
+import { BadRequestError, NotFoundError, UnauthorizedError, ForbiddenError } from '../middleware/error.middleware';
 import { config } from '../config';
 import { IS_PG } from '../database/db-helpers';
+import { logger } from '../utils/logger';
+import { parsePagination, buildPaginationMeta } from '../utils/pagination';
+import { issueStreamToken, resolveStreamToken } from '../utils/streamTokens';
 
 const router = Router();
 
@@ -60,7 +63,6 @@ const upload = multer({
       'application/vnd.openxmlformats-officedocument.presentationml.presentation',
       'application/zip',
       'text/plain',
-      'text/html',
     ];
 
     if (allowedMimeTypes.includes(file.mimetype)) {
@@ -77,9 +79,7 @@ const upload = multer({
  */
 router.get('/', authenticate, async (req: AuthRequest, res, next) => {
   try {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
-    const offset = (page - 1) * limit;
+    const { page, limit, offset } = parsePagination(req, { defaultLimit: 20, maxLimit: 100 });
     const mimeType = req.query.mimeType as string;
 
     let query = `SELECT f.*, u.display_name as uploaded_by_name
@@ -115,12 +115,7 @@ router.get('/', authenticate, async (req: AuthRequest, res, next) => {
     res.json({
       success: true,
       data: filesWithMeta,
-      meta: {
-        page,
-        limit,
-        total: countResult[0].total,
-        totalPages: Math.ceil(countResult[0].total / limit),
-      },
+      meta: buildPaginationMeta(countResult[0].total, page, limit),
     });
   } catch (error) {
     next(error);
@@ -172,8 +167,15 @@ router.post('/upload', authenticate, upload.single('file'), async (req: AuthRequ
       storageKey = `${targetFolder}/${optimizedName}`;
       thumbnailKey = `${targetFolder}/${thumbnailName}`;
 
-      // Remove original temp file
-      fs.unlinkSync(file.path);
+      // Remove original temp file. Best-effort: on Windows this can transiently
+      // EBUSY (AV/indexer still holding a handle right after sharp closes it) --
+      // the optimized/thumbnail files are already written and the DB insert
+      // below is what actually matters, so a leftover temp file is harmless.
+      try {
+        fs.unlinkSync(file.path);
+      } catch (cleanupError) {
+        logger.warn('Failed to remove temp upload file', { path: file.path, error: cleanupError });
+      }
     } else {
       // Move file to final location
       const finalPath = path.join(targetDir, file.filename);
@@ -214,9 +216,15 @@ router.post('/upload', authenticate, upload.single('file'), async (req: AuthRequ
 
     res.status(201).json({ success: true, data: response });
   } catch (error) {
-    // Clean up temp file on error
-    if (req.file && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
+    // Clean up temp file on error -- best-effort, same EBUSY caveat as above.
+    // Letting this throw here would crash the process instead of returning
+    // the original error to the client.
+    try {
+      if (req.file && fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+    } catch (cleanupError) {
+      logger.warn('Failed to remove temp upload file after error', { path: req.file?.path, error: cleanupError });
     }
     next(error);
   }
@@ -359,6 +367,23 @@ router.get('/:id/download', authenticate, async (req: AuthRequest, res, next) =>
       throw NotFoundError('File');
     }
 
+    // A file attached to a lesson as its document can have downloads disabled for
+    // that lesson (view-only) -- course management roles are exempt, same threshold
+    // used for course/lesson management elsewhere (CourseService.audienceScopeCondition).
+    // Files not attached to any lesson (avatars, other uploads) are unaffected.
+    if ((ROLE_HIERARCHY[req.user!.role] || 0) < ROLE_HIERARCHY.manager) {
+      const lessonRows = await DatabaseService.query<{ allow_document_download: boolean }>(
+        `SELECT l.allow_document_download
+         FROM contents c
+         JOIN lessons l ON l.id = c.lesson_id
+         WHERE c.file_id = @fileId AND c.tenant_id = @tenantId`,
+        { fileId, tenantId: req.user!.tenantId }
+      );
+      if (lessonRows.length > 0 && !lessonRows[0].allow_document_download) {
+        throw ForbiddenError('Downloading this document is not allowed');
+      }
+    }
+
     const file = files[0];
     const filePath = path.join(config.uploadDir, file.storage_key);
 
@@ -373,32 +398,71 @@ router.get('/:id/download', authenticate, async (req: AuthRequest, res, next) =>
 });
 
 /**
+ * @route POST /api/v1/files/:id/stream-token
+ * @desc Mints a short-lived, single-file-scoped token for GET /:id/stream. <video>/<iframe>
+ * elements can't send an Authorization header, so the token has to travel in the URL --
+ * this keeps what ends up in server/proxy access logs and browser history to a token that's
+ * useless within minutes and can only ever stream this one file, instead of the full access
+ * token (which could otherwise reach any endpoint for its whole lifetime). The token itself
+ * is a random opaque string looked up server-side (see utils/streamTokens.ts), not a JWT --
+ * a JWT's payload is only signed, not encrypted, so it would still expose fileId/tenantId
+ * in clear text to anyone who saw the token, even without being able to forge or reuse it.
+ */
+router.post('/:id/stream-token', authenticate, async (req: AuthRequest, res, next) => {
+  try {
+    const fileId = parseInt(req.params.id, 10);
+
+    const files = await DatabaseService.query<{ id: number }>(
+      'SELECT id FROM file_assets WHERE id = @fileId AND tenant_id = @tenantId',
+      { fileId, tenantId: req.user!.tenantId }
+    );
+    if (files.length === 0) {
+      throw NotFoundError('File');
+    }
+
+    const streamToken = issueStreamToken(fileId, req.user!.tenantId);
+
+    res.json({ success: true, data: { streamToken } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
  * @route GET /api/v1/files/:id/stream
  * @desc Stream a file (for video/audio/PDF preview in <video>/<iframe>, which can't send
- * custom headers). Accepts the access token via the standard Authorization header OR a
- * `?token=` query param, and always trusts the token's own tenantId — never a client-supplied
- * header — to prevent cross-tenant file access.
+ * custom headers). The Authorization header takes a normal access token, same as any other
+ * endpoint; the `?token=` query param only accepts the opaque, file-scoped token from
+ * POST /:id/stream-token above -- never the full access token, so a token that leaks via logs
+ * or browser history can't be replayed against the rest of the API, and reveals nothing about
+ * its own fileId/tenantId on inspection. Always trusts the resolved tenantId/fileId — never a
+ * client-supplied header/param — to prevent cross-tenant access.
  */
 router.get('/:id/stream', async (req: AuthRequest, res, next) => {
   try {
+    const fileId = parseInt(req.params.id, 10);
     const authHeader = req.headers.authorization;
-    const token = authHeader?.startsWith('Bearer ')
-      ? authHeader.slice(7)
-      : (req.query.token as string | undefined);
+    const queryToken = req.query.token as string | undefined;
 
-    if (!token) {
+    let tenantId: number;
+
+    if (authHeader?.startsWith('Bearer ')) {
+      let payload: UserPayload;
+      try {
+        payload = jwt.verify(authHeader.slice(7), config.jwt.secret) as UserPayload;
+      } catch {
+        throw UnauthorizedError('Invalid or expired token');
+      }
+      tenantId = payload.tenantId;
+    } else if (queryToken) {
+      const resolved = resolveStreamToken(queryToken);
+      if (!resolved || resolved.fileId !== fileId) {
+        throw UnauthorizedError('Invalid or expired token');
+      }
+      tenantId = resolved.tenantId;
+    } else {
       throw UnauthorizedError('Authentication required');
     }
-
-    let payload: UserPayload;
-    try {
-      payload = jwt.verify(token, config.jwt.secret) as UserPayload;
-    } catch {
-      throw UnauthorizedError('Invalid or expired token');
-    }
-
-    const fileId = parseInt(req.params.id, 10);
-    const tenantId = payload.tenantId;
 
     const files = await DatabaseService.query<any>(
       'SELECT * FROM file_assets WHERE id = @fileId AND tenant_id = @tenantId',
@@ -420,6 +484,14 @@ router.get('/:id/stream', async (req: AuthRequest, res, next) => {
     const fileSize = stat.size;
     const range = req.headers.range;
 
+    // Only render inline the media types the viewer actually needs to embed
+    // (<video>/<audio>/<iframe> preview, images). Everything else is forced to
+    // download rather than render on this origin -- defense in depth against a
+    // stored file (e.g. an old text/html upload) executing as a page here.
+    const INLINE_SAFE_PREFIXES = ['image/', 'video/', 'audio/'];
+    const canInline = file.mime_type === 'application/pdf' || INLINE_SAFE_PREFIXES.some((p) => file.mime_type?.startsWith(p));
+    const disposition = canInline ? 'inline' : `attachment; filename="${encodeURIComponent(file.original_filename || file.filename)}"`;
+
     if (range) {
       const parts = range.replace(/bytes=/, '').split('-');
       const start = parseInt(parts[0], 10);
@@ -433,6 +505,8 @@ router.get('/:id/stream', async (req: AuthRequest, res, next) => {
         'Accept-Ranges': 'bytes',
         'Content-Length': chunkSize,
         'Content-Type': file.mime_type,
+        'Content-Disposition': disposition,
+        'X-Content-Type-Options': 'nosniff',
       });
 
       fileStream.pipe(res);
@@ -440,6 +514,8 @@ router.get('/:id/stream', async (req: AuthRequest, res, next) => {
       res.writeHead(200, {
         'Content-Length': fileSize,
         'Content-Type': file.mime_type,
+        'Content-Disposition': disposition,
+        'X-Content-Type-Options': 'nosniff',
       });
       fs.createReadStream(filePath).pipe(res);
     }
@@ -503,9 +579,21 @@ router.delete('/:id', authenticate, async (req: AuthRequest, res, next) => {
  */
 router.get('/folders', authenticate, async (req: AuthRequest, res, next) => {
   try {
-    // Since we don't have a folder column, we can return empty array or use date-based grouping
-    // For now, return empty to avoid SQL errors
-    res.json({ success: true, data: [] });
+    // There's no dedicated folder column -- storage_key is "<folder>/<filename>"
+    // (see POST /upload), so the folder is the first path segment. Real,
+    // computed list rather than the unconditional [] this used to return.
+    const rows = await DatabaseService.query<{ folder: string }>(
+      IS_PG
+        ? `SELECT DISTINCT split_part(storage_key, '/', 1) as folder
+           FROM file_assets WHERE tenant_id = @tenantId
+           ORDER BY folder`
+        : `SELECT DISTINCT LEFT(storage_key, CHARINDEX('/', storage_key + '/') - 1) as folder
+           FROM file_assets WHERE tenant_id = @tenantId
+           ORDER BY folder`,
+      { tenantId: req.user!.tenantId }
+    );
+
+    res.json({ success: true, data: rows.map((r) => r.folder).filter(Boolean) });
   } catch (error) {
     next(error);
   }

@@ -258,7 +258,7 @@ router.post(
     try {
       validate(req);
 
-      await AuthService.changePassword(
+      const pendingNotification = await AuthService.changePassword(
         req.user!.id,
         req.body.currentPassword,
         req.body.newPassword
@@ -267,6 +267,7 @@ router.post(
       res.json({
         success: true,
         message: 'Password changed successfully',
+        pendingNotification,
       });
     } catch (error) {
       next(error);

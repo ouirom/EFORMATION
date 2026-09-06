@@ -1,6 +1,8 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/services/api'
+import { dateLocale } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -10,17 +12,20 @@ import { useToast } from '@/components/ui/use-toast'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { 
-  Plus, 
-  Trash2, 
-  Users, 
-  Building2, 
+import { EmailConfirmDialog, PendingNotification } from '@/components/EmailConfirmDialog'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import {
+  Plus,
+  Trash2,
+  Users,
+  Building2,
   BookOpen,
   Search,
   UserPlus,
   Tag,
   Calendar,
-  CheckCircle
+  CheckCircle,
+  UsersRound
 } from 'lucide-react'
 
 function PageLoading() {
@@ -32,14 +37,20 @@ function PageLoading() {
 }
 
 export default function AdminAssignmentsPage() {
+  const { t } = useTranslation('admin')
+  const { t: tCommon } = useTranslation('common')
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const [selectedCourse, setSelectedCourse] = useState<any>(null)
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false)
+  const [pendingNotification, setPendingNotification] = useState<PendingNotification | null>(null)
+  const [assignmentPendingDelete, setAssignmentPendingDelete] = useState<any>(null)
+  const [categoryPendingDelete, setCategoryPendingDelete] = useState<any>(null)
   const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false)
   const [searchUsers, setSearchUsers] = useState('')
   const [newCategory, setNewCategory] = useState('')
   const [assignmentData, setAssignmentData] = useState({
+    lessonId: null as number | null,
     assignmentType: 'user',
     targetIds: [] as number[],
     isMandatory: false,
@@ -87,19 +98,34 @@ export default function AdminAssignmentsPage() {
     enabled: assignmentData.assignmentType === 'service',
   })
 
+  const { data: teams = [] } = useQuery({
+    queryKey: ['admin-teams-for-assignment'],
+    queryFn: () => api.teams.list(),
+    enabled: assignmentData.assignmentType === 'team',
+  })
+
+  const { data: courseLessons = [] } = useQuery({
+    queryKey: ['admin-course-lessons-for-assignment', selectedCourse?.id],
+    queryFn: () => api.lessons.catalog({ courseId: selectedCourse!.id, limit: 100 }).then(r => r.data),
+    enabled: !!selectedCourse && isAssignDialogOpen,
+  })
+
   // Mutations
   const createAssignmentMutation = useMutation({
     mutationFn: (data: any) => api.assignments.create(data),
-    onSuccess: () => {
+    onSuccess: (result: any) => {
       queryClient.invalidateQueries({ queryKey: ['admin-assignments'] })
-      toast({ title: 'Succès', description: 'Attribution créée avec succès' })
+      toast({ title: tCommon('status.success'), description: t('assignments.toasts.createdDescription') })
       setIsAssignDialogOpen(false)
-      setAssignmentData({ assignmentType: 'user', targetIds: [], isMandatory: false, dueDate: '' })
+      setAssignmentData({ lessonId: null, assignmentType: 'user', targetIds: [], isMandatory: false, dueDate: '' })
+      if (result.pendingNotification) {
+        setPendingNotification(result.pendingNotification)
+      }
     },
     onError: (error: any) => {
-      toast({ 
-        title: 'Erreur', 
-        description: error.response?.data?.error?.message || 'Impossible de créer l\'attribution',
+      toast({
+        title: tCommon('status.error'),
+        description: error.response?.data?.error?.message || t('assignments.toasts.createErrorDescription'),
         variant: 'destructive'
       })
     },
@@ -109,10 +135,10 @@ export default function AdminAssignmentsPage() {
     mutationFn: (id: number) => api.assignments.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-assignments'] })
-      toast({ title: 'Succès', description: 'Attribution supprimée' })
+      toast({ title: tCommon('status.success'), description: t('assignments.toasts.deletedDescription') })
     },
     onError: () => {
-      toast({ title: 'Erreur', description: 'Impossible de supprimer l\'attribution', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: t('assignments.toasts.deleteErrorDescription'), variant: 'destructive' })
     },
   })
 
@@ -120,14 +146,14 @@ export default function AdminAssignmentsPage() {
     mutationFn: (name: string) => api.assignments.createCategory(name),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-categories'] })
-      toast({ title: 'Succès', description: 'Catégorie créée avec succès' })
+      toast({ title: tCommon('status.success'), description: t('assignments.toasts.categoryCreatedDescription') })
       setNewCategory('')
       setIsCategoryDialogOpen(false)
     },
     onError: (error: any) => {
-      toast({ 
-        title: 'Erreur', 
-        description: error.response?.data?.error?.message || 'Impossible de créer la catégorie',
+      toast({
+        title: tCommon('status.error'),
+        description: error.response?.data?.error?.message || t('assignments.toasts.categoryCreateErrorDescription'),
         variant: 'destructive'
       })
     },
@@ -137,21 +163,22 @@ export default function AdminAssignmentsPage() {
     mutationFn: (id: number) => api.assignments.deleteCategory(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-categories'] })
-      toast({ title: 'Succès', description: 'Catégorie supprimée' })
+      toast({ title: tCommon('status.success'), description: t('assignments.toasts.categoryDeletedDescription') })
     },
     onError: () => {
-      toast({ title: 'Erreur', description: 'Impossible de supprimer la catégorie', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: t('assignments.toasts.categoryDeleteErrorDescription'), variant: 'destructive' })
     },
   })
 
   const handleCreateAssignment = () => {
     if (!selectedCourse || assignmentData.targetIds.length === 0) {
-      toast({ title: 'Erreur', description: 'Sélectionnez au moins une cible', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: t('assignments.toasts.selectTargetDescription'), variant: 'destructive' })
       return
     }
     createAssignmentMutation.mutate({
       courseId: selectedCourse.id,
       ...assignmentData,
+      lessonId: assignmentData.lessonId || undefined,
       dueDate: assignmentData.dueDate || undefined,
     })
   }
@@ -171,6 +198,7 @@ export default function AdminAssignmentsPage() {
       case 'enterprise': return enterprises
       case 'direction': return directions
       case 'service': return services
+      case 'team': return teams
       default: return []
     }
   }
@@ -191,9 +219,9 @@ export default function AdminAssignmentsPage() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold">Attributions des formations</h1>
+          <h1 className="text-3xl font-bold">{t('assignments.title')}</h1>
           <p className="text-muted-foreground">
-            Gérez les attributions de formations aux utilisateurs et groupes
+            {t('assignments.subtitle')}
           </p>
         </div>
       </div>
@@ -202,11 +230,11 @@ export default function AdminAssignmentsPage() {
         <TabsList>
           <TabsTrigger value="assignments">
             <UserPlus className="h-4 w-4 mr-2" />
-            Attributions
+            {t('assignments.tabs.assignments')}
           </TabsTrigger>
           <TabsTrigger value="categories">
             <Tag className="h-4 w-4 mr-2" />
-            Catégories
+            {t('assignments.tabs.categories')}
           </TabsTrigger>
         </TabsList>
 
@@ -218,12 +246,12 @@ export default function AdminAssignmentsPage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <BookOpen className="h-5 w-5" />
-                  Formations
+                  {t('assignments.courses.title')}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-2 max-h-[500px] overflow-y-auto">
                 {courses.length === 0 ? (
-                  <p className="text-muted-foreground text-center py-4">Aucune formation</p>
+                  <p className="text-muted-foreground text-center py-4">{t('assignments.courses.none')}</p>
                 ) : (
                   courses.map((course: any) => (
                     <div
@@ -241,9 +269,9 @@ export default function AdminAssignmentsPage() {
                           <Badge variant="outline" className="text-xs">{course.category}</Badge>
                         )}
                         {course.isPublished ? (
-                          <Badge className="bg-green-100 text-green-800 text-xs">Publié</Badge>
+                          <Badge className="bg-green-100 text-green-800 text-xs">{t('assignments.courses.published')}</Badge>
                         ) : (
-                          <Badge className="bg-yellow-100 text-yellow-800 text-xs">Brouillon</Badge>
+                          <Badge className="bg-yellow-100 text-yellow-800 text-xs">{t('assignments.courses.draft')}</Badge>
                         )}
                       </div>
                     </div>
@@ -257,12 +285,12 @@ export default function AdminAssignmentsPage() {
               <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle className="flex items-center gap-2">
                   <Users className="h-5 w-5" />
-                  {selectedCourse ? `Attributions: ${selectedCourse.title}` : 'Sélectionnez une formation'}
+                  {selectedCourse ? t('assignments.assignmentsPanel.titleWithCourse', { title: selectedCourse.title }) : t('assignments.assignmentsPanel.selectCourse')}
                 </CardTitle>
                 {selectedCourse && (
                   <Button onClick={() => setIsAssignDialogOpen(true)}>
                     <Plus className="h-4 w-4 mr-2" />
-                    Attribuer
+                    {t('assignments.assignmentsPanel.assign')}
                   </Button>
                 )}
               </CardHeader>
@@ -270,17 +298,17 @@ export default function AdminAssignmentsPage() {
                 {!selectedCourse ? (
                   <div className="text-center py-8 text-muted-foreground">
                     <BookOpen className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p>Sélectionnez une formation pour voir ses attributions</p>
+                    <p>{t('assignments.assignmentsPanel.selectCoursePrompt')}</p>
                   </div>
                 ) : assignmentsLoading ? (
                   <PageLoading />
                 ) : assignments.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p>Aucune attribution pour cette formation</p>
+                    <p>{t('assignments.assignmentsPanel.noAssignments')}</p>
                     <Button className="mt-4" onClick={() => setIsAssignDialogOpen(true)}>
                       <Plus className="h-4 w-4 mr-2" />
-                      Créer une attribution
+                      {t('assignments.assignmentsPanel.createAssignment')}
                     </Button>
                   </div>
                 ) : (
@@ -295,30 +323,37 @@ export default function AdminAssignmentsPage() {
                             assignment.assignmentType === 'user' ? 'bg-blue-100' :
                             assignment.assignmentType === 'enterprise' ? 'bg-purple-100' :
                             assignment.assignmentType === 'direction' ? 'bg-green-100' :
+                            assignment.assignmentType === 'team' ? 'bg-teal-100' :
                             'bg-orange-100'
                           }`}>
                             {assignment.assignmentType === 'user' ? (
                               <Users className="h-5 w-5 text-blue-600" />
+                            ) : assignment.assignmentType === 'team' ? (
+                              <UsersRound className="h-5 w-5 text-teal-600" />
                             ) : (
                               <Building2 className="h-5 w-5 text-purple-600" />
                             )}
                           </div>
                           <div>
-                            <p className="font-medium">{assignment.targetName || `ID: ${assignment.targetId}`}</p>
+                            <p className="font-medium">{assignment.targetName || t('assignments.assignmentsPanel.idFallback', { id: assignment.targetId })}</p>
                             <div className="flex gap-2 items-center text-sm text-muted-foreground">
                               <Badge variant="outline" className="text-xs">
-                                {assignment.assignmentType === 'user' ? 'Utilisateur' :
-                                 assignment.assignmentType === 'enterprise' ? 'Entreprise' :
-                                 assignment.assignmentType === 'direction' ? 'Direction' :
-                                 assignment.assignmentType === 'service' ? 'Service' : 'Rôle'}
+                                {assignment.assignmentType === 'user' ? t('assignments.assignmentsPanel.types.user') :
+                                 assignment.assignmentType === 'enterprise' ? t('assignments.assignmentsPanel.types.enterprise') :
+                                 assignment.assignmentType === 'direction' ? t('assignments.assignmentsPanel.types.direction') :
+                                 assignment.assignmentType === 'service' ? t('assignments.assignmentsPanel.types.service') :
+                                 assignment.assignmentType === 'team' ? t('assignments.assignmentsPanel.types.team') : t('assignments.assignmentsPanel.types.role')}
                               </Badge>
+                              {assignment.lessonTitle && (
+                                <Badge className="bg-indigo-100 text-indigo-800 text-xs">{assignment.lessonTitle}</Badge>
+                              )}
                               {assignment.isMandatory && (
-                                <Badge className="bg-red-100 text-red-800 text-xs">Obligatoire</Badge>
+                                <Badge className="bg-red-100 text-red-800 text-xs">{t('assignments.assignmentsPanel.mandatory')}</Badge>
                               )}
                               {assignment.dueDate && (
                                 <span className="flex items-center gap-1">
                                   <Calendar className="h-3 w-3" />
-                                  {new Date(assignment.dueDate).toLocaleDateString()}
+                                  {new Date(assignment.dueDate).toLocaleDateString(dateLocale())}
                                 </span>
                               )}
                             </div>
@@ -327,11 +362,7 @@ export default function AdminAssignmentsPage() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => {
-                            if (window.confirm('Supprimer cette attribution ?')) {
-                              deleteAssignmentMutation.mutate(assignment.id)
-                            }
-                          }}
+                          onClick={() => setAssignmentPendingDelete(assignment)}
                         >
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
@@ -350,11 +381,11 @@ export default function AdminAssignmentsPage() {
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="flex items-center gap-2">
                 <Tag className="h-5 w-5" />
-                Catégories de formations
+                {t('assignments.categoriesPanel.title')}
               </CardTitle>
               <Button onClick={() => setIsCategoryDialogOpen(true)}>
                 <Plus className="h-4 w-4 mr-2" />
-                Nouvelle catégorie
+                {t('assignments.categoriesPanel.newCategory')}
               </Button>
             </CardHeader>
             <CardContent>
@@ -363,7 +394,7 @@ export default function AdminAssignmentsPage() {
               ) : categories.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <Tag className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>Aucune catégorie</p>
+                  <p>{t('assignments.categoriesPanel.none')}</p>
                 </div>
               ) : (
                 <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
@@ -376,11 +407,7 @@ export default function AdminAssignmentsPage() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => {
-                          if (window.confirm(`Supprimer la catégorie "${category.name}" ?`)) {
-                            deleteCategoryMutation.mutate(category.id)
-                          }
-                        }}
+                        onClick={() => setCategoryPendingDelete(category)}
                       >
                         <Trash2 className="h-4 w-4 text-destructive" />
                       </Button>
@@ -397,41 +424,64 @@ export default function AdminAssignmentsPage() {
       <Dialog open={isAssignDialogOpen} onOpenChange={setIsAssignDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Attribuer la formation</DialogTitle>
+            <DialogTitle>{t('assignments.assignDialog.title')}</DialogTitle>
             <DialogDescription>
-              Attribuez "{selectedCourse?.title}" à des utilisateurs ou groupes
+              {t('assignments.assignDialog.description', { title: selectedCourse?.title })}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="space-y-2">
-              <Label>Type d'attribution</Label>
-              <Select 
-                value={assignmentData.assignmentType} 
-                onValueChange={(value: string) => setAssignmentData(prev => ({ 
-                  ...prev, 
-                  assignmentType: value,
-                  targetIds: [] 
+              <Label htmlFor="assign-content">{t('assignments.assignDialog.content')}</Label>
+              <Select
+                value={assignmentData.lessonId ? String(assignmentData.lessonId) : 'course'}
+                onValueChange={(value: string) => setAssignmentData(prev => ({
+                  ...prev,
+                  lessonId: value === 'course' ? null : Number(value),
                 }))}
               >
-                <SelectTrigger>
+                <SelectTrigger id="assign-content">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="user">Utilisateurs</SelectItem>
-                  <SelectItem value="enterprise">Entreprise</SelectItem>
-                  <SelectItem value="direction">Direction</SelectItem>
-                  <SelectItem value="service">Service</SelectItem>
+                  <SelectItem value="course">{t('assignments.assignDialog.wholeCourse')}</SelectItem>
+                  {courseLessons.map((lesson: any) => (
+                    <SelectItem key={lesson.id} value={String(lesson.id)}>{lesson.title}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="assign-type">{t('assignments.assignDialog.assignmentType')}</Label>
+              <Select
+                value={assignmentData.assignmentType}
+                onValueChange={(value: string) => setAssignmentData(prev => ({
+                  ...prev,
+                  assignmentType: value,
+                  targetIds: []
+                }))}
+              >
+                <SelectTrigger id="assign-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="user">{t('assignments.assignDialog.types.user')}</SelectItem>
+                  <SelectItem value="enterprise">{t('assignments.assignDialog.types.enterprise')}</SelectItem>
+                  <SelectItem value="direction">{t('assignments.assignDialog.types.direction')}</SelectItem>
+                  <SelectItem value="service">{t('assignments.assignDialog.types.service')}</SelectItem>
+                  <SelectItem value="team">{t('assignments.assignDialog.types.team')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             {assignmentData.assignmentType === 'user' && (
               <div className="space-y-2">
-                <Label>Rechercher des utilisateurs</Label>
+                <Label htmlFor="assign-search-users">{t('assignments.assignDialog.searchUsers')}</Label>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
-                    placeholder="Rechercher par nom ou email..."
+                    id="assign-search-users"
+                    placeholder={t('assignments.assignDialog.searchPlaceholder')}
                     className="pl-10"
                     value={searchUsers}
                     onChange={(e) => setSearchUsers(e.target.value)}
@@ -441,10 +491,10 @@ export default function AdminAssignmentsPage() {
             )}
 
             <div className="space-y-2">
-              <Label>Sélectionner les cibles ({assignmentData.targetIds.length} sélectionnés)</Label>
+              <Label>{t('assignments.assignDialog.selectTargets', { count: assignmentData.targetIds.length })}</Label>
               <div className="border rounded-lg max-h-48 overflow-y-auto">
                 {getTargetList().length === 0 ? (
-                  <p className="p-4 text-center text-muted-foreground">Aucun élément trouvé</p>
+                  <p className="p-4 text-center text-muted-foreground">{t('assignments.assignDialog.noItemsFound')}</p>
                 ) : (
                   getTargetList().map((item: any) => (
                     <div
@@ -472,26 +522,27 @@ export default function AdminAssignmentsPage() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Obligatoire</Label>
-                <Select 
-                  value={assignmentData.isMandatory ? 'true' : 'false'} 
-                  onValueChange={(value: string) => setAssignmentData(prev => ({ 
-                    ...prev, 
-                    isMandatory: value === 'true' 
+                <Label htmlFor="assign-mandatory">{t('assignments.assignDialog.mandatory')}</Label>
+                <Select
+                  value={assignmentData.isMandatory ? 'true' : 'false'}
+                  onValueChange={(value: string) => setAssignmentData(prev => ({
+                    ...prev,
+                    isMandatory: value === 'true'
                   }))}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger id="assign-mandatory">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="false">Non</SelectItem>
-                    <SelectItem value="true">Oui</SelectItem>
+                    <SelectItem value="false">{t('assignments.assignDialog.no')}</SelectItem>
+                    <SelectItem value="true">{t('assignments.assignDialog.yes')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Date limite (optionnel)</Label>
+                <Label htmlFor="assign-due-date">{t('assignments.assignDialog.dueDate')}</Label>
                 <Input
+                  id="assign-due-date"
                   type="date"
                   value={assignmentData.dueDate}
                   onChange={(e) => setAssignmentData(prev => ({ ...prev, dueDate: e.target.value }))}
@@ -501,13 +552,13 @@ export default function AdminAssignmentsPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsAssignDialogOpen(false)}>
-              Annuler
+              {t('assignments.assignDialog.cancel')}
             </Button>
-            <Button 
-              onClick={handleCreateAssignment} 
+            <Button
+              onClick={handleCreateAssignment}
               disabled={createAssignmentMutation.isPending || assignmentData.targetIds.length === 0}
             >
-              {createAssignmentMutation.isPending ? 'Attribution...' : 'Attribuer'}
+              {createAssignmentMutation.isPending ? t('assignments.assignDialog.assigning') : t('assignments.assignDialog.assignButton')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -517,16 +568,17 @@ export default function AdminAssignmentsPage() {
       <Dialog open={isCategoryDialogOpen} onOpenChange={setIsCategoryDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Nouvelle catégorie</DialogTitle>
+            <DialogTitle>{t('assignments.categoryDialog.title')}</DialogTitle>
             <DialogDescription>
-              Créez une nouvelle catégorie pour organiser vos formations
+              {t('assignments.categoryDialog.description')}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="space-y-2">
-              <Label>Nom de la catégorie</Label>
+              <Label htmlFor="category-name">{t('assignments.categoryDialog.nameLabel')}</Label>
               <Input
-                placeholder="Ex: Management, Technologie, Soft Skills..."
+                id="category-name"
+                placeholder={t('assignments.categoryDialog.namePlaceholder')}
                 value={newCategory}
                 onChange={(e) => setNewCategory(e.target.value)}
               />
@@ -534,17 +586,48 @@ export default function AdminAssignmentsPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsCategoryDialogOpen(false)}>
-              Annuler
+              {t('assignments.categoryDialog.cancel')}
             </Button>
-            <Button 
-              onClick={() => createCategoryMutation.mutate(newCategory)} 
+            <Button
+              onClick={() => createCategoryMutation.mutate(newCategory)}
               disabled={createCategoryMutation.isPending || !newCategory.trim()}
             >
-              {createCategoryMutation.isPending ? 'Création...' : 'Créer'}
+              {createCategoryMutation.isPending ? t('assignments.categoryDialog.creating') : t('assignments.categoryDialog.create')}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <EmailConfirmDialog
+        pendingNotification={pendingNotification}
+        onOpenChange={(open) => !open && setPendingNotification(null)}
+      />
+
+      <ConfirmDialog
+        open={!!assignmentPendingDelete}
+        onOpenChange={(open) => !open && setAssignmentPendingDelete(null)}
+        title={tCommon('actions.delete')}
+        description={t('assignments.assignmentsPanel.confirmDelete')}
+        onConfirm={() => {
+          if (assignmentPendingDelete) {
+            deleteAssignmentMutation.mutate(assignmentPendingDelete.id)
+          }
+          setAssignmentPendingDelete(null)
+        }}
+      />
+
+      <ConfirmDialog
+        open={!!categoryPendingDelete}
+        onOpenChange={(open) => !open && setCategoryPendingDelete(null)}
+        title={tCommon('actions.delete')}
+        description={t('assignments.categoriesPanel.confirmDelete', { name: categoryPendingDelete?.name })}
+        onConfirm={() => {
+          if (categoryPendingDelete) {
+            deleteCategoryMutation.mutate(categoryPendingDelete.id)
+          }
+          setCategoryPendingDelete(null)
+        }}
+      />
     </div>
   )
 }

@@ -11,6 +11,7 @@ interface ExtendedAPI extends AxiosInstance {
     get: (id: number) => Promise<any>;
     getCategories: () => Promise<any>;
     enroll: (courseId: number) => Promise<any>;
+    getMyEnrollments: () => Promise<any[]>;
     create: (data: any) => Promise<any>;
     update: (id: number, data: any) => Promise<any>;
     delete: (id: number) => Promise<any>;
@@ -20,33 +21,54 @@ interface ExtendedAPI extends AxiosInstance {
   };
   chat: {
     getConversations: () => Promise<any[]>;
-    getConversation: (id: number) => Promise<any>;
+    getConversation: (id: number | string) => Promise<any>;
     getMessages: (conversationId: number, params?: any) => Promise<any[]>;
-    sendMessage: (conversationId: number, body: string, attachmentIds?: number[]) => Promise<any>;
+    sendMessage: (conversationId: number, body: string, attachmentIds?: number[], replyToMessageId?: number) => Promise<any>;
+    deleteMessage: (messageId: number) => Promise<any>;
     createConversation: (scope: string, participantIds: number[], title?: string) => Promise<any>;
   };
   analytics: {
     getDashboard: () => Promise<any>;
     getAdminDashboard: (timeRange?: string) => Promise<any>;
+    getLeaderboard: (limit?: number) => Promise<any[]>;
   };
   notifications: {
     list: (params?: any) => Promise<any[]>;
     markRead: (id: number) => Promise<any>;
+  };
+  lessons: {
+    catalog: (params?: { status?: string; courseId?: number; mandatory?: boolean; page?: number; limit?: number }) => Promise<{ data: any[]; meta: any }>;
+  };
+  favorites: {
+    list: () => Promise<any[]>;
+    add: (type: 'course' | 'lesson', id: number) => Promise<any>;
+    remove: (type: 'course' | 'lesson', id: number) => Promise<any>;
   };
   liveSessions: {
     list: (params?: any) => Promise<any[]>;
     get: (id: number) => Promise<any>;
     join: (id: number) => Promise<any>;
     getLivekitToken: (id: number) => Promise<{ token: string; url: string; roomName: string }>;
+    startRecording: (id: number) => Promise<any>;
+    stopRecording: (id: number) => Promise<any>;
   };
   badges: {
     list: () => Promise<any[]>;
     getUserBadges: () => Promise<any[]>;
   };
   blog: {
-    getPosts: (params?: any) => Promise<any[]>;
+    getPosts: (params?: any) => Promise<any>;
     getPost: (id: number) => Promise<any>;
+    createPost: (data: any) => Promise<any>;
+    updatePost: (id: number, data: any) => Promise<any>;
+    deletePost: (id: number) => Promise<any>;
     getCategories: () => Promise<any[]>;
+    createCategory: (name: string) => Promise<any>;
+    getTags: () => Promise<any[]>;
+    createTag: (name: string) => Promise<any>;
+    getComments: (postId: number) => Promise<any[]>;
+    addComment: (postId: number, body: string, parentId?: number) => Promise<any>;
+    deleteComment: (commentId: number) => Promise<any>;
   };
   ai: {
     askTutor: (question: string, context?: any) => Promise<any>;
@@ -58,6 +80,12 @@ interface ExtendedAPI extends AxiosInstance {
     get: (id: number) => Promise<any>;
     create: (data: any) => Promise<any>;
     update: (id: number, data: any) => Promise<any>;
+    delete: (id: number) => Promise<any>;
+  };
+  jobTitles: {
+    list: () => Promise<any[]>;
+    create: (label: string) => Promise<any>;
+    update: (id: number, label: string) => Promise<any>;
     delete: (id: number) => Promise<any>;
   };
   organizations: {
@@ -75,6 +103,8 @@ interface ExtendedAPI extends AxiosInstance {
     getLiveKit: () => Promise<any>;
     updateLiveKit: (data: any) => Promise<any>;
     testLiveKit: () => Promise<any>;
+    getRecordingStorage: () => Promise<any>;
+    updateRecordingStorage: (data: any) => Promise<any>;
     getInactivityPolicies: () => Promise<any[]>;
     setInactivityPolicy: (role: string, maxInactiveDays: number | null) => Promise<any>;
   };
@@ -84,6 +114,13 @@ interface ExtendedAPI extends AxiosInstance {
     export: (params?: any) => Promise<Blob>;
     training: (params?: any) => Promise<any>;
     trainingExport: (params?: any) => Promise<Blob>;
+  };
+  teams: {
+    list: () => Promise<any[]>;
+    get: (id: number) => Promise<any>;
+    create: (data: any) => Promise<any>;
+    update: (id: number, data: any) => Promise<any>;
+    delete: (id: number) => Promise<any>;
   };
   assignments: {
     list: (courseId?: number) => Promise<any[]>;
@@ -219,6 +256,7 @@ api.courses = {
   get: (id: number) => api.get(`/courses/${id}`).then(r => r.data.data),
   getCategories: () => api.get('/courses/categories').then(r => r.data.data),
   enroll: (courseId: number) => api.post('/enrollments', { courseId }).then(r => r.data.data),
+  getMyEnrollments: () => api.get('/enrollments/my').then(r => r.data.data || []),
   create: (data: any) => api.post('/courses', data).then(r => r.data.data),
   update: (id: number, data: any) => api.put(`/courses/${id}`, data).then(r => r.data.data),
   delete: (id: number) => api.delete(`/courses/${id}`).then(r => r.data),
@@ -229,11 +267,13 @@ api.courses = {
 
 api.chat = {
   getConversations: () => api.get('/chat/conversations').then(r => r.data.data || []),
-  getConversation: (id: number) => api.get(`/chat/conversations/${id}`).then(r => r.data.data),
+  getConversation: (id: number | string) => api.get(`/chat/conversations/${id}`).then(r => r.data.data),
   getMessages: (conversationId: number, params?: any) => 
     api.get(`/chat/conversations/${conversationId}/messages`, { params }).then(r => r.data.data || []),
-  sendMessage: (conversationId: number, body: string, attachmentIds?: number[]) =>
-    api.post(`/chat/conversations/${conversationId}/messages`, { body, attachmentIds }).then(r => r.data.data),
+  sendMessage: (conversationId: number, body: string, attachmentIds?: number[], replyToMessageId?: number) =>
+    api.post(`/chat/conversations/${conversationId}/messages`, { body, attachmentIds, replyToMessageId }).then(r => r.data.data),
+  deleteMessage: (messageId: number) =>
+    api.delete(`/chat/messages/${messageId}`).then(r => r.data),
   createConversation: (scope: string, participantIds: number[], title?: string) =>
     api.post('/chat/conversations', { scope, participantIds, title }).then(r => r.data.data),
 };
@@ -241,6 +281,7 @@ api.chat = {
 api.analytics = {
   getDashboard: () => api.get('/analytics/my-stats').then(r => r.data.data),
   getAdminDashboard: (timeRange?: string) => api.get('/analytics/dashboard', { params: { timeRange } }).then(r => r.data.data),
+  getLeaderboard: (limit?: number) => api.get('/analytics/leaderboard', { params: { limit } }).then(r => r.data.data || []),
 };
 
 api.notifications = {
@@ -248,11 +289,24 @@ api.notifications = {
   markRead: (id: number) => api.put(`/notifications/${id}/read`).then(r => r.data),
 };
 
+api.lessons = {
+  catalog: (params?: { status?: string; courseId?: number; page?: number; limit?: number }) =>
+    api.get('/lessons/catalog', { params }).then(r => ({ data: r.data.data || [], meta: r.data.meta })),
+};
+
+api.favorites = {
+  list: () => api.get('/favorites').then(r => r.data.data || []),
+  add: (type: 'course' | 'lesson', id: number) => api.post('/favorites', { type, id }).then(r => r.data),
+  remove: (type: 'course' | 'lesson', id: number) => api.delete(`/favorites/${type}/${id}`).then(r => r.data),
+};
+
 api.liveSessions = {
   list: (params?: any) => api.get('/live-sessions', { params }).then(r => r.data.data || []),
   get: (id: number) => api.get(`/live-sessions/${id}`).then(r => r.data.data),
   join: (id: number) => api.post(`/live-sessions/${id}/join`).then(r => r.data.data),
   getLivekitToken: (id: number) => api.post(`/live-sessions/${id}/livekit-token`).then(r => r.data.data),
+  startRecording: (id: number) => api.post(`/live-sessions/${id}/recording/start`).then(r => r.data.data),
+  stopRecording: (id: number) => api.post(`/live-sessions/${id}/recording/stop`).then(r => r.data),
 };
 
 api.badges = {
@@ -261,9 +315,19 @@ api.badges = {
 };
 
 api.blog = {
-  getPosts: (params?: any) => api.get('/blog/posts', { params }).then(r => r.data.data || []),
+  getPosts: (params?: any) => api.get('/blog/posts', { params }).then(r => ({ data: r.data.data || [], meta: r.data.meta })),
   getPost: (id: number) => api.get(`/blog/posts/${id}`).then(r => r.data.data),
+  createPost: (data: any) => api.post('/blog/posts', data).then(r => r.data.data),
+  updatePost: (id: number, data: any) => api.put(`/blog/posts/${id}`, data).then(r => r.data.data),
+  deletePost: (id: number) => api.delete(`/blog/posts/${id}`).then(r => r.data),
   getCategories: () => api.get('/blog/categories').then(r => r.data.data || []),
+  createCategory: (name: string) => api.post('/blog/categories', { name }).then(r => r.data.data),
+  getTags: () => api.get('/blog/tags').then(r => r.data.data || []),
+  createTag: (name: string) => api.post('/blog/tags', { name }).then(r => r.data.data),
+  getComments: (postId: number) => api.get(`/blog/posts/${postId}/comments`).then(r => r.data.data || []),
+  addComment: (postId: number, body: string, parentId?: number) =>
+    api.post(`/blog/posts/${postId}/comments`, { body, parentId }).then(r => r.data.data),
+  deleteComment: (commentId: number) => api.delete(`/blog/comments/${commentId}`).then(r => r.data),
 };
 
 api.ai = {
@@ -279,6 +343,13 @@ api.users = {
   create: (data: any) => api.post('/users', data).then(r => r.data.data),
   update: (id: number, data: any) => api.put(`/users/${id}`, data).then(r => r.data.data),
   delete: (id: number) => api.delete(`/users/${id}`).then(r => r.data),
+};
+
+api.jobTitles = {
+  list: () => api.get('/job-titles').then(r => r.data.data || []),
+  create: (label: string) => api.post('/job-titles', { label }).then(r => r.data.data),
+  update: (id: number, label: string) => api.put(`/job-titles/${id}`, { label }).then(r => r.data.data),
+  delete: (id: number) => api.delete(`/job-titles/${id}`).then(r => r.data),
 };
 
 api.organizations = {
@@ -299,6 +370,8 @@ api.settings = {
   getLiveKit: () => api.get('/settings/livekit').then(r => r.data.data),
   updateLiveKit: (data: any) => api.put('/settings/livekit', data).then(r => r.data),
   testLiveKit: () => api.post('/settings/livekit/test').then(r => r.data),
+  getRecordingStorage: () => api.get('/settings/recording-storage').then(r => r.data.data),
+  updateRecordingStorage: (data: any) => api.put('/settings/recording-storage', data).then(r => r.data),
   getInactivityPolicies: () => api.get('/settings/inactivity-policies').then(r => r.data.data),
   setInactivityPolicy: (role: string, maxInactiveDays: number | null) =>
     api.put('/settings/inactivity-policies', { role, maxInactiveDays }).then(r => r.data),
@@ -310,6 +383,14 @@ api.logs = {
   export: (params?: any) => api.get('/logs/export', { params, responseType: 'blob' }).then(r => r.data),
   training: (params?: any) => api.get('/logs/training', { params }).then(r => r.data),
   trainingExport: (params?: any) => api.get('/logs/training/export', { params, responseType: 'blob' }).then(r => r.data),
+};
+
+api.teams = {
+  list: () => api.get('/teams').then(r => r.data.data || []),
+  get: (id: number) => api.get(`/teams/${id}`).then(r => r.data.data),
+  create: (data: any) => api.post('/teams', data).then(r => r.data.data),
+  update: (id: number, data: any) => api.put(`/teams/${id}`, data).then(r => r.data.data),
+  delete: (id: number) => api.delete(`/teams/${id}`).then(r => r.data),
 };
 
 api.assignments = {

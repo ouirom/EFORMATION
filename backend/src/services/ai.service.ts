@@ -1,8 +1,57 @@
 import OpenAI from 'openai';
 import { config } from '../config';
 import { DatabaseService } from './database.service';
-import { IS_PG } from '../database/db-helpers';
+import { db, IS_PG } from '../database/db-helpers';
 import { logger } from '../utils/logger';
+import { ServiceUnavailableError } from '../middleware/error.middleware';
+import {
+  buildAppUsageGuideText,
+  matchUsageTopics,
+  isSupportedLanguage,
+  DEFAULT_LANGUAGE,
+  SupportedLanguage,
+} from '../data/appUsageGuide';
+
+// User-facing strings for the AI tutor, keyed by language -- kept small and
+// separate from the app-usage guide (which is about app *features*, not the
+// tutor's own chrome/error text).
+const TUTOR_STRINGS: Record<SupportedLanguage, {
+  systemPrompt: (usageGuide: string, context: string) => string;
+  notConfiguredFallback: string;
+  noResponse: string;
+  processingError: string;
+}> = {
+  fr: {
+    systemPrompt: (usageGuide, context) => `Tu es l'assistant IA d'une plateforme de formation en ligne (e-learning). Tu réponds en français.
+
+Il y a deux types de questions :
+1. Questions pédagogiques sur le contenu d'un cours/leçon : aide l'apprenant à comprendre les concepts et guide-le vers la réponse sans la lui donner directement. Sois encourageant et pédagogue.
+2. Questions sur le fonctionnement de l'application elle-même (comment faire telle ou telle action, où trouver telle page) : réponds directement et précisément en te basant UNIQUEMENT sur le guide d'utilisation ci-dessous. Ne réponds jamais avec une fonctionnalité qui n'y figure pas.
+
+Guide d'utilisation de l'application :
+${usageGuide}
+${context ? `\nContexte sur la leçon/cours actuel :\n${context}` : ''}`,
+    notConfiguredFallback:
+      "Désolé, l'assistant IA n'est pas configuré sur ce serveur pour l'instant, et je n'ai pas trouvé de rubrique d'aide correspondant à votre question. Essayez de reformuler, consultez l'aide contextuelle (F1) sur la page concernée, ou contactez votre formateur/administrateur.",
+    noResponse: "Je n'ai pas pu générer de réponse. Essayez de reformuler votre question.",
+    processingError: "J'ai du mal à traiter votre question pour le moment. Merci de réessayer dans un instant.",
+  },
+  en: {
+    systemPrompt: (usageGuide, context) => `You are the AI assistant of an online learning (e-learning) platform. You answer in English.
+
+There are two kinds of questions:
+1. Pedagogical questions about a course/lesson's content: help the learner understand the concepts and guide them toward the answer without giving it away directly. Be encouraging and educational.
+2. Questions about how the application itself works (how to do something, where to find a page): answer directly and precisely, based ONLY on the usage guide below. Never answer with a feature that isn't listed there.
+
+Application usage guide:
+${usageGuide}
+${context ? `\nContext about the current lesson/course:\n${context}` : ''}`,
+    notConfiguredFallback:
+      "Sorry, the AI assistant isn't configured on this server yet, and I couldn't find a help topic matching your question. Try rephrasing, check the contextual help (F1) on the relevant page, or contact your instructor/administrator.",
+    noResponse: "I couldn't generate a response. Please try rephrasing your question.",
+    processingError: "I'm having trouble processing your question right now. Please try again in a moment.",
+  },
+};
 
 const openai = config.openai.apiKey
   ? new OpenAI({ apiKey: config.openai.apiKey })
@@ -49,7 +98,7 @@ export class AIService {
    */
   static async generateCourseOutline(input: CourseOutlineInput): Promise<any> {
     if (!openai) {
-      return this.getMockCourseOutline(input);
+      throw ServiceUnavailableError('AI content generation is not configured on this server');
     }
 
     const prompt = `Create a detailed course outline for: "${input.topic}"
@@ -95,7 +144,7 @@ Please provide a structured JSON response with the following format:
       return JSON.parse(responseText);
     } catch (error) {
       logger.error('AI course outline generation failed', { error });
-      return this.getMockCourseOutline(input);
+      throw ServiceUnavailableError('AI course outline generation failed');
     }
   }
 
@@ -104,7 +153,7 @@ Please provide a structured JSON response with the following format:
    */
   static async generateLessonContent(input: LessonContentInput): Promise<any> {
     if (!openai) {
-      return this.getMockLessonContent(input);
+      throw ServiceUnavailableError('AI content generation is not configured on this server');
     }
 
     const contentPrompts: Record<string, string> = {
@@ -139,7 +188,7 @@ Provide the content in markdown format with:
       };
     } catch (error) {
       logger.error('AI lesson content generation failed', { error });
-      return this.getMockLessonContent(input);
+      throw ServiceUnavailableError('AI lesson content generation failed');
     }
   }
 
@@ -148,7 +197,7 @@ Provide the content in markdown format with:
    */
   static async generateQuiz(input: QuizGenerationInput): Promise<any> {
     if (!openai) {
-      return this.getMockQuiz(input);
+      throw ServiceUnavailableError('AI content generation is not configured on this server');
     }
 
     const prompt = `Generate ${input.numberOfQuestions} quiz questions about: "${input.topic}"
@@ -184,7 +233,7 @@ Respond with JSON:
       return JSON.parse(responseText);
     } catch (error) {
       logger.error('AI quiz generation failed', { error });
-      return this.getMockQuiz(input);
+      throw ServiceUnavailableError('AI quiz generation failed');
     }
   }
 
@@ -228,19 +277,21 @@ Respond with JSON:
   static async getRecommendations(input: RecommendationInput): Promise<any[]> {
     // Get available courses
     const availableCourses = await DatabaseService.query<any>(
-      `SELECT c.id, c.title, c.description, c.category, c.difficulty_level
+      `SELECT c.id, c.title, c.description, c.category, c.level
        FROM courses c
-       WHERE c.tenant_id = @tenantId AND c.status = 'published'
+       WHERE c.tenant_id = @tenantId AND c.is_published = ${db.bool(true)} AND c.deleted_at IS NULL
        AND c.id NOT IN (SELECT course_id FROM enrollments WHERE user_id = @userId)`,
       { tenantId: input.tenantId, userId: input.userId }
     );
 
     if (!openai || availableCourses.length === 0) {
+      // No relevance score is computed here -- this is just "courses you
+      // haven't enrolled in yet", not a ranked AI recommendation, so we don't
+      // attach a fabricated score to it.
       return availableCourses.slice(0, input.limit).map((c: any) => ({
         courseId: c.id,
         title: c.title,
-        score: 0.8,
-        reason: 'Recommended based on your interests',
+        reason: 'Not yet enrolled',
       }));
     }
 
@@ -280,8 +331,7 @@ Respond with JSON array of top ${input.limit} recommendations:
       return availableCourses.slice(0, input.limit).map((c: any) => ({
         courseId: c.id,
         title: c.title,
-        score: 0.8,
-        reason: 'Recommended based on availability',
+        reason: 'Not yet enrolled',
       }));
     }
   }
@@ -325,11 +375,32 @@ Respond with JSON array of top ${input.limit} recommendations:
   }
 
   /**
-   * AI Tutor - Answer questions
+   * AI Tutor - Answer questions. Handles two kinds of questions: pedagogical
+   * ("explain this concept") using lesson/course context, and app-usage
+   * ("how do I do X in this platform") using the built-in usage guide -- the
+   * model previously had zero knowledge of the app's own features/navigation,
+   * so it either hallucinated or refused those questions.
    */
-  static async askTutor(input: { question: string; context: string; userId: number }): Promise<string> {
+  static async askTutor(input: {
+    question: string;
+    context: string;
+    userId: number;
+    role: string;
+    language?: string;
+  }): Promise<string> {
+    const language: SupportedLanguage = isSupportedLanguage(input.language) ? input.language : DEFAULT_LANGUAGE;
+    const strings = TUTOR_STRINGS[language];
+    const usageGuide = buildAppUsageGuideText(input.role, language);
+
     if (!openai) {
-      return "I'm sorry, the AI tutor is currently unavailable. Please try again later or contact your instructor for help.";
+      // No AI provider configured: still answer app-usage questions correctly via
+      // keyword matching against the same guide, instead of a blanket "unavailable"
+      // message regardless of what was actually asked.
+      const matches = matchUsageTopics(input.question, input.role, language);
+      if (matches.length > 0) {
+        return matches.map((m) => `**${m.title}**\n${m.answer}`).join('\n\n');
+      }
+      return strings.notConfiguredFallback;
     }
 
     // Get recent chat history for context
@@ -345,11 +416,7 @@ Respond with JSON array of top ${input.limit} recommendations:
     );
 
     const messages: any[] = [
-      { 
-        role: 'system', 
-        content: `You are a helpful AI tutor for an e-learning platform. Your goal is to help students understand concepts and guide them to answers without just giving away solutions. Be encouraging and educational.
-${input.context ? `\nContext about the current lesson:\n${input.context}` : ''}` 
-      },
+      { role: 'system', content: strings.systemPrompt(usageGuide, input.context) },
       ...history.reverse().map((h: any) => ({ role: h.role, content: h.message })),
       { role: 'user', content: input.question },
     ];
@@ -362,10 +429,10 @@ ${input.context ? `\nContext about the current lesson:\n${input.context}` : ''}`
         max_tokens: 1000,
       });
 
-      return completion.choices[0]?.message?.content || "I couldn't generate a response. Please try rephrasing your question.";
+      return completion.choices[0]?.message?.content || strings.noResponse;
     } catch (error) {
       logger.error('AI tutor failed', { error });
-      return "I'm having trouble processing your question right now. Please try again in a moment.";
+      return strings.processingError;
     }
   }
 
@@ -431,57 +498,4 @@ ${input.context ? `\nContext about the current lesson:\n${input.context}` : ''}`
     };
   }
 
-  // Mock responses when AI is not available
-  private static getMockCourseOutline(input: CourseOutlineInput): any {
-    return {
-      title: input.topic,
-      description: `A comprehensive course on ${input.topic}`,
-      objectives: input.objectives || ['Understand key concepts', 'Apply knowledge practically'],
-      modules: [
-        {
-          title: 'Introduction',
-          description: 'Getting started with the basics',
-          lessons: [
-            { title: 'Overview', description: 'Introduction to the topic', duration_minutes: 30, content_types: ['text', 'video'] },
-            { title: 'Key Concepts', description: 'Understanding fundamental concepts', duration_minutes: 45, content_types: ['text', 'quiz'] },
-          ],
-        },
-        {
-          title: 'Core Content',
-          description: 'Deep dive into the subject',
-          lessons: [
-            { title: 'Main Topic', description: 'Detailed exploration', duration_minutes: 60, content_types: ['text', 'video', 'quiz'] },
-          ],
-        },
-      ],
-      estimated_duration_hours: 5,
-      difficulty_level: 'intermediate',
-    };
-  }
-
-  private static getMockLessonContent(input: LessonContentInput): any {
-    return {
-      content: `# ${input.title}\n\nThis is placeholder content for the lesson. The AI content generation feature is not currently available.\n\n## Key Points\n- Point 1\n- Point 2\n- Point 3\n\n## Summary\nPlease add your content here.`,
-      contentType: input.contentType,
-    };
-  }
-
-  private static getMockQuiz(input: QuizGenerationInput): any {
-    return {
-      questions: [
-        {
-          type: 'multiple_choice',
-          question: `Sample question about ${input.topic}`,
-          choices: [
-            { text: 'Option A', is_correct: false },
-            { text: 'Option B', is_correct: true },
-            { text: 'Option C', is_correct: false },
-            { text: 'Option D', is_correct: false },
-          ],
-          explanation: 'Option B is correct because...',
-          points: 10,
-        },
-      ],
-    };
-  }
 }

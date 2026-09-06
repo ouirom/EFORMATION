@@ -1,18 +1,25 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+import { validateEnv } from './env.schema';
+validateEnv(process.env);
+
 const DEFAULT_JWT_SECRET = 'your-super-secret-jwt-key-change-in-production';
 const DEFAULT_JWT_REFRESH_SECRET = 'your-refresh-secret-key-change-in-production';
 
-// Refuse to boot in production with a missing/placeholder JWT secret — those values
-// are committed in this repo's history, so leaving the fallback in place in prod
-// would let anyone forge valid auth tokens.
-if (process.env.NODE_ENV === 'production') {
+// Refuse to boot with a missing/placeholder JWT secret in any environment that
+// isn't explicitly local dev/test — those values are committed in this repo's
+// history, so leaving the fallback in place on any publicly reachable deployment
+// (prod, staging, or anything else) would let anyone forge valid auth tokens.
+// Opt-in allowlist rather than an opt-out blocklist, so an unset/misspelled
+// NODE_ENV (e.g. "staging") fails closed instead of silently booting insecure.
+const LOCAL_ENVS = ['development', 'test'];
+if (!LOCAL_ENVS.includes(process.env.NODE_ENV || '')) {
   const secret = process.env.JWT_SECRET;
   const refreshSecret = process.env.JWT_REFRESH_SECRET;
   if (!secret || secret === DEFAULT_JWT_SECRET || !refreshSecret || refreshSecret === DEFAULT_JWT_REFRESH_SECRET) {
     throw new Error(
-      'JWT_SECRET and JWT_REFRESH_SECRET must be set to unique, non-default values when NODE_ENV=production'
+      'JWT_SECRET and JWT_REFRESH_SECRET must be set to unique, non-default values when NODE_ENV is not development/test'
     );
   }
 }
@@ -24,13 +31,12 @@ export const config = {
   host: process.env.HOST || 'localhost',
 
   // Database — client selects which backend DatabaseService uses under the hood.
-  // 'mssql' (default, unchanged): the existing native mssql/msnodesqlv8 Windows-auth
-  // driver — kept as-is because SQL Server instances configured for Windows-Auth-only
-  // (common; this is the case for this project's own dev instance — see
-  // SERVERPROPERTY('IsIntegratedSecurityOnly')) can't use SQL-login auth at all, which
-  // is what Knex's tedious-based mssql client requires. 'pg': routed through Knex.
+  // 'pg' (default): the live deployment runs on PostgreSQL via Knex. 'mssql' is kept
+  // as a fallback for the native mssql/msnodesqlv8 Windows-auth driver, for SQL Server
+  // instances configured Windows-Auth-only (see SERVERPROPERTY('IsIntegratedSecurityOnly'))
+  // that can't use the SQL-login auth Knex's tedious-based mssql client requires.
   database: {
-    client: process.env.DB_CLIENT || 'mssql',
+    client: process.env.DB_CLIENT || 'pg',
     server: process.env.DB_HOST || 'localhost',
     database: process.env.DB_NAME || 'db_eformation',
     port: parseInt(process.env.DB_PORT || '', 10) || undefined,
@@ -175,4 +181,8 @@ export const config = {
 
   // Certificate
   certificateVerifyUrl: process.env.CERTIFICATE_VERIFY_URL || 'https://eformation.com/verify',
+
+  // Error monitoring (Sentry). Unset by default -- reporting only turns on once a real
+  // DSN is configured, so local dev never sends events anywhere.
+  sentryDsn: process.env.SENTRY_DSN || '',
 };

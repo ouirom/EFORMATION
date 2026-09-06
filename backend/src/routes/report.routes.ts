@@ -202,12 +202,12 @@ async function generateReportData(
         `SELECT u.id, u.display_name, u.email, u.role,
                 e.name as enterprise,
                 COUNT(DISTINCT en.course_id) as enrolled_courses,
-                AVG(en.progress) as avg_progress,
-                SUM(CASE WHEN en.progress >= 100 THEN 1 ELSE 0 END) as completed_courses
+                AVG(en.progress_percent) as avg_progress,
+                SUM(CASE WHEN en.progress_percent >= 100 THEN 1 ELSE 0 END) as completed_courses
          FROM users u
          LEFT JOIN enterprises e ON u.enterprise_id = e.id
          LEFT JOIN enrollments en ON u.id = en.user_id
-         WHERE u.tenant_id = @tenantId ${dateFilter}
+         WHERE u.tenant_id = @tenantId ${dateFilter.replace('created_at', 'u.created_at')}
          GROUP BY u.id, u.display_name, u.email, u.role, e.name
          ORDER BY avg_progress DESC`,
         { tenantId, startDate, endDate }
@@ -217,9 +217,9 @@ async function generateReportData(
       return DatabaseService.query<any>(
         `SELECT c.id, c.title, c.category,
                 COUNT(e.id) as total_enrollments,
-                SUM(CASE WHEN e.progress >= 100 THEN 1 ELSE 0 END) as completions,
-                AVG(e.progress) as avg_progress,
-                AVG(${db.diffDays('e.started_at', 'e.completed_at')}) as avg_days_to_complete
+                SUM(CASE WHEN e.progress_percent >= 100 THEN 1 ELSE 0 END) as completions,
+                AVG(e.progress_percent) as avg_progress,
+                AVG(${db.diffDays('e.enrolled_at', 'e.completed_at')}) as avg_days_to_complete
          FROM courses c
          LEFT JOIN enrollments e ON c.id = e.course_id
          WHERE c.tenant_id = @tenantId ${courseId ? 'AND c.id = @courseId' : ''} ${dateFilter}
@@ -237,9 +237,11 @@ async function generateReportData(
                 MAX(qa.score) as max_score,
                 SUM(CASE WHEN qa.passed = ${db.bool(true)} THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(qa.id), 0) as pass_rate
          FROM quizzes q
-         LEFT JOIN courses c ON q.course_id = c.id
+         LEFT JOIN lessons l ON q.lesson_id = l.id
+         LEFT JOIN modules m ON l.module_id = m.id
+         LEFT JOIN courses c ON m.course_id = c.id
          LEFT JOIN quiz_attempts qa ON q.id = qa.quiz_id
-         WHERE q.tenant_id = @tenantId ${dateFilter}
+         WHERE q.tenant_id = @tenantId ${dateFilter.replace('created_at', 'q.created_at')}
          GROUP BY q.id, q.title, c.title
          ORDER BY total_attempts DESC`,
         { tenantId, startDate, endDate }
@@ -247,14 +249,14 @@ async function generateReportData(
 
     case 'enrollment_summary':
       return DatabaseService.query<any>(
-        `SELECT CAST(e.started_at AS DATE) as date,
+        `SELECT CAST(e.enrolled_at AS DATE) as date,
                 COUNT(*) as enrollments,
                 COUNT(DISTINCT e.user_id) as unique_users,
                 COUNT(DISTINCT e.course_id) as courses
          FROM enrollments e
          JOIN courses c ON e.course_id = c.id
-         WHERE c.tenant_id = @tenantId ${dateFilter.replace('created_at', 'e.started_at')}
-         GROUP BY CAST(e.started_at AS DATE)
+         WHERE c.tenant_id = @tenantId ${dateFilter.replace('created_at', 'e.enrolled_at')}
+         GROUP BY CAST(e.enrolled_at AS DATE)
          ORDER BY date`,
         { tenantId, startDate, endDate }
       );
@@ -287,15 +289,15 @@ async function generateReportData(
     case 'activity_log':
       return DatabaseService.query<any>(
         IS_PG
-          ? `SELECT al.action, al.resource_type, al.resource_id,
-                    u.display_name as user_name, al.ip_address, al.created_at
+          ? `SELECT al.action, al.entity, al.entity_id,
+                    u.display_name as user_name, al.created_at
              FROM audit_logs al
              LEFT JOIN users u ON al.user_id = u.id
              WHERE al.tenant_id = @tenantId ${dateFilter.replace('created_at', 'al.created_at')}
              ORDER BY al.created_at DESC
              LIMIT 1000`
-          : `SELECT TOP 1000 al.action, al.resource_type, al.resource_id,
-                    u.display_name as user_name, al.ip_address, al.created_at
+          : `SELECT TOP 1000 al.action, al.entity, al.entity_id,
+                    u.display_name as user_name, al.created_at
              FROM audit_logs al
              LEFT JOIN users u ON al.user_id = u.id
              WHERE al.tenant_id = @tenantId ${dateFilter.replace('created_at', 'al.created_at')}
@@ -308,7 +310,7 @@ async function generateReportData(
         `SELECT e.name as enterprise, d.name as direction, s.name as service,
                 COUNT(DISTINCT u.id) as users,
                 COUNT(DISTINCT en.id) as enrollments,
-                AVG(en.progress) as avg_progress
+                AVG(en.progress_percent) as avg_progress
          FROM enterprises e
          LEFT JOIN directions d ON e.id = d.enterprise_id
          LEFT JOIN services s ON d.id = s.direction_id

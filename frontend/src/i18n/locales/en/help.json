@@ -1,0 +1,396 @@
+{
+  "topics": {
+    "login": {
+      "title": "Login",
+      "tips": [
+        "Sign in with the email and password provided by your organization.",
+        "Use \"Forgot password?\" if you can't sign in.",
+        "You can also sign in with Google or Microsoft if your organization has enabled it."
+      ]
+    },
+    "register": {
+      "title": "Create an account",
+      "tips": [
+        "Enter your information to create your learner account.",
+        "Your account is created with \"pending\" status: you won't be able to sign in until a manager (your direct supervisor) activates it.",
+        "A manager (supervisor/manager/director, or an admin if none is set) is automatically notified of your request."
+      ]
+    },
+    "forgotPassword": {
+      "title": "Forgot password",
+      "tips": [
+        "Enter your email to receive a reset link.",
+        "Check your spam folder if you don't receive anything after a few minutes."
+      ]
+    },
+    "resetPassword": {
+      "title": "Reset password",
+      "tips": [
+        "Choose a new, sufficiently strong password.",
+        "The reset link is only valid for a limited time."
+      ]
+    },
+    "dashboard": {
+      "title": "Dashboard",
+      "tips": [
+        "See your progress, learning time, and badges at a glance.",
+        "The catalog at the bottom of the page lists your in-progress, mandatory, and recommended courses.",
+        "Click \"Continue\" to resume a course where you left off."
+      ]
+    },
+    "courses": {
+      "title": "Courses",
+      "tips": [
+        "Browse all courses available for your organization.",
+        "Use search and filters to find a course by category or level.",
+        "Click a course to see its detailed content and enroll."
+      ]
+    },
+    "courseDetail": {
+      "title": "Course detail",
+      "tips": [
+        "Click \"Enroll\" to join the course before starting a lesson.",
+        "Review the syllabus, objectives, and reviews before starting.",
+        "Track your progress module by module in the \"Progress\" tab.",
+        "A certificate of completion is issued at the end if the course offers one."
+      ]
+    },
+    "lessons": {
+      "title": "Lesson catalog",
+      "tips": [
+        "Find all your lessons in a single catalog, across every course.",
+        "Filter by tab: \"In progress\", \"Mandatory\", or \"All\".",
+        "Search a lesson by title, or filter by course if you're taking several courses."
+      ]
+    },
+    "lesson": {
+      "title": "Lesson",
+      "tips": [
+        "The lesson content (video, document, or link) is displayed on this page.",
+        "Mark the lesson as complete to advance your tracking.",
+        "If the lesson includes a quiz, it's accessible from this page."
+      ]
+    },
+    "lessonQuizzes": {
+      "title": "Lesson quizzes",
+      "tips": [
+        "Find all quizzes associated with this lesson here.",
+        "The allowed number of attempts and time limit are shown on each quiz."
+      ]
+    },
+    "quizCreate": {
+      "title": "Create a quiz",
+      "tips": [
+        "Set the title, passing score, and quiz settings (attempts, duration, random draw).",
+        "You'll be able to add questions once the quiz is created."
+      ]
+    },
+    "quizTake": {
+      "title": "Take a quiz",
+      "tips": [
+        "Answer the questions before the time limit expires, if one is set.",
+        "Your score and, depending on the configuration, the correct answers are shown after submission.",
+        "The number of remaining attempts is shown at the top of the page."
+      ]
+    },
+    "quizManageQuestions": {
+      "title": "Manage quiz questions",
+      "tips": [
+        "Add, edit, or delete the quiz's questions from this page.",
+        "Several question types are available: MCQ, True/False, short answer, essay."
+      ]
+    },
+    "badges": {
+      "title": "Badges",
+      "tips": [
+        "View the badges you've unlocked as you progress through your courses.",
+        "Each badge specifies its earning criteria."
+      ]
+    },
+    "certificates": {
+      "title": "Certificates",
+      "tips": [
+        "Find all your earned certificates of completion here.",
+        "Download them as PDFs to share or archive them.",
+        "A certificate may have an expiration date: you'll be notified before it expires, prompting you to retake the course."
+      ]
+    },
+    "notifications": {
+      "title": "Notifications",
+      "tips": [
+        "Find reminders, messages, and news relevant to you here.",
+        "Click a notification to go directly to the related item."
+      ]
+    },
+    "search": {
+      "title": "Search",
+      "tips": [
+        "Search for courses, lessons, articles, quizzes, or live sessions.",
+        "Use the tabs to filter results by type.",
+        "The quick search in the header (magnifying glass) gives direct access without leaving your current page."
+      ]
+    },
+    "chat": {
+      "title": "Chat",
+      "tips": [
+        "Chat in real time with your instructors and colleagues.",
+        "Select a conversation from the list to open it."
+      ]
+    },
+    "chatConversation": {
+      "title": "Conversation",
+      "tips": [
+        "Send messages and attachments in this conversation.",
+        "Messages are synced in real time across all participants."
+      ]
+    },
+    "live": {
+      "title": "Live sessions",
+      "tips": [
+        "View upcoming, live, and past recorded sessions.",
+        "Click a session to see its details: instructor, schedule, participants, and video conferencing link (if provided).",
+        "From the detail view, click \"Enroll\" for an upcoming session, or \"Join\" once it's live."
+      ]
+    },
+    "liveDetail": {
+      "title": "Live session detail",
+      "tips": [
+        "Enroll in a scheduled session with \"Enroll\", or join it with \"Join\" once it's live.",
+        "If no video conferencing link was configured by the organizer, your enrollment/attendance is still recorded, but no link opens automatically."
+      ]
+    },
+    "blog": {
+      "title": "Blog",
+      "tips": [
+        "Discover articles published by your organization.",
+        "Leave a comment to engage with other readers."
+      ]
+    },
+    "blogPost": {
+      "title": "Article",
+      "tips": [
+        "Read the full article and leave a comment to engage with other readers.",
+        "Replies to comments appear as a threaded discussion.",
+        "You can delete your own comments; managers, directors, and admins can also moderate others'."
+      ]
+    },
+    "profile": {
+      "title": "My profile",
+      "tips": [
+        "Edit your personal information and profile picture.",
+        "Notification preferences are managed from \"Settings\", accessible via your avatar menu in the top right."
+      ]
+    },
+    "settings": {
+      "title": "Settings",
+      "tips": [
+        "Choose, per channel (email, SMS, WhatsApp, browser push, mobile push), whether you want to receive notifications relevant to you.",
+        "In-app notifications (the bell at the top of the screen) always remain visible, regardless of your choice here — only deliveries to other channels are affected."
+      ]
+    },
+    "aiTutor": {
+      "title": "AI Assistant",
+      "tips": [
+        "Ask the assistant your questions to get help with your courses.",
+        "The assistant can recommend content tailored to your progress."
+      ]
+    },
+    "contentUpload": {
+      "title": "Content import",
+      "tips": [
+        "Upload documents, videos, or other educational resources.",
+        "The accepted formats and maximum size are shown during import."
+      ]
+    },
+    "myTeam": {
+      "title": "My Team",
+      "tips": [
+        "Track the progress of team members directly reporting to you (you only see hierarchy levels below yours, never your peers or superiors).",
+        "As a supervisor, your team is limited to the agents explicitly assigned to you (\"Users\" page, \"Direct supervisor\" field) — not the whole department.",
+        "The \"Overdue mandatory courses\" card sums up mandatory assignments past their due date for your team.",
+        "Enable \"Periodic report\" to automatically receive, in-app and/or by email, a summary of your team's progress (daily or weekly frequency, day of your choice)."
+      ]
+    },
+    "adminHome": {
+      "title": "Analytics (administration)",
+      "tips": [
+        "Overview of the platform's usage and engagement statistics.",
+        "Switch between the user workspace and administration via the button at the top of the sidebar."
+      ]
+    },
+    "adminAnalytics": {
+      "title": "Analytics",
+      "tips": [
+        "Track key metrics: active users, courses taken, completion rate.",
+        "Use the period selector to adjust the analysis range.",
+        "The \"Lesson drop-off\" tab shows, for a given course, the percentage of learners who reach each lesson — useful for spotting where they drop off."
+      ]
+    },
+    "adminUsers": {
+      "title": "Users",
+      "tips": [
+        "Create, edit, or deactivate user accounts.",
+        "Assign roles (learner, manager, instructor, admin...) and organizational affiliations.",
+        "Use search to quickly find a user.",
+        "The \"Import\" button creates multiple accounts at once from a CSV or Excel file (columns: email, displayName, role, and company/division/department codes optionally). For a pre-filled Excel template, use the \"Data import\" page.",
+        "A director/manager only sees and manages users at a hierarchy level below theirs, attached to their division/department — never their peers or superiors.",
+        "For an agent, the \"Direct supervisor\" field assigns them a specific supervisor: that supervisor will only see agents explicitly assigned to them in \"My Team\", not the whole department.",
+        "External and Intern are user types with exactly the same permissions as Agent — they only allow distinguishing external contractors and interns from employees in lists and reports.",
+        "Status: \"Pending\" (self-service registration not yet activated), \"Active\", \"Suspended\" (by an admin, or automatically for inactivity), and \"Deactivated\". Each row's action menu allows activating, suspending, reactivating, or deactivating an account.",
+        "The \"Automatic suspension for inactivity\" card (admin only) sets, per account type, after how many days without login an active account is automatically suspended."
+      ]
+    },
+    "adminCourses": {
+      "title": "Course management",
+      "tips": [
+        "Create new courses with the \"New course\" button.",
+        "Publish or unpublish a course, and edit its status directly in the edit form.",
+        "Use \"Manage content\" to add modules, lessons, and quizzes.",
+        "The action menu also lets you duplicate or delete a course."
+      ]
+    },
+    "adminCourseEdit": {
+      "title": "Course content",
+      "tips": [
+        "Organize the course into modules, each containing several lessons.",
+        "For a video lesson, choose between an external link (YouTube, Vimeo...) and uploading a local video file (MP4 or WebM, 100 MB maximum).",
+        "Add quizzes to a lesson and manage their questions from this page.",
+        "The \"Settings\" tab links back to managing the course's general information."
+      ]
+    },
+    "adminAssignments": {
+      "title": "Assignments",
+      "tips": [
+        "Assign mandatory or recommended courses to users, departments, or divisions.",
+        "You can also assign a course to a team (\"Teams\" page): all its members automatically inherit it, whether they're users, companies, divisions, or departments.",
+        "Set a due date for mandatory courses.",
+        "Automatic reminders are sent to the learner before and after the due date; if the course remains overdue, their manager is notified."
+      ]
+    },
+    "adminTeams": {
+      "title": "Teams",
+      "tips": [
+        "Create a team with \"New team\": name, description, then add its members.",
+        "A team can group individual users, but also entire companies, divisions, or departments.",
+        "Then use the \"Assignments\" page to assign a course directly to the team: all its members automatically inherit it."
+      ]
+    },
+    "adminBadges": {
+      "title": "Badges (administration)",
+      "tips": [
+        "Each badge has a unique code (e.g. QUIZ_COMPLETED), a name, a type (trophy, quiz completed, perfect score, course started/completed...), and an earning criteria in free-form JSON (e.g. {\"type\": \"quiz_pass\"}).",
+        "Automatic awarding of certain badges (quiz passed, perfect score, course started/completed) is wired to the badge's code, not to the content of the JSON criteria — that stays informational."
+      ]
+    },
+    "adminCertificates": {
+      "title": "Certificates (administration)",
+      "tips": [
+        "Track certificates issued to learners, their status (valid/revoked), and expiration date.",
+        "\"Templates\" tab: create HTML certificate templates, using the {userName}, {courseName}, {date}, and {certificateNumber} variables. Only one template can be \"default\" per organization.",
+        "Use \"Preview\" to view a template with sample data before using it.",
+        "Revoke a certificate issued by mistake or that has become invalid from the certificate list."
+      ]
+    },
+    "adminLiveSessions": {
+      "title": "Live sessions (administration)",
+      "tips": [
+        "Schedule a new session with the \"New session\" button — date and time are required.",
+        "The \"Instructor\" field designates who will host the session; that person (or any admin/director/manager) can then start and end it, not necessarily whoever created it.",
+        "Once scheduled, start the session with \"Start\" to make it appear as \"Live\" to learners, then \"End\" once finished.",
+        "\"Cancel\" marks a scheduled session as canceled; the trash icon permanently deletes it, along with its participant history.",
+        "Edit an existing session (including reassigning the instructor) with the pencil icon."
+      ]
+    },
+    "adminNotifications": {
+      "title": "Notifications (administration)",
+      "tips": [
+        "Send a notification via \"Send a notification\": choose the channel (in-app, email, SMS, WhatsApp, push) and recipients (all users, a specific user, or an entire role).",
+        "The list below shows the history of notifications sent within your organization, with their read/unread status per recipient."
+      ]
+    },
+    "adminEmailQueue": {
+      "title": "Email queue",
+      "tips": [
+        "This queue groups automated notifications (quiz results, live session reminders, certificate expiry, inactivity suspension...) awaiting approval before sending.",
+        "Approve or reject each notification individually, or use \"Approve all\" / \"Reject all\" to process the whole queue at once."
+      ]
+    },
+    "adminBlog": {
+      "title": "Blog (administration)",
+      "tips": [
+        "Write, publish, or archive posts for your organization.",
+        "Manage categories and moderate comments."
+      ]
+    },
+    "adminReports": {
+      "title": "Reports",
+      "tips": [
+        "Generate reports on course progress and compliance.",
+        "Export data for your reporting needs."
+      ]
+    },
+    "adminOrganization": {
+      "title": "Organization",
+      "tips": [
+        "Manage your organization's structure: companies, divisions, and departments.",
+        "These affiliations are used to target course assignments and also determine what each manager/director can see in \"My Team\".",
+        "To create the entire hierarchy at once from an Excel file, use the \"Data import\" page."
+      ]
+    },
+    "adminImport": {
+      "title": "Data import",
+      "tips": [
+        "Download each section's Excel template (\"Download the template\") before filling it in: organization hierarchy, users, courses, lessons, or quizzes.",
+        "Fill in the template then import it with \"Import\"; the row-by-row result (created/skipped/error) is shown right below.",
+        "Imports are safe to re-run: an item that already exists (same title, same code) is automatically skipped rather than duplicated.",
+        "Importing lessons requires the course to already exist (import it first); importing quizzes requires both the course AND the lesson to already exist.",
+        "Visible sections depend on your role: organization hierarchy is admin-only, users are admin/director, courses/lessons/quizzes are admin/director/manager."
+      ]
+    },
+    "adminPlatform": {
+      "title": "Platform",
+      "tips": [
+        "Super admin only: manage all organizations (tenants) on the platform, across all establishments.",
+        "\"New organization\" creates a new tenant, isolated from others (its own users, courses, and data).",
+        "\"Switch to\" changes your active context to act within a given organization, as if you were an admin of that tenant."
+      ]
+    },
+    "adminEmailSettings": {
+      "title": "Email settings",
+      "tips": [
+        "Configure the sending server and transactional email templates.",
+        "Test the sending to verify your configuration."
+      ]
+    },
+    "adminLiveKitSettings": {
+      "title": "Video conferencing (LiveKit)",
+      "tips": [
+        "These credentials replace, for this tenant only, the server's global configuration.",
+        "Leave disabled to use the global configuration (if defined server-side).",
+        "Use \"Test the connection\" after saving to verify the credentials are valid.",
+        "Without configuration (neither tenant nor global), the \"Join\" button of a session with no external link will show a clear error message instead of the video conference."
+      ]
+    },
+    "adminRecordingSettings": {
+      "title": "Session recording",
+      "tips": [
+        "Configure the S3-compatible external storage (bucket, region, endpoint, access keys) used to keep recordings of live sessions.",
+        "Enable \"Active for this tenant\" so your organization's recordings use this configuration instead of the global one."
+      ]
+    },
+    "adminLogs": {
+      "title": "Audit logs",
+      "tips": [
+        "Review the history of sensitive actions performed on the platform.",
+        "Filter by user, action type, or period for your compliance needs."
+      ]
+    },
+    "fallback": {
+      "title": "Help",
+      "tips": [
+        "No specific help is available for this screen.",
+        "Use \"All topics\" below to browse help for other pages."
+      ]
+    }
+  }
+}

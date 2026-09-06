@@ -1,5 +1,5 @@
 import { DatabaseService } from './database.service';
-import { NotificationService } from './notification.service';
+import { PendingNotificationService } from './pending-notification.service';
 import { db } from '../database/db-helpers';
 import { config } from '../config';
 import { logger } from '../utils/logger';
@@ -37,10 +37,10 @@ export class CertificateService {
     for (const cert of expiringSoon) {
       const expiresLabel = new Date(cert.expires_at).toLocaleDateString('fr-FR');
 
-      await NotificationService.send({
+      await PendingNotificationService.queue({
         tenantId: cert.tenant_id,
         userId: cert.user_id,
-        channel: 'email',
+        eventType: 'certificate_expiring',
         subject: `Votre certificat "${cert.course_title}" expire bientôt`,
         body: `Bonjour ${cert.display_name},\n\nVotre certificat pour la formation "${cert.course_title}" expire le ${expiresLabel}. Pensez à repasser la formation pour le renouveler.`,
         actionUrl: `${config.frontendUrl}/certificates`,

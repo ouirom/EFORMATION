@@ -1,0 +1,57 @@
+{
+  "language": "Language",
+  "actions": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "edit": "Edit",
+    "delete": "Delete",
+    "create": "Create",
+    "close": "Close",
+    "confirm": "Confirm",
+    "search": "Search",
+    "back": "Back",
+    "next": "Next",
+    "previous": "Previous",
+    "submit": "Submit",
+    "download": "Download",
+    "upload": "Upload",
+    "view": "View",
+    "add": "Add",
+    "remove": "Remove",
+    "export": "Export",
+    "import": "Import",
+    "filter": "Filter",
+    "reset": "Reset",
+    "continue": "Continue",
+    "loading": "Loading...",
+    "copy": "Copy",
+    "refresh": "Refresh"
+  },
+  "status": {
+    "success": "Success",
+    "error": "Error",
+    "warning": "Warning",
+    "info": "Info",
+    "active": "Active",
+    "inactive": "Inactive",
+    "pending": "Pending",
+    "suspended": "Suspended",
+    "disabled": "Disabled"
+  },
+  "misc": {
+    "yes": "Yes",
+    "no": "No",
+    "none": "None",
+    "all": "All",
+    "optional": "optional",
+    "required": "required",
+    "noResults": "No results",
+    "somethingWentWrong": "Something went wrong"
+  },
+  "time": {
+    "justNow": "Just now",
+    "minutesAgo": "{{count}} min ago",
+    "hoursAgo": "{{count}}h ago",
+    "daysAgo": "{{count}}d ago"
+  }
+}

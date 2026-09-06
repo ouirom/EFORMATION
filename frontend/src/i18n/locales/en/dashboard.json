@@ -1,0 +1,94 @@
+{
+  "greeting": "Hello, {{name}}! 👋",
+  "defaultUser": "User",
+  "subtitle": "Welcome to your learning space",
+  "streakDays": "{{count}} days",
+  "stats": {
+    "courses": "Courses",
+    "coursesCompleted_one": "{{count}} completed",
+    "coursesCompleted_other": "{{count}} completed",
+    "lessons": "Lessons",
+    "lessonsStarted_one": "of {{count}} started",
+    "lessonsStarted_other": "of {{count}} started",
+    "learningTime": "Learning time",
+    "badgesEarned_one": "{{count}} badge earned",
+    "badgesEarned_other": "{{count}} badges earned"
+  },
+  "catalog": {
+    "title": "Course Catalog",
+    "viewAll": "View all",
+    "general": "General",
+    "required": "Mandatory",
+    "recommended": "Recommended",
+    "completed": "Completed",
+    "noGeneral": "No general courses available",
+    "noRequired": "No mandatory courses",
+    "noRecommended": "No recommended courses",
+    "noCompleted": "No completed courses yet",
+    "noCompletedHint": "Complete courses to see them here",
+    "favorites": "Favorites",
+    "noFavorites": "No favorite courses yet"
+  },
+  "lessonCatalog": {
+    "title": "Lesson Catalog",
+    "inProgress": "In progress",
+    "mandatory": "Mandatory",
+    "all": "All lessons",
+    "favorites": "Favorites",
+    "filterByCourse": "Filter by course",
+    "allCourses": "All courses",
+    "noInProgress": "No lessons in progress — start a course to see it here",
+    "noMandatory": "No mandatory lessons yet",
+    "noLessons": "No lessons available yet",
+    "noFavorites": "No favorite lessons yet",
+    "durationMin": "{{count}} min",
+    "completed": "Completed",
+    "start": "Start"
+  },
+  "lessonsPage": {
+    "title": "Lessons",
+    "subtitle": "Browse every lesson across your courses without going through a course page",
+    "searchPlaceholder": "Search for a lesson...",
+    "previous": "Previous",
+    "next": "Next",
+    "pageOf": "Page {{page}} of {{total}}"
+  },
+  "quizzes": {
+    "title": "Quizzes Taken",
+    "viewHistory": "View history",
+    "none": "No quizzes taken yet",
+    "noneHint": "Start your courses and take quizzes",
+    "passed": "✓ Passed",
+    "retry": "⚠ Retry needed",
+    "lesson": "Lesson: {{title}}",
+    "required": "Required: {{percent}}%",
+    "takenOn": "Taken on"
+  },
+  "course": {
+    "defaultCategory": "Course",
+    "completed": "Completed",
+    "defaultInstructor": "Instructor",
+    "progress": "Progress",
+    "completedNotice": "✓ Course completed",
+    "lessonsCount": "{{completed}}/{{total}} lessons",
+    "review": "Review",
+    "continue": "Continue"
+  },
+  "upcomingSessions": {
+    "title": "Upcoming sessions",
+    "viewAll": "View all sessions",
+    "none": "No scheduled sessions",
+    "noInstructor": "No instructor assigned"
+  },
+  "badgesCard": {
+    "title": "My Earned Badges",
+    "none": "No badges earned yet",
+    "noneHint": "Pass quizzes and courses to unlock badges!",
+    "viewAll": "View all badges"
+  },
+  "leaderboard": {
+    "title": "Leaderboard",
+    "you": "(you)",
+    "none": "No leaderboard yet. Complete courses and quizzes to appear here!"
+  }
+}

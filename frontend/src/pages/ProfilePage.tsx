@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useAuth } from '@/contexts/AuthContext'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -19,7 +20,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { getInitials, formatDate } from '@/lib/utils'
+import { getInitials, formatDate, formatRelativeTime } from '@/lib/utils'
+import { EmailConfirmDialog, PendingNotification } from '@/components/EmailConfirmDialog'
 import {
   User,
   Mail,
@@ -41,7 +43,32 @@ import { api } from '@/services/api'
 import { fileService } from '@/services/file.service'
 import { useNavigate } from 'react-router-dom'
 
+interface Certificate {
+  id: number
+  courseId: number
+  courseTitle: string
+  serialNumber: string
+  issuedAt: string
+  expiresAt: string | null
+  status: string
+}
+
+// Mirrors BadgesPage.tsx's own badge_type -> icon mapping, kept in sync manually
+// since it's a small, presentation-only lookup rather than shared logic.
+function badgeTypeIcon(type: string): string {
+  switch (type) {
+    case 'trophy': return '🏆'
+    case 'perfect_score': return '⭐'
+    case 'quiz_completion': return '✅'
+    case 'course_start': return '🚀'
+    case 'course_completion': return '🎓'
+    default: return '🎖️'
+  }
+}
+
 export default function ProfilePage() {
+  const { t } = useTranslation('profile')
+  const { t: tCommon } = useTranslation('common')
   const { user, logout, updateUser } = useAuth()
   const navigate = useNavigate()
   const { toast } = useToast()
@@ -49,6 +76,7 @@ export default function ProfilePage() {
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false)
+  const [pendingNotification, setPendingNotification] = useState<PendingNotification | null>(null)
   const [editForm, setEditForm] = useState({
     displayName: '',
     email: '',
@@ -59,40 +87,37 @@ export default function ProfilePage() {
     confirmPassword: '',
   })
 
-  const { data: stats, isLoading: loadingStats } = useQuery({
-    queryKey: ['profile-stats'],
+  // job_title isn't part of the JWT/session payload (AuthContext's `user`),
+  // so it's fetched separately -- same pattern as the stats/badges/certificates
+  // queries below, all of which supplement the session-derived profile data.
+  const { data: fullProfile } = useQuery({
+    queryKey: ['profile-full', user?.id],
     queryFn: async () => {
-      try {
-        const response = await api.get(`/users/${user?.id}/stats`);
-        return response.data.data;
-      } catch {
-        return null;
-      }
+      const response = await api.get('/users/me')
+      return response.data.data
     },
     enabled: !!user?.id,
   })
 
-  const { data: badges } = useQuery({
+  const { data: stats, isLoading: loadingStats } = useQuery({
+    queryKey: ['profile-stats'],
+    queryFn: () => api.analytics.getDashboard(),
+    enabled: !!user?.id,
+  })
+
+  const { data: badgesData } = useQuery({
     queryKey: ['profile-badges'],
     queryFn: async () => {
-      try {
-        const response = await api.get('/badges/mine');
-        return response.data.data;
-      } catch {
-        return { earned: [] };
-      }
+      const response = await api.get('/badges/my-badges')
+      return response.data.data
     },
   })
 
-  const { data: certificates } = useQuery({
+  const { data: certificates = [] } = useQuery({
     queryKey: ['profile-certificates'],
     queryFn: async () => {
-      try {
-        const response = await api.get('/certificates/mine');
-        return response.data.data;
-      } catch {
-        return [];
-      }
+      const response = await api.get('/certificates/my')
+      return response.data.data || []
     },
   })
 
@@ -102,32 +127,35 @@ export default function ProfilePage() {
       api.users.update(user!.id, data),
     onSuccess: (updatedUser) => {
       updateUser({ displayName: updatedUser.display_name, email: updatedUser.email })
-      toast({ title: 'Succès', description: 'Profil mis à jour avec succès' })
+      toast({ title: tCommon('status.success'), description: t('toasts.profileUpdatedDescription') })
       setIsEditDialogOpen(false)
     },
     onError: (error: any) => {
-      toast({ 
-        title: 'Erreur', 
-        description: error.response?.data?.error?.message || 'Impossible de mettre à jour le profil', 
-        variant: 'destructive' 
+      toast({
+        title: tCommon('status.error'),
+        description: error.response?.data?.error?.message || t('toasts.profileUpdateErrorDescription'),
+        variant: 'destructive'
       })
     },
   })
 
   // Mutation pour changer le mot de passe
   const changePasswordMutation = useMutation({
-    mutationFn: (data: { currentPassword: string; newPassword: string }) => 
+    mutationFn: (data: { currentPassword: string; newPassword: string }) =>
       api.post('/auth/change-password', data),
-    onSuccess: () => {
-      toast({ title: 'Succès', description: 'Mot de passe modifié avec succès' })
+    onSuccess: (response) => {
+      toast({ title: tCommon('status.success'), description: t('toasts.passwordChangedDescription') })
       setIsPasswordDialogOpen(false)
       setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' })
+      if (response.data.pendingNotification) {
+        setPendingNotification(response.data.pendingNotification)
+      }
     },
     onError: (error: any) => {
-      toast({ 
-        title: 'Erreur', 
-        description: error.response?.data?.error?.message || 'Impossible de modifier le mot de passe', 
-        variant: 'destructive' 
+      toast({
+        title: tCommon('status.error'),
+        description: error.response?.data?.error?.message || t('toasts.passwordChangeErrorDescription'),
+        variant: 'destructive'
       })
     },
   })
@@ -142,11 +170,11 @@ export default function ProfilePage() {
     if (!file || !user) return
 
     if (!file.type.startsWith('image/')) {
-      toast({ title: 'Erreur', description: 'Veuillez sélectionner une image', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: t('toasts.selectImageDescription'), variant: 'destructive' })
       return
     }
     if (file.size > 5 * 1024 * 1024) {
-      toast({ title: 'Erreur', description: 'L\'image ne doit pas dépasser 5 Mo', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: t('toasts.imageTooLargeDescription'), variant: 'destructive' })
       return
     }
 
@@ -156,11 +184,11 @@ export default function ProfilePage() {
       const avatarUrl = `/uploads/${uploaded.path}`
       const updatedUser = await api.users.update(user.id, { avatarUrl })
       updateUser({ avatarUrl: updatedUser.avatar_url ?? avatarUrl })
-      toast({ title: 'Succès', description: 'Photo de profil mise à jour' })
+      toast({ title: tCommon('status.success'), description: t('toasts.avatarUpdatedDescription') })
     } catch (error: any) {
       toast({
-        title: 'Erreur',
-        description: error.response?.data?.error?.message || 'Impossible de mettre à jour la photo',
+        title: tCommon('status.error'),
+        description: error.response?.data?.error?.message || t('toasts.avatarUpdateErrorDescription'),
         variant: 'destructive',
       })
     } finally {
@@ -178,7 +206,7 @@ export default function ProfilePage() {
 
   const handleSaveProfile = () => {
     if (!editForm.displayName || !editForm.email) {
-      toast({ title: 'Erreur', description: 'Veuillez remplir tous les champs', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: t('toasts.fillAllFieldsDescription'), variant: 'destructive' })
       return
     }
     updateProfileMutation.mutate(editForm)
@@ -186,15 +214,15 @@ export default function ProfilePage() {
 
   const handleChangePassword = () => {
     if (!passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword) {
-      toast({ title: 'Erreur', description: 'Veuillez remplir tous les champs', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: t('toasts.fillAllFieldsDescription'), variant: 'destructive' })
       return
     }
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      toast({ title: 'Erreur', description: 'Les mots de passe ne correspondent pas', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: t('toasts.passwordMismatchDescription'), variant: 'destructive' })
       return
     }
     if (passwordForm.newPassword.length < 8) {
-      toast({ title: 'Erreur', description: 'Le mot de passe doit contenir au moins 8 caractères', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: t('toasts.passwordTooShortDescription'), variant: 'destructive' })
       return
     }
     changePasswordMutation.mutate({
@@ -212,37 +240,37 @@ export default function ProfilePage() {
     return <PageLoading />
   }
 
-  const userStats = stats || {
-    coursesCompleted: 12,
-    totalHours: 45,
-    badgesEarned: 15,
-    certificatesEarned: 5,
-    currentStreak: 7,
-    longestStreak: 14,
-    xp: 2450,
-    level: 12,
+  const xp = stats?.xp || 0
+  const userStats = {
+    coursesCompleted: stats?.coursesCompleted || 0,
+    totalHours: stats?.totalHours || 0,
+    badgesEarned: badgesData?.stats?.total ?? stats?.badges ?? 0,
+    certificatesEarned: certificates.length,
+    currentStreak: stats?.streak || 0,
+    longestStreak: stats?.longestStreak || 0,
+    xp,
+    level: Math.floor(xp / 250),
   }
 
-  const recentBadges = badges?.earned?.slice(0, 5) || [
-    { id: '1', name: 'Premier pas', icon: '🎯' },
-    { id: '2', name: 'Flamme 7 jours', icon: '🔥' },
-    { id: '3', name: 'Quiz parfait', icon: '⭐' },
-  ]
+  const recentBadges = (badgesData?.badges || []).slice(0, 5).map((b: any) => ({
+    id: b.id,
+    name: b.name,
+    icon: badgeTypeIcon(b.badge_type),
+    awardedAt: b.awarded_at,
+  }))
 
-  const recentCertificates = certificates?.slice(0, 3) || [
-    {
-      id: '1',
-      title: 'Machine Learning Fundamentals',
-      issuedAt: new Date(),
-      courseTitle: 'Introduction au Machine Learning',
-    },
-    {
-      id: '2',
-      title: 'React Advanced Patterns',
-      issuedAt: new Date(Date.now() - 7 * 86400000),
-      courseTitle: 'React Avancé',
-    },
+  const recentCertificates = certificates.slice(0, 3)
+
+  // "Activity" is built from the two real event sources already on this page
+  // (badges awarded, certificates issued) rather than a dedicated activity-feed
+  // endpoint, which doesn't exist -- sorted newest first.
+  const recentActivity = [
+    ...recentBadges.map((b: any) => ({ key: `badge-${b.id}`, action: t('activityTab.actions.badgeEarned'), item: b.name, at: b.awardedAt })),
+    ...recentCertificates.map((c: Certificate) => ({ key: `cert-${c.id}`, action: t('activityTab.actions.certificateIssued'), item: c.courseTitle, at: c.issuedAt })),
   ]
+    .filter((e) => !!e.at)
+    .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+    .slice(0, 8)
 
   return (
     <div className="space-y-6">
@@ -285,33 +313,34 @@ export default function ProfilePage() {
               <div className="flex items-start justify-between">
                 <div>
                   <h1 className="text-2xl font-bold">
-                    {user?.displayName || 'Utilisateur'}
+                    {user?.displayName || t('defaultUserName')}
                   </h1>
                   <p className="text-muted-foreground">{user?.email}</p>
                   <div className="flex items-center gap-4 mt-2">
-                    <Badge variant="secondary">{user?.role || 'Apprenant'}</Badge>
+                    <Badge variant="secondary">{user?.role || t('defaultRole')}</Badge>
+                    <Badge variant="outline">{fullProfile?.job_title || t('defaultJobTitle')}</Badge>
                     <div className="flex items-center gap-1 text-sm">
                       <Star className="h-4 w-4 text-yellow-500" />
-                      <span className="font-medium">Niveau {userStats.level}</span>
+                      <span className="font-medium">{t('level', { level: userStats.level })}</span>
                     </div>
                     <div className="flex items-center gap-1 text-sm text-primary">
                       <TrendingUp className="h-4 w-4" />
-                      <span className="font-medium">{userStats.xp} XP</span>
+                      <span className="font-medium">{t('xp', { xp: userStats.xp })}</span>
                     </div>
                   </div>
                 </div>
                 <div className="flex gap-2">
                   <Button variant="outline" onClick={handleOpenEditDialog}>
                     <Edit className="h-4 w-4 mr-2" />
-                    Modifier
+                    {t('edit')}
                   </Button>
                   <Button variant="outline" onClick={() => setIsPasswordDialogOpen(true)}>
                     <Key className="h-4 w-4 mr-2" />
-                    Mot de passe
+                    {t('changePasswordButton')}
                   </Button>
                   <Button variant="destructive" onClick={handleLogout}>
                     <LogOut className="h-4 w-4 mr-2" />
-                    Déconnexion
+                    {t('logout')}
                   </Button>
                 </div>
               </div>
@@ -324,15 +353,15 @@ export default function ProfilePage() {
                 </div>
                 <div className="flex items-center gap-2 text-sm">
                   <Building2 className="h-4 w-4 text-muted-foreground" />
-                  <span>Entreprise #{user?.enterpriseId || '-'}</span>
+                  <span>{t('enterpriseNumber', { id: user?.enterpriseId || '-' })}</span>
                 </div>
                 <div className="flex items-center gap-2 text-sm">
                   <User className="h-4 w-4 text-muted-foreground" />
-                  <span>Direction #{user?.directionId || '-'}</span>
+                  <span>{t('directionNumber', { id: user?.directionId || '-' })}</span>
                 </div>
                 <div className="flex items-center gap-2 text-sm">
                   <Calendar className="h-4 w-4 text-muted-foreground" />
-                  <span>Rôle: {user?.role || '-'}</span>
+                  <span>{t('roleLabel', { role: user?.role || '-' })}</span>
                 </div>
               </div>
             </div>
@@ -344,30 +373,30 @@ export default function ProfilePage() {
       <div className="grid gap-4 md:grid-cols-4">
         <StatCard
           icon={BookOpen}
-          label="Cours terminés"
+          label={t('stats.coursesCompleted')}
           value={userStats.coursesCompleted}
           color="text-blue-500"
           bgColor="bg-blue-500/10"
         />
         <StatCard
           icon={Clock}
-          label="Heures d'apprentissage"
+          label={t('stats.learningHours')}
           value={`${userStats.totalHours}h`}
           color="text-green-500"
           bgColor="bg-green-500/10"
         />
         <StatCard
           icon={Award}
-          label="Badges obtenus"
+          label={t('stats.badgesEarned')}
           value={userStats.badgesEarned}
           color="text-yellow-500"
           bgColor="bg-yellow-500/10"
         />
         <StatCard
           icon={Calendar}
-          label="Jours consécutifs"
+          label={t('stats.consecutiveDays')}
           value={userStats.currentStreak}
-          subtext={`Record: ${userStats.longestStreak}`}
+          subtext={t('stats.record', { value: userStats.longestStreak })}
           color="text-orange-500"
           bgColor="bg-orange-500/10"
         />
@@ -379,15 +408,15 @@ export default function ProfilePage() {
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <Star className="h-5 w-5 text-yellow-500" />
-              <span className="font-semibold">Niveau {userStats.level}</span>
+              <span className="font-semibold">{t('level', { level: userStats.level })}</span>
             </div>
             <span className="text-sm text-muted-foreground">
-              {userStats.xp} / {(userStats.level + 1) * 250} XP
+              {t('xpProgress', { xp: userStats.xp, max: (userStats.level + 1) * 250 })}
             </span>
           </div>
           <Progress value={(userStats.xp % 250) / 2.5} className="h-3" />
           <p className="text-sm text-muted-foreground mt-2">
-            Plus que {(userStats.level + 1) * 250 - userStats.xp} XP pour le niveau {userStats.level + 1}
+            {t('xpRemaining', { remaining: (userStats.level + 1) * 250 - userStats.xp, nextLevel: userStats.level + 1 })}
           </p>
         </CardContent>
       </Card>
@@ -395,31 +424,35 @@ export default function ProfilePage() {
       {/* Tabs */}
       <Tabs defaultValue="badges">
         <TabsList>
-          <TabsTrigger value="badges">Badges</TabsTrigger>
-          <TabsTrigger value="certificates">Certificats</TabsTrigger>
-          <TabsTrigger value="activity">Activité</TabsTrigger>
+          <TabsTrigger value="badges">{t('tabs.badges')}</TabsTrigger>
+          <TabsTrigger value="certificates">{t('tabs.certificates')}</TabsTrigger>
+          <TabsTrigger value="activity">{t('tabs.activity')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="badges" className="mt-4">
           <Card>
             <CardHeader>
-              <CardTitle>Badges récents</CardTitle>
-              <CardDescription>Vos dernières récompenses</CardDescription>
+              <CardTitle>{t('recentBadges.title')}</CardTitle>
+              <CardDescription>{t('recentBadges.description')}</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="flex flex-wrap gap-4">
-                {recentBadges.map((badge: any) => (
-                  <div
-                    key={badge.id}
-                    className="flex flex-col items-center gap-2 p-4 rounded-lg bg-muted/50"
-                  >
-                    <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center text-3xl">
-                      {badge.icon}
+              {recentBadges.length === 0 ? (
+                <p className="text-sm text-muted-foreground">{t('recentBadges.empty')}</p>
+              ) : (
+                <div className="flex flex-wrap gap-4">
+                  {recentBadges.map((badge: any) => (
+                    <div
+                      key={badge.id}
+                      className="flex flex-col items-center gap-2 p-4 rounded-lg bg-muted/50"
+                    >
+                      <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center text-3xl">
+                        {badge.icon}
+                      </div>
+                      <span className="text-sm font-medium">{badge.name}</span>
                     </div>
-                    <span className="text-sm font-medium">{badge.name}</span>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -427,12 +460,14 @@ export default function ProfilePage() {
         <TabsContent value="certificates" className="mt-4">
           <Card>
             <CardHeader>
-              <CardTitle>Certificats</CardTitle>
-              <CardDescription>Vos certifications obtenues</CardDescription>
+              <CardTitle>{t('certificatesTab.title')}</CardTitle>
+              <CardDescription>{t('certificatesTab.description')}</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {recentCertificates.map((cert: any) => (
+                {recentCertificates.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">{t('certificatesTab.empty')}</p>
+                ) : recentCertificates.map((cert: Certificate) => (
                   <div
                     key={cert.id}
                     className="flex items-center justify-between p-4 rounded-lg border"
@@ -442,14 +477,14 @@ export default function ProfilePage() {
                         <Award className="h-6 w-6 text-primary" />
                       </div>
                       <div>
-                        <p className="font-medium">{cert.title}</p>
+                        <p className="font-medium">{cert.courseTitle}</p>
                         <p className="text-sm text-muted-foreground">
-                          {cert.courseTitle} · {formatDate(cert.issuedAt)}
+                          {t('serialNumberShort', { number: cert.serialNumber })} · {formatDate(cert.issuedAt)}
                         </p>
                       </div>
                     </div>
-                    <Button variant="outline" size="sm">
-                      Voir
+                    <Button variant="outline" size="sm" onClick={() => navigate('/certificates')}>
+                      {t('certificatesTab.view')}
                     </Button>
                   </div>
                 ))}
@@ -461,27 +496,26 @@ export default function ProfilePage() {
         <TabsContent value="activity" className="mt-4">
           <Card>
             <CardHeader>
-              <CardTitle>Activité récente</CardTitle>
+              <CardTitle>{t('activityTab.title')}</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {[
-                  { action: 'Cours terminé', item: 'Introduction au ML', time: '2h' },
-                  { action: 'Badge obtenu', item: 'Quiz parfait', time: '3h' },
-                  { action: 'Quiz réussi', item: 'Machine Learning - Quiz 3', time: '5h' },
-                  { action: 'Leçon complétée', item: 'Réseaux de neurones', time: '1j' },
-                ].map((activity, i) => (
-                  <div key={i} className="flex items-center gap-4">
-                    <div className="h-2 w-2 rounded-full bg-primary" />
-                    <div className="flex-1">
-                      <p className="text-sm">
-                        <span className="font-medium">{activity.action}</span> - {activity.item}
-                      </p>
+              {recentActivity.length === 0 ? (
+                <p className="text-sm text-muted-foreground">{t('activityTab.empty')}</p>
+              ) : (
+                <div className="space-y-4">
+                  {recentActivity.map((activity) => (
+                    <div key={activity.key} className="flex items-center gap-4">
+                      <div className="h-2 w-2 rounded-full bg-primary" />
+                      <div className="flex-1">
+                        <p className="text-sm">
+                          <span className="font-medium">{activity.action}</span> - {activity.item}
+                        </p>
+                      </div>
+                      <span className="text-xs text-muted-foreground">{formatRelativeTime(new Date(activity.at))}</span>
                     </div>
-                    <span className="text-xs text-muted-foreground">il y a {activity.time}</span>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -491,43 +525,43 @@ export default function ProfilePage() {
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Modifier le profil</DialogTitle>
+            <DialogTitle>{t('editDialog.title')}</DialogTitle>
             <DialogDescription>
-              Mettez à jour vos informations personnelles
+              {t('editDialog.description')}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="displayName">Nom complet</Label>
+              <Label htmlFor="displayName">{t('editDialog.fullName')}</Label>
               <Input
                 id="displayName"
                 value={editForm.displayName}
                 onChange={(e) => setEditForm({ ...editForm, displayName: e.target.value })}
-                placeholder="Votre nom complet"
+                placeholder={t('editDialog.fullNamePlaceholder')}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">{t('editDialog.email')}</Label>
               <Input
                 id="email"
                 type="email"
                 value={editForm.email}
                 onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
-                placeholder="votre@email.com"
+                placeholder={t('editDialog.emailPlaceholder')}
               />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsEditDialogOpen(false)} disabled={updateProfileMutation.isPending}>
-              Annuler
+              {t('editDialog.cancel')}
             </Button>
             <Button onClick={handleSaveProfile} disabled={updateProfileMutation.isPending}>
               {updateProfileMutation.isPending ? (
-                <>Enregistrement...</>
+                <>{t('editDialog.saving')}</>
               ) : (
                 <>
                   <Save className="h-4 w-4 mr-2" />
-                  Enregistrer
+                  {t('editDialog.save')}
                 </>
               )}
             </Button>
@@ -539,14 +573,14 @@ export default function ProfilePage() {
       <Dialog open={isPasswordDialogOpen} onOpenChange={setIsPasswordDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Changer le mot de passe</DialogTitle>
+            <DialogTitle>{t('passwordDialog.title')}</DialogTitle>
             <DialogDescription>
-              Entrez votre mot de passe actuel et le nouveau mot de passe
+              {t('passwordDialog.description')}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="currentPassword">Mot de passe actuel</Label>
+              <Label htmlFor="currentPassword">{t('passwordDialog.currentPassword')}</Label>
               <Input
                 id="currentPassword"
                 type="password"
@@ -556,36 +590,41 @@ export default function ProfilePage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="newPassword">Nouveau mot de passe</Label>
+              <Label htmlFor="newPassword">{t('passwordDialog.newPassword')}</Label>
               <Input
                 id="newPassword"
                 type="password"
                 value={passwordForm.newPassword}
                 onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
-                placeholder="Minimum 8 caractères"
+                placeholder={t('passwordDialog.newPasswordPlaceholder')}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="confirmPassword">Confirmer le mot de passe</Label>
+              <Label htmlFor="confirmPassword">{t('passwordDialog.confirmPassword')}</Label>
               <Input
                 id="confirmPassword"
                 type="password"
                 value={passwordForm.confirmPassword}
                 onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
-                placeholder="Confirmez le nouveau mot de passe"
+                placeholder={t('passwordDialog.confirmPasswordPlaceholder')}
               />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsPasswordDialogOpen(false)} disabled={changePasswordMutation.isPending}>
-              Annuler
+              {t('passwordDialog.cancel')}
             </Button>
             <Button onClick={handleChangePassword} disabled={changePasswordMutation.isPending}>
-              {changePasswordMutation.isPending ? 'Modification...' : 'Modifier'}
+              {changePasswordMutation.isPending ? t('passwordDialog.changing') : t('passwordDialog.change')}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <EmailConfirmDialog
+        pendingNotification={pendingNotification}
+        onOpenChange={(open) => !open && setPendingNotification(null)}
+      />
     </div>
   )
 }

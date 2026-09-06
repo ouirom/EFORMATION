@@ -186,8 +186,20 @@ CREATE TABLE IF NOT EXISTS certificate_templates (
   template_html        TEXT,
   background_file_id   BIGINT,
   is_default           BOOLEAN DEFAULT FALSE,
-  created_at           TIMESTAMP DEFAULT (now() at time zone 'utc')
+  created_at           TIMESTAMP DEFAULT (now() at time zone 'utc'),
+  updated_at           TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS certificate_watermarks (
+  id                   BIGSERIAL PRIMARY KEY,
+  tenant_id            BIGINT NOT NULL,
+  file_id              BIGINT NOT NULL,
+  name                 VARCHAR(150),
+  is_default           BOOLEAN NOT NULL DEFAULT FALSE,
+  created_by           BIGINT,
+  created_at           TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc')
+);
+CREATE INDEX IF NOT EXISTS ix_cert_watermarks_tenant ON certificate_watermarks (tenant_id);
 
 CREATE TABLE IF NOT EXISTS certificates (
   id                   BIGSERIAL PRIMARY KEY,
@@ -218,7 +230,8 @@ CREATE TABLE IF NOT EXISTS chat_conversations (
   scope                VARCHAR(20) NOT NULL CHECK ((scope='module' OR scope='course' OR scope='group' OR scope='direct')),
   title                VARCHAR(255),
   created_by           BIGINT,
-  created_at           TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc')
+  created_at           TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc'),
+  public_id            UUID NOT NULL DEFAULT gen_random_uuid()
 );
 
 CREATE TABLE IF NOT EXISTS chat_messages (
@@ -227,6 +240,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   conversation_id      BIGINT NOT NULL,
   sender_id            BIGINT NOT NULL,
   body                 TEXT,
+  reply_to_message_id  BIGINT,
   created_at           TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc'),
   deleted_at           TIMESTAMP
 );
@@ -274,7 +288,8 @@ CREATE TABLE IF NOT EXISTS course_assignments (
   id                   BIGSERIAL PRIMARY KEY,
   tenant_id            BIGINT NOT NULL,
   course_id            BIGINT NOT NULL,
-  assignment_type      VARCHAR(20) NOT NULL CHECK ((assignment_type='role' OR assignment_type='service' OR assignment_type='direction' OR assignment_type='enterprise' OR assignment_type='user')),
+  lesson_id            BIGINT,
+  assignment_type      VARCHAR(20) NOT NULL CHECK ((assignment_type='role' OR assignment_type='service' OR assignment_type='direction' OR assignment_type='enterprise' OR assignment_type='user' OR assignment_type='team')),
   target_id            BIGINT,
   target_role          VARCHAR(20),
   is_mandatory         BOOLEAN NOT NULL DEFAULT FALSE,
@@ -307,7 +322,9 @@ CREATE TABLE IF NOT EXISTS courses (
   category             VARCHAR(50),
   level                VARCHAR(20) DEFAULT 'beginner',
   duration             INTEGER,
-  category_id          BIGINT
+  category_id          BIGINT,
+  deleted_at           TIMESTAMP,
+  public_id            UUID NOT NULL DEFAULT gen_random_uuid()
 );
 
 CREATE TABLE IF NOT EXISTS data_retention_policies (
@@ -371,6 +388,15 @@ CREATE TABLE IF NOT EXISTS enterprises (
   updated_at           TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc')
 );
 
+CREATE TABLE IF NOT EXISTS favorites (
+  id                   BIGSERIAL PRIMARY KEY,
+  tenant_id            BIGINT NOT NULL,
+  user_id              BIGINT NOT NULL,
+  favoritable_type     VARCHAR(20) NOT NULL CHECK (favoritable_type IN ('course', 'lesson')),
+  favoritable_id       BIGINT NOT NULL,
+  created_at           TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc')
+);
+
 CREATE TABLE IF NOT EXISTS file_assets (
   id                   BIGSERIAL PRIMARY KEY,
   tenant_id            BIGINT NOT NULL,
@@ -403,6 +429,34 @@ CREATE TABLE IF NOT EXISTS learning_analytics (
   created_at           TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc')
 );
 
+CREATE TABLE IF NOT EXISTS lesson_comments (
+  id                   BIGSERIAL PRIMARY KEY,
+  tenant_id            BIGINT NOT NULL,
+  lesson_id            BIGINT NOT NULL,
+  user_id              BIGINT NOT NULL,
+  body                 TEXT NOT NULL,
+  created_at           TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc')
+);
+
+CREATE TABLE IF NOT EXISTS lesson_evaluations (
+  id                   BIGSERIAL PRIMARY KEY,
+  tenant_id            BIGINT NOT NULL,
+  lesson_id            BIGINT NOT NULL,
+  user_id              BIGINT NOT NULL,
+  rating               INTEGER NOT NULL CHECK ((rating>=1 AND rating<=5)),
+  comment              TEXT,
+  created_at           TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc')
+);
+
+CREATE TABLE IF NOT EXISTS lesson_notes (
+  id                   BIGSERIAL PRIMARY KEY,
+  tenant_id            BIGINT NOT NULL,
+  lesson_id            BIGINT NOT NULL,
+  user_id              BIGINT NOT NULL,
+  body                 TEXT NOT NULL,
+  updated_at           TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc')
+);
+
 CREATE TABLE IF NOT EXISTS lesson_progress (
   id                   BIGSERIAL PRIMARY KEY,
   tenant_id            BIGINT NOT NULL,
@@ -426,7 +480,13 @@ CREATE TABLE IF NOT EXISTS lessons (
   duration_min         INTEGER,
   created_at           TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc'),
   updated_at           TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc'),
-  type                 VARCHAR(50)
+  type                 VARCHAR(50),
+  deleted_at           TIMESTAMP,
+  is_mandatory         BOOLEAN NOT NULL DEFAULT FALSE,
+  presence_check_percent INTEGER CHECK (presence_check_percent IS NULL OR (presence_check_percent >= 0 AND presence_check_percent <= 100)),
+  reset_time_on_reopen BOOLEAN NOT NULL DEFAULT FALSE,
+  allow_document_download BOOLEAN NOT NULL DEFAULT TRUE,
+  public_id            UUID NOT NULL DEFAULT gen_random_uuid()
 );
 
 CREATE TABLE IF NOT EXISTS live_participants (
@@ -444,7 +504,12 @@ CREATE TABLE IF NOT EXISTS live_recordings (
   session_id           BIGINT NOT NULL,
   file_id              BIGINT,
   duration_sec         INTEGER,
-  created_at           TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc')
+  created_at           TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc'),
+  egress_id            VARCHAR(255),
+  status               VARCHAR(20) NOT NULL DEFAULT 'recording' CHECK (status IN ('recording','completed','failed')),
+  started_at           TIMESTAMP,
+  ended_at             TIMESTAMP,
+  recording_url        VARCHAR(1000)
 );
 
 CREATE TABLE IF NOT EXISTS live_sessions (
@@ -463,8 +528,78 @@ CREATE TABLE IF NOT EXISTS live_sessions (
   created_at           TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc'),
   description          TEXT,
   duration             INTEGER,
-  max_participants     INTEGER
+  max_participants     INTEGER,
+  visibility           VARCHAR(20) NOT NULL DEFAULT 'public' CHECK (visibility IN ('public','private')),
+  reminder_sent_at     TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS live_session_invitees (
+  id                   BIGSERIAL PRIMARY KEY,
+  tenant_id            BIGINT NOT NULL,
+  session_id           BIGINT NOT NULL,
+  user_id              BIGINT NOT NULL,
+  created_at           TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc')
+);
+
+CREATE TABLE IF NOT EXISTS recording_storage_settings (
+  id                   BIGSERIAL PRIMARY KEY,
+  tenant_id            BIGINT NOT NULL,
+  enabled              BOOLEAN NOT NULL DEFAULT FALSE,
+  bucket               VARCHAR(255),
+  region               VARCHAR(100),
+  endpoint             VARCHAR(500),
+  access_key           VARCHAR(255),
+  secret_key           VARCHAR(500),
+  updated_at           TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc')
+);
+
+CREATE TABLE IF NOT EXISTS pending_notifications (
+  id                   BIGSERIAL PRIMARY KEY,
+  tenant_id            BIGINT NOT NULL,
+  user_id              BIGINT NOT NULL,
+  event_type           VARCHAR(50) NOT NULL,
+  channel              VARCHAR(20) NOT NULL DEFAULT 'email',
+  subject              VARCHAR(500),
+  body                 TEXT NOT NULL,
+  action_url           VARCHAR(1000),
+  metadata             TEXT,
+  status               VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+  triggered_by         BIGINT,
+  reviewed_by          BIGINT,
+  reviewed_at          TIMESTAMP,
+  created_at           TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc')
+);
+CREATE INDEX IF NOT EXISTS ix_pending_notif_tenant_status ON pending_notifications (tenant_id, status);
+
+CREATE TABLE IF NOT EXISTS job_titles (
+  id                   BIGSERIAL PRIMARY KEY,
+  tenant_id            BIGINT NOT NULL,
+  label                VARCHAR(150) NOT NULL,
+  created_at           TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc'),
+  UNIQUE (tenant_id, label)
+);
+CREATE INDEX IF NOT EXISTS ix_job_titles_tenant ON job_titles (tenant_id);
+
+CREATE TABLE IF NOT EXISTS teams (
+  id                   BIGSERIAL PRIMARY KEY,
+  tenant_id            BIGINT NOT NULL,
+  name                 VARCHAR(255) NOT NULL,
+  description          VARCHAR(500),
+  created_by           BIGINT,
+  created_at           TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc'),
+  updated_at           TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS ix_teams_tenant ON teams (tenant_id);
+
+CREATE TABLE IF NOT EXISTS team_members (
+  id                   BIGSERIAL PRIMARY KEY,
+  team_id              BIGINT NOT NULL,
+  member_type          VARCHAR(20) NOT NULL CHECK (member_type IN ('user','enterprise','direction','service')),
+  target_id            BIGINT NOT NULL,
+  created_at           TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc'),
+  UNIQUE (team_id, member_type, target_id)
+);
+CREATE INDEX IF NOT EXISTS ix_team_members_team ON team_members (team_id);
 
 CREATE TABLE IF NOT EXISTS modules (
   id                   BIGSERIAL PRIMARY KEY,
@@ -751,7 +886,9 @@ CREATE TABLE IF NOT EXISTS users (
   supervisor_id        BIGINT,
   status               VARCHAR(20) NOT NULL DEFAULT 'active' CHECK ((status='deactivated' OR status='suspended' OR status='active' OR status='pending')),
   last_login_at        TIMESTAMP,
-  phone                VARCHAR(50)
+  phone                VARCHAR(50),
+  job_title            VARCHAR(150) NOT NULL DEFAULT 'Défaut',
+  token_version        INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS webhook_deliveries (
@@ -812,10 +949,18 @@ ALTER TABLE certificates ADD CONSTRAINT UQ__certific__61787229C0EA02EE UNIQUE (s
 ALTER TABLE course_evaluations ADD CONSTRAINT uq_course_eval UNIQUE (tenant_id, course_id, user_id);
 ALTER TABLE email_settings ADD CONSTRAINT UQ__email_se__D6F29F3F469BE66D UNIQUE (tenant_id);
 ALTER TABLE livekit_settings ADD CONSTRAINT uq_livekit_settings_tenant UNIQUE (tenant_id);
+ALTER TABLE recording_storage_settings ADD CONSTRAINT uq_recording_storage_settings_tenant UNIQUE (tenant_id);
+ALTER TABLE live_session_invitees ADD CONSTRAINT uq_live_session_invitees UNIQUE (session_id, user_id);
 ALTER TABLE enrollments ADD CONSTRAINT uq_enrollment UNIQUE (user_id, course_id);
+ALTER TABLE favorites ADD CONSTRAINT uq_favorites_entry UNIQUE (user_id, favoritable_type, favoritable_id);
+ALTER TABLE courses ADD CONSTRAINT uq_courses_public_id UNIQUE (public_id);
+ALTER TABLE lessons ADD CONSTRAINT uq_lessons_public_id UNIQUE (public_id);
+ALTER TABLE chat_conversations ADD CONSTRAINT uq_chat_conversations_public_id UNIQUE (public_id);
 ALTER TABLE enterprises ADD CONSTRAINT UQ__enterpri__357D4CF94A2DB61D UNIQUE (code);
 ALTER TABLE inactivity_policies ADD CONSTRAINT uq_inactivity_policies_tenant_role UNIQUE (tenant_id, role);
 ALTER TABLE lesson_progress ADD CONSTRAINT UQ_lesson_progress UNIQUE (tenant_id, user_id, lesson_id);
+ALTER TABLE lesson_notes ADD CONSTRAINT uq_lesson_notes_lesson_user UNIQUE (lesson_id, user_id);
+ALTER TABLE lesson_evaluations ADD CONSTRAINT uq_lesson_evaluations_lesson_user UNIQUE (lesson_id, user_id);
 ALTER TABLE notification_preferences ADD CONSTRAINT uq_notif_pref UNIQUE (tenant_id, user_id);
 ALTER TABLE notification_templates ADD CONSTRAINT uq_template_code UNIQUE (tenant_id, code);
 ALTER TABLE privacy_consents ADD CONSTRAINT uq_privacy UNIQUE (tenant_id, user_id, policy_code);
@@ -835,6 +980,13 @@ ALTER TABLE users ADD CONSTRAINT UQ__users__F3DBC572B3F5EB8D UNIQUE (username);
 -- Foreign keys
 ALTER TABLE enrollments ADD CONSTRAINT FK__enrollmen__cours__0BE6BFCF FOREIGN KEY (course_id) REFERENCES courses (id);
 ALTER TABLE enrollments ADD CONSTRAINT FK__enrollmen__user___0AF29B96 FOREIGN KEY (user_id) REFERENCES users (id);
+ALTER TABLE enrollments ADD CONSTRAINT fk_enrollments_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
+ALTER TABLE certificate_templates ADD CONSTRAINT fk_certificate_templates_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
+ALTER TABLE certificate_templates ADD CONSTRAINT fk_certificate_templates_bg_file FOREIGN KEY (background_file_id) REFERENCES file_assets (id);
+ALTER TABLE lesson_progress ADD CONSTRAINT fk_lesson_progress_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
+ALTER TABLE lesson_progress ADD CONSTRAINT fk_lesson_progress_user FOREIGN KEY (user_id) REFERENCES users (id);
+ALTER TABLE lesson_progress ADD CONSTRAINT fk_lesson_progress_lesson FOREIGN KEY (lesson_id) REFERENCES lessons (id);
+ALTER TABLE lesson_progress ADD CONSTRAINT fk_lesson_progress_course FOREIGN KEY (course_id) REFERENCES courses (id);
 ALTER TABLE quiz_attempts ADD CONSTRAINT FK__quiz_atte__user___10AB74EC FOREIGN KEY (user_id) REFERENCES users (id);
 ALTER TABLE ai_chat_history ADD CONSTRAINT fk_ai_chat_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
 ALTER TABLE ai_chat_history ADD CONSTRAINT fk_ai_chat_user FOREIGN KEY (user_id) REFERENCES users (id);
@@ -857,6 +1009,7 @@ ALTER TABLE assignment_reminders ADD CONSTRAINT fk_assignment_reminders_user FOR
 ALTER TABLE course_assignments ADD CONSTRAINT fk_assignments_course FOREIGN KEY (course_id) REFERENCES courses (id);
 ALTER TABLE course_assignments ADD CONSTRAINT fk_assignments_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
 ALTER TABLE course_assignments ADD CONSTRAINT fk_assignments_user FOREIGN KEY (assigned_by) REFERENCES users (id);
+ALTER TABLE course_assignments ADD CONSTRAINT fk_course_assignments_lesson FOREIGN KEY (lesson_id) REFERENCES lessons (id);
 ALTER TABLE attempts ADD CONSTRAINT fk_attempts_quiz FOREIGN KEY (quiz_id) REFERENCES quizzes (id);
 ALTER TABLE attempts ADD CONSTRAINT fk_attempts_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
 ALTER TABLE attempts ADD CONSTRAINT fk_attempts_user FOREIGN KEY (user_id) REFERENCES users (id);
@@ -882,6 +1035,9 @@ ALTER TABLE categories ADD CONSTRAINT fk_categories_tenant FOREIGN KEY (tenant_i
 ALTER TABLE certificates ADD CONSTRAINT fk_certificates_course FOREIGN KEY (course_id) REFERENCES courses (id);
 ALTER TABLE certificates ADD CONSTRAINT fk_certificates_file FOREIGN KEY (pdf_file_id) REFERENCES file_assets (id);
 ALTER TABLE certificates ADD CONSTRAINT fk_certificates_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
+ALTER TABLE certificate_watermarks ADD CONSTRAINT fk_cert_watermarks_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
+ALTER TABLE certificate_watermarks ADD CONSTRAINT fk_cert_watermarks_file FOREIGN KEY (file_id) REFERENCES file_assets (id);
+ALTER TABLE certificate_watermarks ADD CONSTRAINT fk_cert_watermarks_created_by FOREIGN KEY (created_by) REFERENCES users (id);
 ALTER TABLE certificates ADD CONSTRAINT fk_certificates_user FOREIGN KEY (user_id) REFERENCES users (id);
 ALTER TABLE chat_attachments ADD CONSTRAINT fk_chat_att_file FOREIGN KEY (file_id) REFERENCES file_assets (id);
 ALTER TABLE chat_attachments ADD CONSTRAINT fk_chat_att_msg FOREIGN KEY (message_id) REFERENCES chat_messages (id);
@@ -889,6 +1045,7 @@ ALTER TABLE chat_attachments ADD CONSTRAINT fk_chat_att_tenant FOREIGN KEY (tena
 ALTER TABLE chat_conversations ADD CONSTRAINT fk_chat_conv_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
 ALTER TABLE chat_conversations ADD CONSTRAINT fk_chat_conv_user FOREIGN KEY (created_by) REFERENCES users (id);
 ALTER TABLE chat_messages ADD CONSTRAINT fk_chat_msg_conv FOREIGN KEY (conversation_id) REFERENCES chat_conversations (id);
+ALTER TABLE chat_messages ADD CONSTRAINT fk_chat_msg_reply_to FOREIGN KEY (reply_to_message_id) REFERENCES chat_messages (id);
 ALTER TABLE chat_messages ADD CONSTRAINT fk_chat_msg_sender FOREIGN KEY (sender_id) REFERENCES users (id);
 ALTER TABLE chat_messages ADD CONSTRAINT fk_chat_msg_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
 ALTER TABLE chat_participants ADD CONSTRAINT fk_chat_part_conv FOREIGN KEY (conversation_id) REFERENCES chat_conversations (id);
@@ -909,6 +1066,10 @@ ALTER TABLE courses ADD CONSTRAINT fk_courses_tenant FOREIGN KEY (tenant_id) REF
 ALTER TABLE courses ADD CONSTRAINT fk_courses_user FOREIGN KEY (created_by) REFERENCES users (id);
 ALTER TABLE directions ADD CONSTRAINT fk_directions_enterprise FOREIGN KEY (enterprise_id) REFERENCES enterprises (id);
 ALTER TABLE directions ADD CONSTRAINT fk_directions_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
+ALTER TABLE job_titles ADD CONSTRAINT fk_job_titles_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
+ALTER TABLE teams ADD CONSTRAINT fk_teams_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
+ALTER TABLE teams ADD CONSTRAINT fk_teams_created_by FOREIGN KEY (created_by) REFERENCES users (id);
+ALTER TABLE team_members ADD CONSTRAINT fk_team_members_team FOREIGN KEY (team_id) REFERENCES teams (id) ON DELETE CASCADE;
 ALTER TABLE email_settings ADD CONSTRAINT fk_email_settings_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
 ALTER TABLE livekit_settings ADD CONSTRAINT fk_livekit_settings_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
 ALTER TABLE enterprises ADD CONSTRAINT fk_enterprises_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
@@ -918,11 +1079,24 @@ ALTER TABLE inactivity_policies ADD CONSTRAINT fk_inactivity_policies_tenant FOR
 ALTER TABLE inactivity_policies ADD CONSTRAINT fk_inactivity_policies_user FOREIGN KEY (updated_by) REFERENCES users (id);
 ALTER TABLE lessons ADD CONSTRAINT fk_lessons_module FOREIGN KEY (module_id) REFERENCES modules (id);
 ALTER TABLE lessons ADD CONSTRAINT fk_lessons_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
+ALTER TABLE lesson_comments ADD CONSTRAINT fk_lesson_comments_lesson FOREIGN KEY (lesson_id) REFERENCES lessons (id);
+ALTER TABLE lesson_comments ADD CONSTRAINT fk_lesson_comments_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
+ALTER TABLE lesson_comments ADD CONSTRAINT fk_lesson_comments_user FOREIGN KEY (user_id) REFERENCES users (id);
+ALTER TABLE lesson_evaluations ADD CONSTRAINT fk_lesson_evaluations_lesson FOREIGN KEY (lesson_id) REFERENCES lessons (id);
+ALTER TABLE lesson_evaluations ADD CONSTRAINT fk_lesson_evaluations_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
+ALTER TABLE lesson_evaluations ADD CONSTRAINT fk_lesson_evaluations_user FOREIGN KEY (user_id) REFERENCES users (id);
+ALTER TABLE lesson_notes ADD CONSTRAINT fk_lesson_notes_lesson FOREIGN KEY (lesson_id) REFERENCES lessons (id);
+ALTER TABLE lesson_notes ADD CONSTRAINT fk_lesson_notes_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
+ALTER TABLE lesson_notes ADD CONSTRAINT fk_lesson_notes_user FOREIGN KEY (user_id) REFERENCES users (id);
 ALTER TABLE live_participants ADD CONSTRAINT fk_live_part_sess FOREIGN KEY (session_id) REFERENCES live_sessions (id);
 ALTER TABLE live_participants ADD CONSTRAINT fk_live_part_user FOREIGN KEY (user_id) REFERENCES users (id);
 ALTER TABLE live_recordings ADD CONSTRAINT fk_live_rec_file FOREIGN KEY (file_id) REFERENCES file_assets (id);
 ALTER TABLE live_recordings ADD CONSTRAINT fk_live_rec_sess FOREIGN KEY (session_id) REFERENCES live_sessions (id);
 ALTER TABLE live_recordings ADD CONSTRAINT fk_live_rec_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
+ALTER TABLE live_session_invitees ADD CONSTRAINT fk_live_sess_invitees_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
+ALTER TABLE live_session_invitees ADD CONSTRAINT fk_live_sess_invitees_sess FOREIGN KEY (session_id) REFERENCES live_sessions (id);
+ALTER TABLE live_session_invitees ADD CONSTRAINT fk_live_sess_invitees_user FOREIGN KEY (user_id) REFERENCES users (id);
+ALTER TABLE recording_storage_settings ADD CONSTRAINT fk_recording_storage_settings_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
 ALTER TABLE live_sessions ADD CONSTRAINT fk_live_sess_course FOREIGN KEY (course_id) REFERENCES courses (id);
 ALTER TABLE live_sessions ADD CONSTRAINT fk_live_sess_module FOREIGN KEY (module_id) REFERENCES modules (id);
 ALTER TABLE live_sessions ADD CONSTRAINT fk_live_sess_org FOREIGN KEY (organizer_id) REFERENCES users (id);
@@ -977,5 +1151,152 @@ ALTER TABLE webhooks ADD CONSTRAINT fk_webhooks_tenant FOREIGN KEY (tenant_id) R
 ALTER TABLE webhooks ADD CONSTRAINT fk_webhooks_user FOREIGN KEY (created_by) REFERENCES users (id);
 ALTER TABLE whiteboards ADD CONSTRAINT fk_whiteboards_sess FOREIGN KEY (session_id) REFERENCES live_sessions (id);
 ALTER TABLE whiteboards ADD CONSTRAINT fk_whiteboards_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id);
+
+-- Postgres does not auto-index FK columns (only PK/UNIQUE constraints do). With
+-- tenant_id filtered on virtually every query, these columns had no index at all.
+CREATE INDEX IF NOT EXISTS idx_ai_chat_history_tenant_id ON ai_chat_history(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_ai_chat_history_user_id ON ai_chat_history(user_id);
+CREATE INDEX IF NOT EXISTS idx_ai_generated_contents_created_by ON ai_generated_contents(created_by);
+CREATE INDEX IF NOT EXISTS idx_ai_generated_contents_tenant_id ON ai_generated_contents(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_ai_recommendations_tenant_id ON ai_recommendations(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_ai_recommendations_user_id ON ai_recommendations(user_id);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_logs_tenant_id ON ai_usage_logs(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_logs_user_id ON ai_usage_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_answers_attempt_id ON answers(attempt_id);
+CREATE INDEX IF NOT EXISTS idx_answers_choice_id ON answers(choice_id);
+CREATE INDEX IF NOT EXISTS idx_answers_question_id ON answers(question_id);
+CREATE INDEX IF NOT EXISTS idx_answers_tenant_id ON answers(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_api_keys_tenant_id ON api_keys(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_assignment_reminders_tenant_id ON assignment_reminders(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_assignment_reminders_user_id ON assignment_reminders(user_id);
+CREATE INDEX IF NOT EXISTS idx_attempts_quiz_id ON attempts(quiz_id);
+CREATE INDEX IF NOT EXISTS idx_attempts_tenant_id ON attempts(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_attempts_user_id ON attempts(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_tenant_id ON audit_logs(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_badges_icon_file_id ON badges(icon_file_id);
+CREATE INDEX IF NOT EXISTS idx_badges_tenant_id ON badges(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_blog_comments_parent_id ON blog_comments(parent_id);
+CREATE INDEX IF NOT EXISTS idx_blog_comments_post_id ON blog_comments(post_id);
+CREATE INDEX IF NOT EXISTS idx_blog_comments_tenant_id ON blog_comments(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_blog_comments_user_id ON blog_comments(user_id);
+CREATE INDEX IF NOT EXISTS idx_blog_post_tags_tag_id ON blog_post_tags(tag_id);
+CREATE INDEX IF NOT EXISTS idx_blog_posts_author_id ON blog_posts(author_id);
+CREATE INDEX IF NOT EXISTS idx_blog_posts_category_id ON blog_posts(category_id);
+CREATE INDEX IF NOT EXISTS idx_blog_posts_tenant_id ON blog_posts(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_breakout_rooms_session_id ON breakout_rooms(session_id);
+CREATE INDEX IF NOT EXISTS idx_breakout_rooms_tenant_id ON breakout_rooms(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_certificate_templates_background_file_id ON certificate_templates(background_file_id);
+CREATE INDEX IF NOT EXISTS idx_certificate_templates_tenant_id ON certificate_templates(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_certificate_watermarks_created_by ON certificate_watermarks(created_by);
+CREATE INDEX IF NOT EXISTS idx_certificate_watermarks_file_id ON certificate_watermarks(file_id);
+CREATE INDEX IF NOT EXISTS idx_certificates_course_id ON certificates(course_id);
+CREATE INDEX IF NOT EXISTS idx_certificates_pdf_file_id ON certificates(pdf_file_id);
+CREATE INDEX IF NOT EXISTS idx_certificates_tenant_id ON certificates(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_certificates_user_id ON certificates(user_id);
+CREATE INDEX IF NOT EXISTS idx_chat_attachments_file_id ON chat_attachments(file_id);
+CREATE INDEX IF NOT EXISTS idx_chat_attachments_message_id ON chat_attachments(message_id);
+CREATE INDEX IF NOT EXISTS idx_chat_attachments_tenant_id ON chat_attachments(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_chat_conversations_created_by ON chat_conversations(created_by);
+CREATE INDEX IF NOT EXISTS idx_chat_conversations_tenant_id ON chat_conversations(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation_id ON chat_messages(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_reply_to_message_id ON chat_messages(reply_to_message_id);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_sender_id ON chat_messages(sender_id);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_tenant_id ON chat_messages(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_chat_participants_user_id ON chat_participants(user_id);
+CREATE INDEX IF NOT EXISTS idx_choices_question_id ON choices(question_id);
+CREATE INDEX IF NOT EXISTS idx_choices_tenant_id ON choices(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_comments_post_id ON comments(post_id);
+CREATE INDEX IF NOT EXISTS idx_comments_tenant_id ON comments(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_comments_user_id ON comments(user_id);
+CREATE INDEX IF NOT EXISTS idx_contents_file_id ON contents(file_id);
+CREATE INDEX IF NOT EXISTS idx_contents_lesson_id ON contents(lesson_id);
+CREATE INDEX IF NOT EXISTS idx_contents_tenant_id ON contents(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_course_assignments_assigned_by ON course_assignments(assigned_by);
+CREATE INDEX IF NOT EXISTS idx_course_assignments_course_id ON course_assignments(course_id);
+CREATE INDEX IF NOT EXISTS idx_course_assignments_tenant_id ON course_assignments(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_course_assignments_lesson_id ON course_assignments(lesson_id);
+CREATE INDEX IF NOT EXISTS idx_favorites_user_id ON favorites(user_id);
+CREATE INDEX IF NOT EXISTS idx_course_evaluations_course_id ON course_evaluations(course_id);
+CREATE INDEX IF NOT EXISTS idx_course_evaluations_user_id ON course_evaluations(user_id);
+CREATE INDEX IF NOT EXISTS idx_courses_category_id ON courses(category_id);
+CREATE INDEX IF NOT EXISTS idx_courses_created_by ON courses(created_by);
+CREATE INDEX IF NOT EXISTS idx_courses_tenant_id ON courses(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_data_retention_policies_tenant_id ON data_retention_policies(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_directions_enterprise_id ON directions(enterprise_id);
+CREATE INDEX IF NOT EXISTS idx_directions_tenant_id ON directions(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_enrollments_course_id ON enrollments(course_id);
+CREATE INDEX IF NOT EXISTS idx_enrollments_tenant_id ON enrollments(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_enterprises_tenant_id ON enterprises(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_file_assets_created_by ON file_assets(created_by);
+CREATE INDEX IF NOT EXISTS idx_file_assets_tenant_id ON file_assets(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_inactivity_policies_updated_by ON inactivity_policies(updated_by);
+CREATE INDEX IF NOT EXISTS idx_learning_analytics_course_id ON learning_analytics(course_id);
+CREATE INDEX IF NOT EXISTS idx_learning_analytics_tenant_id ON learning_analytics(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_learning_analytics_user_id ON learning_analytics(user_id);
+CREATE INDEX IF NOT EXISTS idx_lesson_comments_tenant_id ON lesson_comments(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_lesson_comments_user_id ON lesson_comments(user_id);
+CREATE INDEX IF NOT EXISTS idx_lesson_evaluations_tenant_id ON lesson_evaluations(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_lesson_evaluations_user_id ON lesson_evaluations(user_id);
+CREATE INDEX IF NOT EXISTS idx_lesson_notes_tenant_id ON lesson_notes(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_lesson_notes_user_id ON lesson_notes(user_id);
+CREATE INDEX IF NOT EXISTS idx_lesson_progress_course_id ON lesson_progress(course_id);
+CREATE INDEX IF NOT EXISTS idx_lesson_progress_lesson_id ON lesson_progress(lesson_id);
+CREATE INDEX IF NOT EXISTS idx_lesson_progress_user_id ON lesson_progress(user_id);
+CREATE INDEX IF NOT EXISTS idx_lessons_module_id ON lessons(module_id);
+CREATE INDEX IF NOT EXISTS idx_lessons_tenant_id ON lessons(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_live_participants_user_id ON live_participants(user_id);
+CREATE INDEX IF NOT EXISTS idx_live_recordings_file_id ON live_recordings(file_id);
+CREATE INDEX IF NOT EXISTS idx_live_recordings_session_id ON live_recordings(session_id);
+CREATE INDEX IF NOT EXISTS idx_live_recordings_tenant_id ON live_recordings(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_live_session_invitees_tenant_id ON live_session_invitees(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_live_session_invitees_user_id ON live_session_invitees(user_id);
+CREATE INDEX IF NOT EXISTS idx_live_sessions_course_id ON live_sessions(course_id);
+CREATE INDEX IF NOT EXISTS idx_live_sessions_module_id ON live_sessions(module_id);
+CREATE INDEX IF NOT EXISTS idx_live_sessions_organizer_id ON live_sessions(organizer_id);
+CREATE INDEX IF NOT EXISTS idx_live_sessions_tenant_id ON live_sessions(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_modules_course_id ON modules(course_id);
+CREATE INDEX IF NOT EXISTS idx_modules_tenant_id ON modules(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_notification_deliveries_notification_id ON notification_deliveries(notification_id);
+CREATE INDEX IF NOT EXISTS idx_notification_deliveries_tenant_id ON notification_deliveries(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_notification_preferences_user_id ON notification_preferences(user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_template_id ON notifications(template_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_tenant_id ON notifications(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_post_tags_tag_id ON post_tags(tag_id);
+CREATE INDEX IF NOT EXISTS idx_privacy_consents_user_id ON privacy_consents(user_id);
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_tenant_id ON push_subscriptions(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user_id ON push_subscriptions(user_id);
+CREATE INDEX IF NOT EXISTS idx_questions_quiz_id ON questions(quiz_id);
+CREATE INDEX IF NOT EXISTS idx_questions_tenant_id ON questions(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_quiz_answers_tenant_id ON quiz_answers(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_quiz_attempts_tenant_id ON quiz_attempts(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_quiz_attempts_user_id ON quiz_attempts(user_id);
+CREATE INDEX IF NOT EXISTS idx_quizzes_lesson_id ON quizzes(lesson_id);
+CREATE INDEX IF NOT EXISTS idx_quizzes_tenant_id ON quizzes(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_scheduled_reports_created_by ON scheduled_reports(created_by);
+CREATE INDEX IF NOT EXISTS idx_scheduled_reports_tenant_id ON scheduled_reports(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_search_history_tenant_id ON search_history(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_search_history_user_id ON search_history(user_id);
+CREATE INDEX IF NOT EXISTS idx_search_index_tenant_id ON search_index(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_services_direction_id ON services(direction_id);
+CREATE INDEX IF NOT EXISTS idx_services_tenant_id ON services(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_sso_identities_user_id ON sso_identities(user_id);
+CREATE INDEX IF NOT EXISTS idx_team_report_subscriptions_user_id ON team_report_subscriptions(user_id);
+CREATE INDEX IF NOT EXISTS idx_teams_created_by ON teams(created_by);
+CREATE INDEX IF NOT EXISTS idx_user_badges_badge_id ON user_badges(badge_id);
+CREATE INDEX IF NOT EXISTS idx_user_badges_user_id ON user_badges(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_devices_user_id ON user_devices(user_id);
+CREATE INDEX IF NOT EXISTS idx_users_direction_id ON users(direction_id);
+CREATE INDEX IF NOT EXISTS idx_users_enterprise_id ON users(enterprise_id);
+CREATE INDEX IF NOT EXISTS idx_users_service_id ON users(service_id);
+CREATE INDEX IF NOT EXISTS idx_users_supervisor_id ON users(supervisor_id);
+CREATE INDEX IF NOT EXISTS idx_users_tenant_id ON users(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_webhook_id ON webhook_deliveries(webhook_id);
+CREATE INDEX IF NOT EXISTS idx_webhook_subscriptions_tenant_id ON webhook_subscriptions(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_webhooks_created_by ON webhooks(created_by);
+CREATE INDEX IF NOT EXISTS idx_webhooks_tenant_id ON webhooks(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_whiteboards_session_id ON whiteboards(session_id);
+CREATE INDEX IF NOT EXISTS idx_whiteboards_tenant_id ON whiteboards(tenant_id);
 
 COMMIT;

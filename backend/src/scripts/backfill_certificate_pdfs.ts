@@ -23,7 +23,7 @@ async function main() {
   console.log(`Found ${certificates.length} certificate(s) missing a PDF.`);
 
   for (const cert of certificates) {
-    const pdfPath = await generateCertificatePDF(cert.serial, cert.user_name, cert.course_title, cert.issued_at);
+    const pdfPath = await generateCertificatePDF(cert.serial, cert.user_name, cert.course_title, cert.issued_at, cert.tenant_id);
 
     const fileResult = await DatabaseService.query<{ id: number }>(
       IS_PG

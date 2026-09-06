@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Card, CardContent } from '@/components/ui/card'
@@ -31,6 +32,8 @@ interface Tenant {
 }
 
 export default function AdminPlatformPage() {
+  const { t } = useTranslation('admin')
+  const { t: tCommon } = useTranslation('common')
   const { toast } = useToast()
   const { switchTenant, user } = useAuth()
   const navigate = useNavigate()
@@ -50,15 +53,15 @@ export default function AdminPlatformPage() {
   const createMutation = useMutation({
     mutationFn: (name: string) => api.post('/platform/tenants', { name }),
     onSuccess: () => {
-      toast({ title: 'Organisation créée', description: 'La nouvelle organisation est prête.' })
+      toast({ title: t('platform.toasts.createdTitle'), description: t('platform.toasts.createdDescription') })
       queryClient.invalidateQueries({ queryKey: ['platform-tenants'] })
       setIsCreateOpen(false)
       setNewTenantName('')
     },
     onError: (error: any) => {
       toast({
-        title: 'Erreur',
-        description: error.response?.data?.error?.message || "Impossible de créer l'organisation",
+        title: tCommon('status.error'),
+        description: error.response?.data?.error?.message || t('platform.toasts.createErrorDescription'),
         variant: 'destructive',
       })
     },
@@ -68,10 +71,10 @@ export default function AdminPlatformPage() {
     setSwitchingId(tenant.id)
     try {
       await switchTenant(tenant.id)
-      toast({ title: 'Organisation active', description: `Vous agissez maintenant dans « ${tenant.name} »` })
+      toast({ title: t('platform.toasts.switchedTitle'), description: t('platform.toasts.switchedDescription', { name: tenant.name }) })
       navigate('/admin/analytics')
     } catch {
-      toast({ title: 'Erreur', description: "Impossible de basculer vers cette organisation", variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: t('platform.toasts.switchErrorDescription'), variant: 'destructive' })
     } finally {
       setSwitchingId(null)
     }
@@ -85,41 +88,41 @@ export default function AdminPlatformPage() {
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold">Plateforme</h1>
+          <h1 className="text-3xl font-bold">{t('platform.title')}</h1>
           <p className="text-muted-foreground">
-            Toutes les organisations gérées sur cette instance — réservé au super administrateur
+            {t('platform.subtitle')}
           </p>
         </div>
         <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
           <DialogTrigger asChild>
             <Button>
               <Plus className="h-4 w-4 mr-2" />
-              Nouvelle organisation
+              {t('platform.newOrganization')}
             </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Créer une organisation</DialogTitle>
-              <DialogDescription>Un nouveau tenant isolé, avec son propre catalogue et ses propres utilisateurs.</DialogDescription>
+              <DialogTitle>{t('platform.createDialog.title')}</DialogTitle>
+              <DialogDescription>{t('platform.createDialog.description')}</DialogDescription>
             </DialogHeader>
             <div className="space-y-2 py-4">
-              <Label htmlFor="tenantName">Nom de l'organisation</Label>
+              <Label htmlFor="tenantName">{t('platform.createDialog.nameLabel')}</Label>
               <Input
                 id="tenantName"
-                placeholder="Ex: Acme Corp"
+                placeholder={t('platform.createDialog.namePlaceholder')}
                 value={newTenantName}
                 onChange={(e) => setNewTenantName(e.target.value)}
               />
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsCreateOpen(false)} disabled={createMutation.isPending}>
-                Annuler
+                {t('platform.createDialog.cancel')}
               </Button>
               <Button
                 onClick={() => newTenantName.trim() && createMutation.mutate(newTenantName.trim())}
                 disabled={!newTenantName.trim() || createMutation.isPending}
               >
-                {createMutation.isPending ? 'Création...' : 'Créer'}
+                {createMutation.isPending ? t('platform.createDialog.creating') : t('platform.createDialog.create')}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -138,7 +141,7 @@ export default function AdminPlatformPage() {
                   </div>
                   {isActive && (
                     <span className="text-xs font-medium text-primary bg-primary/10 rounded-full px-2 py-0.5">
-                      Active
+                      {t('platform.active')}
                     </span>
                   )}
                 </div>
@@ -153,7 +156,7 @@ export default function AdminPlatformPage() {
                   <span className="flex items-center gap-1">
                     <BookOpen className="h-3.5 w-3.5" /> {tenant.courseCount}
                   </span>
-                  <span>Créée le {formatDate(tenant.createdAt)}</span>
+                  <span>{t('platform.createdOn', { date: formatDate(tenant.createdAt) })}</span>
                 </div>
                 <Button
                   variant={isActive ? 'outline' : 'default'}
@@ -163,7 +166,7 @@ export default function AdminPlatformPage() {
                   onClick={() => handleSwitch(tenant)}
                 >
                   <LogIn className="h-4 w-4 mr-2" />
-                  {isActive ? 'Organisation active' : switchingId === tenant.id ? 'Bascule...' : 'Basculer vers'}
+                  {isActive ? t('platform.activeOrganization') : switchingId === tenant.id ? t('platform.switching') : t('platform.switchTo')}
                 </Button>
               </CardContent>
             </Card>
@@ -171,7 +174,7 @@ export default function AdminPlatformPage() {
         })}
         {tenants.length === 0 && (
           <div className="col-span-full text-center py-12 text-muted-foreground">
-            Aucune organisation pour l'instant.
+            {t('platform.empty')}
           </div>
         )}
       </div>

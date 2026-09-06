@@ -1,0 +1,71 @@
+{
+  "list": {
+    "title": "Live Sessions",
+    "subtitle": "Join interactive live sessions",
+    "createSession": "Create a session",
+    "liveNow": "LIVE",
+    "participantsCount": "{{count}} participants",
+    "joinNow": "Join now",
+    "searchPlaceholder": "Search for a session...",
+    "tabs": {
+      "upcoming": "Upcoming ({{count}})",
+      "live": "Live",
+      "recordings": "Recordings ({{count}})"
+    },
+    "empty": {
+      "upcomingTitle": "No scheduled sessions",
+      "upcomingDescription": "Upcoming sessions will appear here",
+      "liveTitle": "No live sessions",
+      "liveDescription": "Check the upcoming sessions",
+      "recordingsTitle": "No recordings",
+      "recordingsDescription": "Past sessions will be available here"
+    },
+    "status": {
+      "scheduled": "Scheduled",
+      "live": "Live",
+      "ended": "Ended"
+    },
+    "defaultInstructor": "Instructor",
+    "noInstructorAssigned": "No instructor assigned",
+    "notScheduled": "Not scheduled",
+    "join": "Join",
+    "viewRecording": "View recording",
+    "enroll": "Enroll"
+  },
+  "detail": {
+    "notFoundTitle": "Session not found",
+    "notFoundHint": "This live session doesn't exist or isn't accessible.",
+    "backToSessions": "Back to live sessions",
+    "live": "Live",
+    "defaultInstructorTitle": "Instructor",
+    "participantsLabel": "Participants",
+    "openMeeting": "Open meeting",
+    "join": "Join",
+    "enrollmentConfirmed": "Enrollment confirmed",
+    "youJoined": "You've joined the session",
+    "enrollErrorTitle": "Error",
+    "enrollErrorDescription": "Unable to join the session",
+    "sessionEnded": "This session has ended, no recording is available.",
+    "watchRecording": "Watch recording",
+    "notFound2": "Session not found",
+    "defaultInstructorLabel": "Instructor",
+    "noInstructorAssigned": "No instructor assigned",
+    "notScheduled": "Not scheduled",
+    "participantsCountWithMax": "{{count}}{{max}} participants",
+    "enrolledWaiting": "You're enrolled. The session will start on {{date}}.",
+    "enrolling": "Enrolling...",
+    "enroll": "Enroll"
+  },
+  "embed": {
+    "recordingImpossibleTitle": "Recording unavailable",
+    "startRecordingError": "Unable to start recording",
+    "stopRecordingError": "Unable to stop recording",
+    "connecting": "Connecting to session...",
+    "connectionError": "Unable to join the embedded video conference.",
+    "back": "Back",
+    "stopRecording": "Stop recording",
+    "startRecording": "Start recording",
+    "exitFullscreen": "Exit fullscreen",
+    "fullscreen": "Fullscreen"
+  }
+}

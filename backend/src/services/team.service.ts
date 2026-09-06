@@ -1,6 +1,7 @@
 import { DatabaseService } from './database.service';
 import { db } from '../database/db-helpers';
 import { ROLE_HIERARCHY } from '../middleware/auth.middleware';
+import { teamAssignmentClauseForUserRow } from '../utils/teamAssignment';
 
 export interface TeamMember {
   id: number;
@@ -86,6 +87,7 @@ export class TeamService {
            OR (ca.assignment_type = 'direction' AND u2.direction_id = ca.target_id)
            OR (ca.assignment_type = 'service' AND u2.service_id = ca.target_id)
            OR (ca.assignment_type = 'role' AND u2.role = ca.target_role)
+           OR ${teamAssignmentClauseForUserRow('ca', 'u2')}
          )
          LEFT JOIN enrollments en ON en.course_id = ca.course_id AND en.user_id = u2.id
          WHERE ca.tenant_id = @tenantId AND ca.is_mandatory = ${db.bool(true)} AND ca.due_date < ${db.now()}

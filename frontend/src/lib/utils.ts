@@ -1,12 +1,17 @@
 import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import i18n from '@/i18n';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+export function dateLocale(): string {
+  return i18n.language?.startsWith('fr') ? 'fr-FR' : 'en-US';
+}
+
 export function formatDate(date: string | Date): string {
-  return new Intl.DateTimeFormat('fr-FR', {
+  return new Intl.DateTimeFormat(dateLocale(), {
     day: 'numeric',
     month: 'long',
     year: 'numeric',
@@ -14,7 +19,7 @@ export function formatDate(date: string | Date): string {
 }
 
 export function formatDateTime(date: string | Date): string {
-  return new Intl.DateTimeFormat('fr-FR', {
+  return new Intl.DateTimeFormat(dateLocale(), {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
@@ -33,11 +38,11 @@ export function formatRelativeTime(date: string | Date): string {
   const hours = Math.floor(minutes / 60);
   const days = Math.floor(hours / 24);
 
-  if (seconds < 60) return 'À l\'instant';
-  if (minutes < 60) return `Il y a ${minutes} min`;
-  if (hours < 24) return `Il y a ${hours}h`;
-  if (days < 7) return `Il y a ${days}j`;
-  
+  if (seconds < 60) return i18n.t('time.justNow');
+  if (minutes < 60) return i18n.t('time.minutesAgo', { count: minutes });
+  if (hours < 24) return i18n.t('time.hoursAgo', { count: hours });
+  if (days < 7) return i18n.t('time.daysAgo', { count: days });
+
   return formatDate(date);
 }
 
@@ -122,4 +127,35 @@ export function getStatusColor(status: string): string {
 export function calculateProgress(completed: number, total: number): number {
   if (total === 0) return 0;
   return Math.round((completed / total) * 100);
+}
+
+// Converts a "#rrggbb" color into the "H S% L%" triplet format the app's CSS
+// custom properties expect (consumed as hsl(var(--primary)) etc. in index.css).
+export function hexToHslTriplet(hex: string): string | null {
+  const match = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!match) return null;
+
+  const int = parseInt(match[1], 16);
+  const r = ((int >> 16) & 255) / 255;
+  const g = ((int >> 8) & 255) / 255;
+  const b = (int & 255) / 255;
+
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  let h = 0;
+  let s = 0;
+
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+      case g: h = (b - r) / d + 2; break;
+      default: h = (r - g) / d + 4; break;
+    }
+    h /= 6;
+  }
+
+  return `${(h * 360).toFixed(1)} ${(s * 100).toFixed(1)}% ${(l * 100).toFixed(1)}%`;
 }

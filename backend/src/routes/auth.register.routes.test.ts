@@ -1,5 +1,6 @@
 import express from 'express';
 import request from 'supertest';
+import bcrypt from 'bcryptjs';
 import authRoutes from './auth.routes';
 import { tenantMiddleware } from '../middleware/tenant.middleware';
 import { DatabaseService } from '../services/database.service';
@@ -156,7 +157,6 @@ describe('POST /auth/login status handling', () => {
   });
 
   it('logs in successfully for an active account and records last_login_at', async () => {
-    const bcrypt = require('bcryptjs');
     const realHash = await bcrypt.hash('password123', 4);
 
     mockedQuery.mockImplementation((query: string) => {

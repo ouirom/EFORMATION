@@ -1,4 +1,5 @@
 import 'reflect-metadata';
+import path from 'path';
 import express, { Application } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -16,6 +17,9 @@ dotenv.config();
 // Import configurations
 import { config } from './config';
 import { logger } from './utils/logger';
+import { initSentry } from './utils/sentry';
+
+initSentry();
 import { DatabaseService } from './services/database.service';
 import { setupSocketIO } from './socket';
 import { startScheduledJobs } from './jobs';
@@ -28,6 +32,7 @@ import courseRoutes from './routes/course.routes';
 import enrollmentRoutes from './routes/enrollment.routes';
 import moduleRoutes from './routes/module.routes';
 import lessonRoutes from './routes/lesson.routes';
+import favoriteRoutes from './routes/favorite.routes';
 import contentRoutes from './routes/content.routes';
 import quizRoutes from './routes/quiz.routes';
 import attemptRoutes from './routes/attempt.routes';
@@ -36,6 +41,7 @@ import certificateRoutes from './routes/certificate.routes';
 import chatRoutes from './routes/chat.routes';
 import liveSessionRoutes from './routes/live-session.routes';
 import notificationRoutes from './routes/notification.routes';
+import pendingNotificationRoutes from './routes/pending-notification.routes';
 import blogRoutes from './routes/blog.routes';
 import aiRoutes from './routes/ai.routes';
 import analyticsRoutes from './routes/analytics.routes';
@@ -44,6 +50,8 @@ import fileRoutes from './routes/file.routes';
 import webhookRoutes from './routes/webhook.routes';
 import searchRoutes from './routes/search.routes';
 import assignmentRoutes from './routes/assignment.routes';
+import teamRoutes from './routes/team.routes';
+import jobTitleRoutes from './routes/job-title.routes';
 import platformRoutes from './routes/platform.routes';
 import settingsRoutes from './routes/settings.routes';
 import logsRoutes from './routes/logs.routes';
@@ -116,8 +124,16 @@ class App {
     // Compression
     this.app.use(compression());
 
-    // Body parsing
-    this.app.use(express.json({ limit: '50mb' }));
+    // Body parsing. The verify callback stashes the raw bytes on the request so the
+    // LiveKit webhook receiver (POST /webhooks/livekit) can check the signature
+    // against the exact payload LiveKit signed -- re-serializing req.body with
+    // JSON.stringify wouldn't byte-match if key order/whitespace differs.
+    this.app.use(express.json({
+      limit: '50mb',
+      verify: (req: any, _res, buf) => {
+        req.rawBody = buf.toString('utf8');
+      },
+    }));
     this.app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
     // Cookies
@@ -154,6 +170,7 @@ class App {
     apiRouter.use('/enrollments', enrollmentRoutes);
     apiRouter.use('/modules', moduleRoutes);
     apiRouter.use('/lessons', lessonRoutes);
+    apiRouter.use('/favorites', favoriteRoutes);
     apiRouter.use('/contents', contentRoutes);
     apiRouter.use('/quizzes', quizRoutes);
     apiRouter.use('/attempts', attemptRoutes);
@@ -161,6 +178,7 @@ class App {
     apiRouter.use('/certificates', certificateRoutes);
     apiRouter.use('/chat', chatRoutes);
     apiRouter.use('/live-sessions', liveSessionRoutes);
+    apiRouter.use('/notifications/pending', pendingNotificationRoutes);
     apiRouter.use('/notifications', notificationRoutes);
     apiRouter.use('/blog', blogRoutes);
     apiRouter.use('/ai', aiRoutes);
@@ -170,6 +188,8 @@ class App {
     apiRouter.use('/webhooks', webhookRoutes);
     apiRouter.use('/search', searchRoutes);
     apiRouter.use('/assignments', assignmentRoutes);
+    apiRouter.use('/teams', teamRoutes);
+    apiRouter.use('/job-titles', jobTitleRoutes);
     apiRouter.use('/platform', platformRoutes);
     apiRouter.use('/settings', settingsRoutes);
     apiRouter.use('/logs', logsRoutes);
@@ -177,8 +197,19 @@ class App {
 
     this.app.use('/api/v1', apiRouter);
 
-    // Static files for uploads
-    this.app.use('/uploads', express.static(config.uploadDir));
+    // Only branding/avatar images are served unauthenticated here (needed for
+    // <img> tags in outgoing emails and across the app's plain <img src>
+    // usage). Everything else uploaded under config.uploadDir -- lesson
+    // documents, certificates, chat attachments -- must go through the
+    // authenticated /api/v1/files/:id/stream|download routes instead, which
+    // check the requester's tenant and enrollment/ownership. Serving the
+    // whole uploadDir here would let anyone who obtains a storage_key (e.g.
+    // from a network request, a shared link, or a guessed certificate
+    // filename) bypass that check entirely.
+    const PUBLIC_UPLOAD_SUBDIRS = ['logos', 'avatars', 'watermarks'];
+    for (const subdir of PUBLIC_UPLOAD_SUBDIRS) {
+      this.app.use(`/uploads/${subdir}`, express.static(path.join(config.uploadDir, subdir)));
+    }
   }
 
   private initializeErrorHandling(): void {

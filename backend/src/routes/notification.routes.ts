@@ -5,6 +5,7 @@ import { DatabaseService } from '../services/database.service';
 import { db } from '../database/db-helpers';
 import { BadRequestError, NotFoundError } from '../middleware/error.middleware';
 import { NotificationService } from '../services/notification.service';
+import { parsePagination, buildPaginationMeta } from '../utils/pagination';
 
 const router = Router();
 
@@ -21,9 +22,7 @@ const validate = (req: any) => {
  */
 router.get('/', authenticate, async (req: AuthRequest, res, next) => {
   try {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
-    const offset = (page - 1) * limit;
+    const { page, limit, offset } = parsePagination(req, { defaultLimit: 20, maxLimit: 50 });
     const unreadOnly = req.query.unreadOnly === 'true';
 
     let query = `SELECT * FROM notifications 
@@ -55,10 +54,7 @@ router.get('/', authenticate, async (req: AuthRequest, res, next) => {
       success: true,
       data: notifications,
       meta: {
-        page,
-        limit,
-        total: countResult[0].total,
-        totalPages: Math.ceil(countResult[0].total / limit),
+        ...buildPaginationMeta(countResult[0].total, page, limit),
         unreadCount: unreadCount[0].count,
       },
     });
@@ -188,9 +184,7 @@ router.post(
  */
 router.get('/all', authenticate, authorize('admin', 'director'), async (req: AuthRequest, res, next) => {
   try {
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
-    const offset = (page - 1) * limit;
+    const { page, limit, offset } = parsePagination(req, { defaultLimit: 20, maxLimit: 100 });
 
     const [countResult, notifications] = await Promise.all([
       DatabaseService.query<{ total: number }>(
@@ -211,12 +205,7 @@ router.get('/all', authenticate, authorize('admin', 'director'), async (req: Aut
     res.json({
       success: true,
       data: notifications,
-      meta: {
-        page,
-        limit,
-        total: countResult[0].total,
-        totalPages: Math.ceil(countResult[0].total / limit),
-      },
+      meta: buildPaginationMeta(countResult[0].total, page, limit),
     });
   } catch (error) {
     next(error);

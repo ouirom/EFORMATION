@@ -201,6 +201,31 @@ dont le vrai fix était plus simple que prévu) — corrigés le 2026-08-10, dé
     `backend/.env`) si `enabled=true`. Mirroir exact du pattern déjà existant pour
     `email_settings`/`AdminEmailSettingsPage.tsx` — même logique de secret masqué
     (`MASKED_PASSWORD`), même cache invalidé à l'enregistrement.
+  - **Plein écran** (`LiveKitRoomEmbed.tsx`) : bouton en haut à droite de la visio, utilise
+    `element.requestFullscreen()`/`document.exitFullscreen()` (même pattern que `LessonPage.tsx`).
+  - **Visibilité publique/privée** (`live_sessions.visibility`, table `live_session_invitees`,
+    migration `013_live_session_visibility_and_recording.sql`) : une session privée n'est visible
+    (liste, détail, join, token) que par son organisateur, ses invités explicites, ou les inscrits
+    au cours associé — combinés via `VISIBILITY_CLAUSE` dans `live-session.routes.ts`. Une session
+    privée inaccessible renvoie **404**, jamais 403, pour ne pas révéler son existence. UI admin :
+    sélecteur "Visibilité" + liste à cocher des invités dans `AdminLiveSessionsPage.tsx`. Validé en
+    direct le 2026-08-12 : session privée créée avec un invité, confirmée invisible (404 + absente
+    de la liste) pour un utilisateur tiers non invité/non inscrit.
+  - **Enregistrement (LiveKit Egress) — nécessite un bucket S3-compatible, non fourni.**
+    `RecordingService`/`recording_storage_settings` (même migration `013_...sql`) suit le même
+    pattern per-tenant que `LiveKitService`, **sans fallback global** : contrairement au projet
+    LiveKit lui-même, un bucket d'enregistrement est spécifique au tenant, donc rien ne s'active
+    tant qu'un admin n'a pas renseigné bucket/région/clés dans `/settings/recording-storage`.
+    `POST /live-sessions/:id/recording/start` et `.../stop` (organisateur/manager uniquement)
+    pilotent `EgressClient.startRoomCompositeEgress`/`stopEgress`. Le statut final
+    (`completed`/`failed`) et l'URL de la vidéo sont posés de façon fiable par le webhook entrant
+    `POST /webhooks/livekit` (event `egress_ended`), pas par la réponse synchrone de `stop` — voir
+    `webhook.routes.ts`. **Limite connue** : la vérification de signature du webhook utilise
+    uniquement `LIVEKIT_API_KEY`/`SECRET` globaux (pas de fallback par tenant comme pour le token
+    LiveKit) ; ok pour ce déploiement où tous les tenants partagent le même projet LiveKit Cloud,
+    mais à revoir si un tenant a un jour son propre projet. **Non testé avec un vrai bucket** (code
+    complet, `tsc`/tests verts, mais aucun identifiant S3 réel fourni) — l'UI frontend
+    (bouton d'enregistrement + page de réglages du stockage) reste à câbler.
 
 ---
 

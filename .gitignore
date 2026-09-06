@@ -19,3 +19,10 @@ db/*.bacpac
 
 # Live-schema introspection dumps (regenerate via db/scripts/dump_mssql_schema.js)
 db/scripts/.tmp
+
+# Test run artifacts
+frontend/coverage
+frontend/test-results
+frontend/playwright-report
+frontend/blob-report
+frontend/playwright/.cache

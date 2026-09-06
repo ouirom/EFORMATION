@@ -1,11 +1,14 @@
 import { Router } from 'express';
 import { body, validationResult } from 'express-validator';
 import crypto from 'crypto';
+import { WebhookReceiver } from 'livekit-server-sdk';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.middleware';
 import { DatabaseService } from '../services/database.service';
 import { BadRequestError, NotFoundError } from '../middleware/error.middleware';
 import { logger } from '../utils/logger';
 import { db, IS_PG } from '../database/db-helpers';
+import { config } from '../config';
+import { parsePagination, buildPaginationMeta } from '../utils/pagination';
 
 const router = Router();
 
@@ -327,9 +330,7 @@ router.post('/:id/regenerate-secret', authenticate, authorize('admin'), async (r
 router.get('/:id/deliveries', authenticate, authorize('admin'), async (req: AuthRequest, res, next) => {
   try {
     const webhookId = parseInt(req.params.id, 10);
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
-    const offset = (page - 1) * limit;
+    const { page, limit, offset } = parsePagination(req, { defaultLimit: 20, maxLimit: 100 });
 
     const [countResult, deliveries] = await Promise.all([
       DatabaseService.query<{ total: number }>(
@@ -348,12 +349,7 @@ router.get('/:id/deliveries', authenticate, authorize('admin'), async (req: Auth
     res.json({
       success: true,
       data: deliveries,
-      meta: {
-        page,
-        limit,
-        total: countResult[0].total,
-        totalPages: Math.ceil(countResult[0].total / limit),
-      },
+      meta: buildPaginationMeta(countResult[0].total, page, limit),
     });
   } catch (error) {
     next(error);
@@ -400,6 +396,51 @@ router.post('/:id/deliveries/:deliveryId/retry', authenticate, authorize('admin'
     });
   } catch (error) {
     next(error);
+  }
+});
+
+/**
+ * @route POST /api/v1/webhooks/livekit
+ * @desc Inbound webhook from LiveKit (Egress lifecycle events). Not authenticated
+ *       via our JWT middleware -- LiveKit signs the payload itself and we verify
+ *       that signature instead. Only egress_ended is acted on; other event types
+ *       are accepted and ignored.
+ *
+ *       Limitation: signature verification uses the single global LIVEKIT_API_KEY/
+ *       SECRET (env), not a per-tenant livekit_settings override. A tenant running
+ *       its own LiveKit project (different keys) would need its own webhook
+ *       endpoint/project-level config -- not needed for this deployment today,
+ *       where every tenant shares the one LiveKit Cloud project.
+ */
+router.post('/livekit', async (req: any, res, next) => {
+  try {
+    if (!config.livekit.apiKey || !config.livekit.apiSecret) {
+      // Not configured -- nothing meaningful to verify against; ack so LiveKit stops retrying.
+      res.status(200).json({ success: true });
+      return;
+    }
+
+    const receiver = new WebhookReceiver(config.livekit.apiKey, config.livekit.apiSecret);
+    const event = await receiver.receive(req.rawBody || JSON.stringify(req.body), req.headers.authorization);
+
+    if (event.event === 'egress_ended' && event.egressInfo) {
+      const egressId = event.egressInfo.egressId;
+      const failed = event.egressInfo.error && event.egressInfo.error.length > 0;
+      const recordingUrl = event.egressInfo.fileResults?.[0]?.location || null;
+
+      await DatabaseService.execute(
+        `UPDATE live_recordings SET
+           status = @status, ended_at = ${db.now()}, recording_url = @recordingUrl
+         WHERE egress_id = @egressId`,
+        { egressId, status: failed ? 'failed' : 'completed', recordingUrl }
+      );
+    }
+
+    res.status(200).json({ success: true });
+  } catch (error) {
+    logger.error('LiveKit webhook processing failed', { error });
+    // Still 200 -- a malformed/unverifiable payload isn't something LiveKit can fix by retrying.
+    res.status(200).json({ success: false });
   }
 });
 

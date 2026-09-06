@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/services/api'
@@ -34,17 +35,8 @@ const typeIcons: Record<string, React.ComponentType<any>> = {
   user: Users,
 }
 
-const typeLabels: Record<string, string> = {
-  course: 'Formation',
-  lesson: 'Leçon',
-  quiz: 'Quiz',
-  blog: 'Article',
-  badge: 'Badge',
-  live_session: 'Session live',
-  user: 'Utilisateur',
-}
-
 export function QuickSearch() {
+  const { t } = useTranslation('shared')
   const navigate = useNavigate()
   const containerRef = useRef<HTMLDivElement>(null)
   const [input, setInput] = useState('')
@@ -103,7 +95,7 @@ export function QuickSearch() {
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
             type="search"
-            placeholder="Rechercher..."
+            placeholder={t('quickSearch.placeholder')}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onFocus={() => setIsOpen(true)}
@@ -117,11 +109,11 @@ export function QuickSearch() {
           {isFetching ? (
             <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Recherche en cours...
+              {t('quickSearch.searching')}
             </div>
           ) : results.length === 0 ? (
             <div className="py-6 text-center text-sm text-muted-foreground">
-              Aucun résultat pour "{debouncedQuery}"
+              {t('quickSearch.noResults', { query: debouncedQuery })}
             </div>
           ) : (
             <>
@@ -145,7 +137,7 @@ export function QuickSearch() {
                           )}
                         </span>
                         <span className="shrink-0 text-xs text-muted-foreground">
-                          {typeLabels[result.type] || result.type}
+                          {t(`quickSearch.types.${result.type}`, { defaultValue: result.type })}
                         </span>
                       </button>
                     </li>
@@ -157,7 +149,7 @@ export function QuickSearch() {
                 onClick={goToFullSearch}
                 className="w-full border-t px-3 py-2 text-center text-sm text-primary hover:bg-muted"
               >
-                Voir tous les résultats pour "{debouncedQuery}"
+                {t('quickSearch.viewAllResults', { query: debouncedQuery })}
               </button>
             </>
           )}

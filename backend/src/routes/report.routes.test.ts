@@ -1,0 +1,123 @@
+import express from 'express';
+import request from 'supertest';
+import jwt from 'jsonwebtoken';
+import reportRoutes from './report.routes';
+import { DatabaseService } from '../services/database.service';
+import { errorHandler } from '../middleware/error.middleware';
+import { config } from '../config';
+
+jest.mock('../services/database.service');
+
+const mockedQuery = DatabaseService.query as jest.Mock;
+
+function makeApp() {
+  const app = express();
+  app.use(express.json());
+  app.use('/reports', reportRoutes);
+  app.use(errorHandler);
+  return app;
+}
+
+function mockAuthLookup() {
+  return {
+    id: 1, tenant_id: 10, email: 'admin@test.com', display_name: 'Admin',
+    avatar_url: null, role: 'admin', enterprise_id: null, direction_id: null, service_id: null, is_active: true,
+  };
+}
+
+const adminToken = jwt.sign({ id: 1, tenantId: 10, email: 'admin@test.com', role: 'admin' }, config.jwt.secret);
+
+// Regression coverage: enrollments only has progress_percent/enrolled_at columns
+// (no progress/started_at -- see db/bci_lms_schema_postgres.sql), but four of
+// these report types referenced the wrong names and 500'd unconditionally
+// whenever generated. Each case here asserts the actual query text uses the
+// real column names.
+describe('POST /reports/generate uses real enrollments column names', () => {
+  const cases: Array<{ reportType: string; mustContain: string[]; mustNotContain: string[] }> = [
+    {
+      reportType: 'user_progress',
+      mustContain: ['en.progress_percent'],
+      mustNotContain: ['en.progress)', 'en.progress '],
+    },
+    {
+      reportType: 'course_completion',
+      mustContain: ['e.progress_percent', 'e.enrolled_at'],
+      mustNotContain: ['e.progress)', 'e.started_at'],
+    },
+    {
+      reportType: 'enrollment_summary',
+      mustContain: ['e.enrolled_at'],
+      mustNotContain: ['e.started_at'],
+    },
+    {
+      reportType: 'organization_overview',
+      mustContain: ['en.progress_percent'],
+      mustNotContain: ['en.progress)'],
+    },
+    {
+      // quizzes has no course_id column -- must reach courses via lesson -> module
+      reportType: 'quiz_performance',
+      mustContain: ['LEFT JOIN lessons l ON q.lesson_id = l.id', 'LEFT JOIN modules m ON l.module_id = m.id', 'LEFT JOIN courses c ON m.course_id = c.id'],
+      mustNotContain: ['q.course_id'],
+    },
+    {
+      // audit_logs has entity/entity_id, not resource_type/resource_id/ip_address
+      reportType: 'activity_log',
+      mustContain: ['al.entity', 'al.entity_id'],
+      mustNotContain: ['al.resource_type', 'al.resource_id', 'al.ip_address'],
+    },
+  ];
+
+  for (const { reportType, mustContain, mustNotContain } of cases) {
+    it(`${reportType} query references real columns`, async () => {
+      mockedQuery.mockImplementation((query: string) => {
+        if (query.includes('FROM users WHERE id = @id')) return Promise.resolve([mockAuthLookup()]);
+        return Promise.resolve([]);
+      });
+
+      const response = await request(makeApp())
+        .post('/reports/generate')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ reportType, format: 'json' });
+
+      expect(response.status).toBe(200);
+      const dataQuery = mockedQuery.mock.calls.find(([q]: [string]) => !q.includes('FROM users WHERE id = @id'))?.[0] || '';
+      for (const fragment of mustContain) {
+        expect(dataQuery).toContain(fragment);
+      }
+      for (const fragment of mustNotContain) {
+        expect(dataQuery).not.toContain(fragment);
+      }
+    });
+  }
+});
+
+// Regression coverage: with a date range supplied, the bare `created_at` filter
+// used to be ambiguous whenever more than one joined table has a created_at
+// column (e.g. users + enterprises, or quizzes + lessons + courses), which
+// only surfaced once startDate/endDate were actually passed.
+describe('POST /reports/generate qualifies the date filter when multiple joined tables have created_at', () => {
+  const cases = [
+    { reportType: 'user_progress', qualifiedColumn: 'u.created_at' },
+    { reportType: 'quiz_performance', qualifiedColumn: 'q.created_at' },
+  ];
+
+  for (const { reportType, qualifiedColumn } of cases) {
+    it(`${reportType} qualifies created_at as ${qualifiedColumn} when a date range is given`, async () => {
+      mockedQuery.mockImplementation((query: string) => {
+        if (query.includes('FROM users WHERE id = @id')) return Promise.resolve([mockAuthLookup()]);
+        return Promise.resolve([]);
+      });
+
+      const response = await request(makeApp())
+        .post('/reports/generate')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ reportType, format: 'json', startDate: '2026-01-01', endDate: '2026-12-31' });
+
+      expect(response.status).toBe(200);
+      const dataQuery = mockedQuery.mock.calls.find(([q]: [string]) => !q.includes('FROM users WHERE id = @id'))?.[0] || '';
+      expect(dataQuery).toContain(`${qualifiedColumn} BETWEEN`);
+      expect(dataQuery).not.toMatch(/[^.]\bcreated_at BETWEEN/);
+    });
+  }
+});

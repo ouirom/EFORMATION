@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -19,6 +20,9 @@ import {
 } from 'lucide-react'
 import { api } from '@/services/api'
 import { LiveKitRoomEmbed } from '@/components/LiveKitRoomEmbed'
+import { useAuth } from '@/contexts/AuthContext'
+
+const MANAGER_ROLES = ['super_admin', 'admin', 'director', 'manager']
 
 const statusColors: Record<string, string> = {
   scheduled: 'bg-blue-100 text-blue-800',
@@ -26,14 +30,16 @@ const statusColors: Record<string, string> = {
   ended: 'bg-gray-100 text-gray-800',
 }
 
-const statusLabels: Record<string, string> = {
-  scheduled: 'Programmée',
-  live: 'En direct',
-  ended: 'Terminée',
-}
-
 export default function LiveSessionDetailPage() {
+  const { t } = useTranslation('live')
+  const { t: tCommon } = useTranslation('common')
+  const statusLabels: Record<string, string> = {
+    scheduled: t('list.status.scheduled'),
+    live: t('list.status.live'),
+    ended: t('list.status.ended'),
+  }
   const { id } = useParams<{ id: string }>()
+  const { user } = useAuth()
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const [hasJoined, setHasJoined] = useState(false)
@@ -52,13 +58,13 @@ export default function LiveSessionDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['live-session', id] })
       queryClient.invalidateQueries({ queryKey: ['live-sessions'] })
       toast({
-        title: 'Succès',
+        title: tCommon('status.success'),
         description:
-          session?.status === 'live' ? 'Vous avez rejoint la session' : 'Inscription confirmée',
+          session?.status === 'live' ? t('detail.youJoined') : t('detail.enrollmentConfirmed'),
       })
     },
     onError: () => {
-      toast({ title: 'Erreur', description: "Impossible de rejoindre la session", variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: t('detail.enrollErrorDescription'), variant: 'destructive' })
     },
   })
 
@@ -69,9 +75,9 @@ export default function LiveSessionDetailPage() {
   if (!session) {
     return (
       <div className="text-center py-12">
-        <h2 className="text-xl font-semibold mb-2">Session introuvable</h2>
+        <h2 className="text-xl font-semibold mb-2">{t('detail.notFound2')}</h2>
         <Link to="/live" className="text-primary hover:underline">
-          Retour aux sessions live
+          {t('detail.backToSessions')}
         </Link>
       </div>
     )
@@ -81,7 +87,7 @@ export default function LiveSessionDetailPage() {
     <div className={`space-y-6 ${inEmbeddedRoom ? 'max-w-6xl' : 'max-w-3xl'}`}>
       <Link to="/live" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground">
         <ArrowLeft className="h-4 w-4" />
-        Retour aux sessions live
+        {t('detail.backToSessions')}
       </Link>
 
       <Card>
@@ -103,18 +109,18 @@ export default function LiveSessionDetailPage() {
         <CardContent className="space-y-6">
           <div className="flex items-center gap-3">
             <Avatar className="h-10 w-10">
-              <AvatarFallback>{getInitials(session.instructorName || 'Formateur')}</AvatarFallback>
+              <AvatarFallback>{getInitials(session.instructorName || t('detail.defaultInstructorLabel'))}</AvatarFallback>
             </Avatar>
             <div>
-              <p className="font-medium">{session.instructorName || 'Formateur non assigné'}</p>
-              <p className="text-xs text-muted-foreground">Formateur</p>
+              <p className="font-medium">{session.instructorName || t('detail.noInstructorAssigned')}</p>
+              <p className="text-xs text-muted-foreground">{t('detail.defaultInstructorLabel')}</p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
             <span className="flex items-center gap-1">
               <Calendar className="h-4 w-4" />
-              {session.scheduledAt ? formatDate(session.scheduledAt) : 'Non planifiée'}
+              {session.scheduledAt ? formatDate(session.scheduledAt) : t('detail.notScheduled')}
             </span>
             {session.duration && (
               <span className="flex items-center gap-1">
@@ -124,14 +130,13 @@ export default function LiveSessionDetailPage() {
             )}
             <span className="flex items-center gap-1">
               <Users className="h-4 w-4" />
-              {session.currentParticipants}
-              {session.maxParticipants ? `/${session.maxParticipants}` : ''} participants
+              {t('detail.participantsCountWithMax', { count: session.currentParticipants, max: session.maxParticipants ? `/${session.maxParticipants}` : '' })}
             </span>
           </div>
 
           {session.participants && session.participants.length > 0 && (
             <div>
-              <p className="text-sm font-medium mb-2">Participants</p>
+              <p className="text-sm font-medium mb-2">{t('detail.participantsLabel')}</p>
               <div className="flex flex-wrap gap-2">
                 {session.participants.map((p: any) => (
                   <Badge key={p.user_id} variant="outline" className="font-normal">
@@ -148,12 +153,12 @@ export default function LiveSessionDetailPage() {
                 <a href={session.recordingUrl} target="_blank" rel="noopener noreferrer">
                   <Button>
                     <ExternalLink className="h-4 w-4 mr-2" />
-                    Voir l'enregistrement
+                    {t('detail.watchRecording')}
                   </Button>
                 </a>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  Cette session est terminée, aucun enregistrement n'est disponible.
+                  {t('detail.sessionEnded')}
                 </p>
               )
             ) : session.status === 'live' ? (
@@ -161,24 +166,28 @@ export default function LiveSessionDetailPage() {
                 <a href={session.meetingUrl} target="_blank" rel="noopener noreferrer">
                   <Button onClick={() => !hasJoined && joinMutation.mutate()}>
                     <ExternalLink className="h-4 w-4 mr-2" />
-                    Ouvrir la réunion
+                    {t('detail.openMeeting')}
                   </Button>
                 </a>
               ) : inEmbeddedRoom ? (
-                <LiveKitRoomEmbed sessionId={Number(id)} onLeave={() => setInEmbeddedRoom(false)} />
+                <LiveKitRoomEmbed
+                  sessionId={Number(id)}
+                  onLeave={() => setInEmbeddedRoom(false)}
+                  isOrganizer={!!user && (user.id === session.instructorId || MANAGER_ROLES.includes(user.role))}
+                />
               ) : (
                 <Button onClick={() => setInEmbeddedRoom(true)}>
                   <Play className="h-4 w-4 mr-2" />
-                  Rejoindre
+                  {t('detail.join')}
                 </Button>
               )
             ) : hasJoined ? (
               <p className="text-sm text-muted-foreground">
-                Vous êtes inscrit(e). La session commencera le {formatDate(session.scheduledAt)}.
+                {t('detail.enrolledWaiting', { date: formatDate(session.scheduledAt) })}
               </p>
             ) : (
               <Button onClick={() => joinMutation.mutate()} disabled={joinMutation.isPending}>
-                {joinMutation.isPending ? 'Inscription...' : "S'inscrire"}
+                {joinMutation.isPending ? t('detail.enrolling') : t('detail.enroll')}
               </Button>
             )}
           </div>

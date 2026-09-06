@@ -64,7 +64,7 @@ describe('POST /live-sessions/:id/livekit-token', () => {
   it('rejects when the session is not currently live', async () => {
     mockedQuery.mockImplementation((query: string) => {
       if (query.includes('FROM users WHERE id = @id')) return Promise.resolve([mockAuthLookup()]);
-      if (query.includes('SELECT id, status, organizer_id')) {
+      if (query.includes('SELECT ls.id, ls.status, ls.organizer_id')) {
         return Promise.resolve([{ id: 1, status: 'scheduled', organizer_id: 2 }]);
       }
       return Promise.resolve([]);
@@ -81,7 +81,7 @@ describe('POST /live-sessions/:id/livekit-token', () => {
   it('mints a token for a new attendee and registers them as a participant', async () => {
     mockedQuery.mockImplementation((query: string) => {
       if (query.includes('FROM users WHERE id = @id')) return Promise.resolve([mockAuthLookup()]);
-      if (query.includes('SELECT id, status, organizer_id')) {
+      if (query.includes('SELECT ls.id, ls.status, ls.organizer_id')) {
         return Promise.resolve([{ id: 1, status: 'live', organizer_id: 2 }]);
       }
       if (query.includes('SELECT session_id FROM live_participants')) return Promise.resolve([]);
@@ -115,7 +115,7 @@ describe('POST /live-sessions/:id/livekit-token', () => {
       if (query.includes('FROM users WHERE id = @id')) {
         return Promise.resolve([mockAuthLookup({ id: 2, email: 'organizer@test.com', role: 'manager', display_name: 'Organizer Name' })]);
       }
-      if (query.includes('SELECT id, status, organizer_id')) {
+      if (query.includes('SELECT ls.id, ls.status, ls.organizer_id')) {
         return Promise.resolve([{ id: 1, status: 'live', organizer_id: 2 }]);
       }
       // Already a participant -- the host row inserted at session creation.
@@ -144,7 +144,7 @@ describe('POST /live-sessions/:id/livekit-token', () => {
       if (query.includes('FROM users WHERE id = @id')) {
         return Promise.resolve([mockAuthLookup({ id: 9, tenant_id: 99, email: 'other@test.com', display_name: 'Other Tenant User' })]);
       }
-      if (query.includes('SELECT id, status, organizer_id')) {
+      if (query.includes('SELECT ls.id, ls.status, ls.organizer_id')) {
         return Promise.resolve([{ id: 1, status: 'live', organizer_id: 9 }]);
       }
       if (query.includes('SELECT session_id FROM live_participants')) return Promise.resolve([]);
@@ -168,7 +168,7 @@ describe('POST /live-sessions/:id/livekit-token', () => {
       if (query.includes('FROM users WHERE id = @id')) {
         return Promise.resolve([mockAuthLookup({ id: 20, tenant_id: 55, email: 'override@test.com', display_name: 'Override Tenant User' })]);
       }
-      if (query.includes('SELECT id, status, organizer_id')) {
+      if (query.includes('SELECT ls.id, ls.status, ls.organizer_id')) {
         return Promise.resolve([{ id: 1, status: 'live', organizer_id: 2 }]);
       }
       if (query.includes('SELECT * FROM livekit_settings')) {

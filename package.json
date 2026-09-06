@@ -41,5 +41,8 @@
     "video-conferencing"
   ],
   "license": "PROPRIETARY",
-  "author": "EFormation Team"
+  "author": "EFormation Team",
+  "dependencies": {
+    "zod": "^4.4.3"
+  }
 }

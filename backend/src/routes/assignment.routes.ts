@@ -5,7 +5,11 @@ import { authenticate, authorize, AuthRequest } from '../middleware/auth.middlew
 import { BadRequestError, NotFoundError } from '../middleware/error.middleware';
 import { AuditService } from '../services/audit.service';
 import { ReminderService } from '../services/reminder.service';
+import { PendingNotificationService } from '../services/pending-notification.service';
 import { db, IS_PG } from '../database/db-helpers';
+import { config } from '../config';
+import { logger } from '../utils/logger';
+import { teamAssignmentClause, teamAssignmentClauseForUserRow } from '../utils/teamAssignment';
 
 const router = Router();
 
@@ -158,18 +162,21 @@ router.get('/', authenticate, authorize('admin', 'director', 'manager'), async (
     }
 
     const assignments = await DatabaseService.query<any>(
-      `SELECT ca.*, 
+      `SELECT ca.*,
               c.title as course_title,
+              l.title as lesson_title,
               u.display_name as assigned_by_name,
-              CASE 
-                WHEN ca.assignment_type = 'user' THEN (SELECT display_name FROM users WHERE id = ca.target_id)
-                WHEN ca.assignment_type = 'enterprise' THEN (SELECT name FROM enterprises WHERE id = ca.target_id)
-                WHEN ca.assignment_type = 'direction' THEN (SELECT name FROM directions WHERE id = ca.target_id)
-                WHEN ca.assignment_type = 'service' THEN (SELECT name FROM services WHERE id = ca.target_id)
+              CASE
+                WHEN ca.assignment_type = 'user' THEN (SELECT display_name FROM users WHERE id = ca.target_id AND tenant_id = ca.tenant_id)
+                WHEN ca.assignment_type = 'enterprise' THEN (SELECT name FROM enterprises WHERE id = ca.target_id AND tenant_id = ca.tenant_id)
+                WHEN ca.assignment_type = 'direction' THEN (SELECT name FROM directions WHERE id = ca.target_id AND tenant_id = ca.tenant_id)
+                WHEN ca.assignment_type = 'service' THEN (SELECT name FROM services WHERE id = ca.target_id AND tenant_id = ca.tenant_id)
+                WHEN ca.assignment_type = 'team' THEN (SELECT name FROM teams WHERE id = ca.target_id AND tenant_id = ca.tenant_id)
                 ELSE NULL
               END as target_name
        FROM course_assignments ca
        JOIN courses c ON ca.course_id = c.id
+       LEFT JOIN lessons l ON ca.lesson_id = l.id
        LEFT JOIN users u ON ca.assigned_by = u.id
        ${whereClause}
        ORDER BY ca.created_at DESC`,
@@ -183,6 +190,8 @@ router.get('/', authenticate, authorize('admin', 'director', 'manager'), async (
         tenantId: a.tenant_id,
         courseId: a.course_id,
         courseTitle: a.course_title,
+        lessonId: a.lesson_id,
+        lessonTitle: a.lesson_title,
         assignmentType: a.assignment_type,
         targetId: a.target_id,
         targetName: a.target_name,
@@ -209,7 +218,8 @@ router.post(
   authorize('admin', 'director', 'manager'),
   [
     body('courseId').isInt(),
-    body('assignmentType').isIn(['user', 'enterprise', 'direction', 'service', 'role']),
+    body('lessonId').optional().isInt(),
+    body('assignmentType').isIn(['user', 'enterprise', 'direction', 'service', 'role', 'team']),
     body('targetIds').isArray({ min: 1 }),
     body('targetRole').optional().trim(),
     body('isMandatory').optional().isBoolean(),
@@ -219,46 +229,92 @@ router.post(
     try {
       validate(req);
 
-      const { courseId, assignmentType, targetIds, targetRole, isMandatory, dueDate } = req.body;
+      const { courseId, lessonId, assignmentType, targetIds, targetRole, isMandatory, dueDate } = req.body;
 
       // Check if course exists
-      const courseExists = await DatabaseService.query<any>(
-        `SELECT id FROM courses WHERE id = @courseId AND tenant_id = @tenantId`,
+      const courseExists = await DatabaseService.query<{ id: number; title: string }>(
+        `SELECT id, title FROM courses WHERE id = @courseId AND tenant_id = @tenantId`,
         { courseId, tenantId: req.user!.tenantId }
       );
 
       if (courseExists.length === 0) {
         throw NotFoundError('Course');
       }
+      const courseTitle = courseExists[0].title;
+
+      // When scoped to a single lesson (rather than the whole course), confirm that
+      // lesson actually belongs to this course before attributing anything to it.
+      let lessonTitle: string | null = null;
+      if (lessonId) {
+        const lessonRows = await DatabaseService.query<{ title: string }>(
+          `SELECT l.title FROM lessons l
+           JOIN modules m ON l.module_id = m.id
+           WHERE l.id = @lessonId AND m.course_id = @courseId AND l.tenant_id = @tenantId`,
+          { lessonId, courseId, tenantId: req.user!.tenantId }
+        );
+        if (lessonRows.length === 0) {
+          throw BadRequestError('This lesson does not belong to the given course', 'INVALID_LESSON');
+        }
+        lessonTitle = lessonRows[0].title;
+      }
+
+      // Validate every target belongs to the caller's tenant before inserting anything,
+      // so an assignment can never be created against another tenant's user/org unit.
+      if (assignmentType !== 'role') {
+        const targetTable =
+          assignmentType === 'user' ? 'users' :
+          assignmentType === 'enterprise' ? 'enterprises' :
+          assignmentType === 'direction' ? 'directions' :
+          assignmentType === 'service' ? 'services' : 'teams';
+
+        const placeholders = targetIds.map((_: any, i: number) => `@targetId${i}`).join(', ');
+        const params: Record<string, any> = { tenantId: req.user!.tenantId };
+        targetIds.forEach((id: any, i: number) => { params[`targetId${i}`] = id; });
+
+        const validTargets = await DatabaseService.query<{ id: number }>(
+          `SELECT id FROM ${targetTable} WHERE tenant_id = @tenantId AND id IN (${placeholders})`,
+          params
+        );
+
+        if (validTargets.length !== new Set(targetIds.map((id: any) => Number(id))).size) {
+          throw BadRequestError('One or more targets do not belong to this organization', 'INVALID_TARGET');
+        }
+      }
 
       const createdAssignments: Array<{ id: number; courseId: any; assignmentType: string; targetId: any }> = [];
 
       for (const targetId of targetIds) {
-        // Check if assignment already exists
+        // Check if assignment already exists -- lesson_id compared NULL-safely so a
+        // whole-course assignment and a specific-lesson assignment for the same
+        // course/target are treated as distinct, but re-submitting the exact same
+        // (course, lesson, target) is caught as a duplicate.
         const existing = await DatabaseService.query<any>(
-          `SELECT id FROM course_assignments 
-           WHERE tenant_id = @tenantId AND course_id = @courseId 
-           AND assignment_type = @assignmentType AND target_id = @targetId`,
+          `SELECT id FROM course_assignments
+           WHERE tenant_id = @tenantId AND course_id = @courseId
+           AND assignment_type = @assignmentType AND target_id = @targetId
+           AND (lesson_id = @lessonId OR (lesson_id IS NULL AND @lessonId${IS_PG ? '::bigint' : ''} IS NULL))`,
           {
             tenantId: req.user!.tenantId,
             courseId,
             assignmentType,
             targetId,
+            lessonId: lessonId || null,
           }
         );
 
         if (existing.length === 0) {
           const result = await DatabaseService.query<{ id: number }>(
             IS_PG
-              ? `INSERT INTO course_assignments (tenant_id, course_id, assignment_type, target_id, target_role, is_mandatory, due_date, assigned_by)
-                 VALUES (@tenantId, @courseId, @assignmentType, @targetId, @targetRole, @isMandatory, @dueDate, @assignedBy)
+              ? `INSERT INTO course_assignments (tenant_id, course_id, lesson_id, assignment_type, target_id, target_role, is_mandatory, due_date, assigned_by)
+                 VALUES (@tenantId, @courseId, @lessonId, @assignmentType, @targetId, @targetRole, @isMandatory, @dueDate, @assignedBy)
                  RETURNING id`
-              : `INSERT INTO course_assignments (tenant_id, course_id, assignment_type, target_id, target_role, is_mandatory, due_date, assigned_by)
+              : `INSERT INTO course_assignments (tenant_id, course_id, lesson_id, assignment_type, target_id, target_role, is_mandatory, due_date, assigned_by)
                  OUTPUT INSERTED.id
-                 VALUES (@tenantId, @courseId, @assignmentType, @targetId, @targetRole, @isMandatory, @dueDate, @assignedBy)`,
+                 VALUES (@tenantId, @courseId, @lessonId, @assignmentType, @targetId, @targetRole, @isMandatory, @dueDate, @assignedBy)`,
             {
               tenantId: req.user!.tenantId,
               courseId,
+              lessonId: lessonId || null,
               assignmentType,
               targetId,
               targetRole: targetRole || null,
@@ -286,10 +342,74 @@ router.post(
         });
       }
 
+      // Notify the affected learners -- queued rather than sent immediately.
+      // A single user assigned by id gets an immediate confirm dialog
+      // (Bucket A); anything broader (multiple targets, or a whole
+      // enterprise/direction/service/role) is queued for later review in the
+      // admin "File d'attente emails" page (Bucket B), since resolving a
+      // group can affect many users and no one admin is "confirming" each one.
+      let pendingNotification: { id: number; subject: string; recipientEmail: string } | null = null;
+      if (createdAssignments.length > 0) {
+        try {
+          const assignmentIds = createdAssignments.map((a) => a.id);
+          const placeholders = assignmentIds.map((_, i) => `@assignmentId${i}`).join(', ');
+          const params: Record<string, any> = { tenantId: req.user!.tenantId };
+          assignmentIds.forEach((id, i) => { params[`assignmentId${i}`] = id; });
+
+          const affectedUsers = await DatabaseService.query<{ id: number }>(
+            `SELECT DISTINCT u.id
+             FROM course_assignments ca
+             JOIN users u ON u.tenant_id = ca.tenant_id AND (
+               (ca.assignment_type = 'user' AND u.id = ca.target_id)
+               OR (ca.assignment_type = 'enterprise' AND u.enterprise_id = ca.target_id)
+               OR (ca.assignment_type = 'direction' AND u.direction_id = ca.target_id)
+               OR (ca.assignment_type = 'service' AND u.service_id = ca.target_id)
+               OR (ca.assignment_type = 'role' AND u.role = ca.target_role)
+               OR ${teamAssignmentClauseForUserRow('ca', 'u')}
+             )
+             WHERE ca.id IN (${placeholders}) AND ca.tenant_id = @tenantId AND u.is_active = ${db.bool(true)} AND u.deleted_at IS NULL`,
+            params
+          );
+
+          const subject = lessonId
+            ? `Une leçon vous a été attribuée : ${lessonTitle}`
+            : `Un cours vous a été attribué : ${courseTitle}`;
+          const body = lessonId
+            ? `Bonjour,\n\nLa leçon "${lessonTitle}" (cours "${courseTitle}") vous a été attribuée${isMandatory ? ' (obligatoire)' : ''}.${dueDate ? `\nÀ terminer avant le ${new Date(dueDate).toLocaleDateString('fr-FR')}.` : ''}`
+            : `Bonjour,\n\nLe cours "${courseTitle}" vous a été attribué${isMandatory ? ' (obligatoire)' : ''}.${dueDate ? `\nÀ terminer avant le ${new Date(dueDate).toLocaleDateString('fr-FR')}.` : ''}`;
+          const actionUrl = lessonId
+            ? `${config.frontendUrl}/courses/${courseId}/lessons/${lessonId}`
+            : `${config.frontendUrl}/courses/${courseId}`;
+
+          const queued = await Promise.all(
+            affectedUsers.map((u) =>
+              PendingNotificationService.queue({
+                tenantId: req.user!.tenantId,
+                userId: u.id,
+                eventType: 'course_assigned',
+                subject,
+                body,
+                actionUrl,
+                triggeredBy: req.user!.id,
+                metadata: { courseId, lessonId: lessonId || undefined, assignmentType },
+              })
+            )
+          );
+
+          const isSingleTargetedUser = assignmentType === 'user' && targetIds.length === 1;
+          if (isSingleTargetedUser && queued.length === 1) {
+            pendingNotification = queued[0];
+          }
+        } catch (error) {
+          logger.error('Failed to queue course-assignment emails', { error, courseId });
+        }
+      }
+
       res.status(201).json({
         success: true,
         data: createdAssignments,
         message: `${createdAssignments.length} assignment(s) created`,
+        pendingNotification,
       });
     } catch (error) {
       next(error);
@@ -394,6 +514,7 @@ router.get('/my-courses', authenticate, async (req: AuthRequest, res, next) => {
            OR (ca.assignment_type = 'direction' AND ca.target_id = @directionId)
            OR (ca.assignment_type = 'service' AND ca.target_id = @serviceId)
            OR (ca.assignment_type = 'role' AND ca.target_role = @userRole)
+           OR ${teamAssignmentClause('ca', 'userId', 'enterpriseId', 'directionId', 'serviceId')}
          )
        ORDER BY ca.is_mandatory DESC, ca.due_date ASC`,
       {
@@ -410,6 +531,7 @@ router.get('/my-courses', authenticate, async (req: AuthRequest, res, next) => {
       success: true,
       data: courses.map((c: any) => ({
         id: c.id,
+        publicId: c.public_id,
         title: c.title,
         description: c.description,
         category: c.category,

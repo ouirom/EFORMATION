@@ -26,7 +26,7 @@ function makeApp() {
 }
 
 function signResetToken(userId: number, overrides: Record<string, any> = {}) {
-  return jwt.sign({ userId, type: 'password_reset', ...overrides }, config.jwt.secret, { expiresIn: '1h' });
+  return jwt.sign({ userId, type: 'password_reset', tokenVersion: 0, ...overrides }, config.jwt.secret, { expiresIn: '1h' });
 }
 
 describe('POST /auth/forgot-password', () => {
@@ -80,7 +80,8 @@ describe('POST /auth/reset-password', () => {
     expect(mockedExecute).not.toHaveBeenCalled();
   });
 
-  it('updates the password hash for a valid token and complex password', async () => {
+  it('updates the password hash and bumps token_version for a valid token and complex password', async () => {
+    mockedQuery.mockResolvedValue([{ id: 5, token_version: 0 }]);
     mockedExecute.mockResolvedValue({ rowsAffected: 1 });
 
     const response = await request(makeApp())
@@ -92,6 +93,24 @@ describe('POST /auth/reset-password', () => {
       expect.stringContaining('UPDATE users SET password_hash'),
       expect.objectContaining({ userId: 5 })
     );
+    expect(mockedExecute).toHaveBeenCalledWith(
+      expect.stringContaining('token_version = token_version + 1'),
+      expect.anything()
+    );
+  });
+
+  it('rejects a token already consumed by an earlier reset (token_version no longer matches)', async () => {
+    // The account's token_version has since moved to 1 (e.g. a previous use of this
+    // same link, or a newer reset request) -- this token was signed against version 0.
+    mockedQuery.mockResolvedValue([{ id: 5, token_version: 1 }]);
+
+    const response = await request(makeApp())
+      .post('/auth/reset-password')
+      .send({ token: signResetToken(5, { tokenVersion: 0 }), newPassword: 'NewPassword123!' });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error.message).toBe('Invalid or expired reset token');
+    expect(mockedExecute).not.toHaveBeenCalled();
   });
 
   it('rejects a malformed/invalid token', async () => {
@@ -114,7 +133,7 @@ describe('POST /auth/reset-password', () => {
   });
 
   it('returns 404 when the token is valid but the user no longer exists', async () => {
-    mockedExecute.mockResolvedValue({ rowsAffected: 0 });
+    mockedQuery.mockResolvedValue([]);
 
     const response = await request(makeApp())
       .post('/auth/reset-password')

@@ -22,7 +22,7 @@ const validate = (req: any) => {
 router.get('/my', authenticate, async (req: AuthRequest, res, next) => {
   try {
     const enrollments = await DatabaseService.query<any>(
-      `SELECT e.id, e.course_id, c.title as course_title, e.progress_percent, e.enrolled_at, e.started_at, e.completed_at
+      `SELECT e.id, e.course_id, c.title as course_title, e.progress_percent, e.enrolled_at, e.completed_at
        FROM enrollments e
        JOIN courses c ON c.id = e.course_id
        WHERE e.tenant_id = @tenantId AND e.user_id = @userId
@@ -60,7 +60,7 @@ router.post(
       }
 
       const existing = await DatabaseService.query<any>(
-        `SELECT id, course_id, progress_percent, enrolled_at, started_at, completed_at
+        `SELECT id, course_id, progress_percent, enrolled_at, completed_at
          FROM enrollments WHERE course_id = @courseId AND user_id = @userId AND tenant_id = @tenantId`,
         { courseId, userId, tenantId }
       );
@@ -84,7 +84,7 @@ router.post(
       await AuditService.log(tenantId, userId, 'COURSE_ENROLLED', 'courses', courseId);
 
       const enrollment = await DatabaseService.query<any>(
-        `SELECT id, course_id, progress_percent, enrolled_at, started_at, completed_at
+        `SELECT id, course_id, progress_percent, enrolled_at, completed_at
          FROM enrollments WHERE id = @id`,
         { id: result[0].id }
       );

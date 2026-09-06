@@ -4,6 +4,7 @@ import { ModuleService } from '../services/course.service';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.middleware';
 import { BadRequestError } from '../middleware/error.middleware';
 import { DatabaseService } from '../services/database.service';
+import { resolveEntityId } from '../utils/resolvePublicId';
 
 const router = Router();
 
@@ -20,18 +21,19 @@ const validate = (req: any) => {
  */
 router.get('/', authenticate, async (req: AuthRequest, res, next) => {
   try {
-    const courseId = req.query.courseId as string;
-    if (!courseId) {
+    const rawCourseId = req.query.courseId as string;
+    if (!rawCourseId) {
       throw BadRequestError('courseId is required');
     }
+    const courseId = await resolveEntityId('courses', rawCourseId, req.user!.tenantId);
 
     const modules = await DatabaseService.query<any>(
-      `SELECT m.*, 
-              (SELECT COUNT(*) FROM lessons WHERE module_id = m.id) as lesson_count
-       FROM modules m 
-       WHERE m.course_id = @courseId AND m.tenant_id = @tenantId 
+      `SELECT m.*,
+              (SELECT COUNT(*) FROM lessons WHERE module_id = m.id AND deleted_at IS NULL) as lesson_count
+       FROM modules m
+       WHERE m.course_id = @courseId AND m.tenant_id = @tenantId
        ORDER BY m.position`,
-      { courseId: parseInt(courseId, 10), tenantId: req.user!.tenantId }
+      { courseId, tenantId: req.user!.tenantId }
     );
 
     res.json({ success: true, data: modules });

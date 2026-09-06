@@ -5,6 +5,7 @@ import { DatabaseService } from './database.service';
 import { db, IS_PG } from '../database/db-helpers';
 import { AuditService } from './audit.service';
 import { NotificationService } from './notification.service';
+import { PendingNotificationService } from './pending-notification.service';
 import { User, SSOIdentity, SSOProvider } from '../types';
 import { logger } from '../utils/logger';
 import { 
@@ -228,9 +229,10 @@ export class AuthService {
       service_id: number;
       is_active: boolean;
       status: string;
+      token_version: number;
     }>(
       `SELECT id, tenant_id, email, password_hash, display_name, avatar_url, role,
-              enterprise_id, direction_id, service_id, is_active, status
+              enterprise_id, direction_id, service_id, is_active, status, token_version
        FROM users
        WHERE email = @email
        ${data.tenantId ? 'AND tenant_id = @tenantId' : ''}
@@ -275,6 +277,7 @@ export class AuthService {
       tenantId: user.tenant_id,
       email: user.email,
       role: user.role,
+      tokenVersion: user.token_version,
       enterpriseId: user.enterprise_id,
       directionId: user.direction_id,
       serviceId: user.service_id,
@@ -324,8 +327,9 @@ export class AuthService {
         direction_id: number;
         service_id: number;
         is_active: boolean;
+        token_version: number;
       }>(
-        `SELECT id, tenant_id, email, role, enterprise_id, direction_id, service_id, is_active
+        `SELECT id, tenant_id, email, role, enterprise_id, direction_id, service_id, is_active, token_version
          FROM users WHERE id = @id AND deleted_at IS NULL`,
         { id: payload.id }
       );
@@ -336,11 +340,19 @@ export class AuthService {
 
       const user = users[0];
 
+      // A password reset bumps token_version, so a refresh token minted before the
+      // reset can never renew again -- closes the window where a leaked refresh
+      // token would otherwise keep working after the account owner reset their password.
+      if ((payload.tokenVersion ?? 0) !== user.token_version) {
+        throw UnauthorizedError('Invalid refresh token');
+      }
+
       return this.generateTokenPair({
         id: user.id,
         tenantId: user.tenant_id,
         email: user.email,
         role: user.role,
+        tokenVersion: user.token_version,
         enterpriseId: user.enterprise_id,
         directionId: user.direction_id,
         serviceId: user.service_id,
@@ -370,8 +382,8 @@ export class AuthService {
       throw NotFoundError('Tenant');
     }
 
-    const users = await DatabaseService.query<{ id: number; email: string }>(
-      `SELECT id, email FROM users WHERE id = @id AND role = 'super_admin' AND deleted_at IS NULL`,
+    const users = await DatabaseService.query<{ id: number; email: string; token_version: number }>(
+      `SELECT id, email, token_version FROM users WHERE id = @id AND role = 'super_admin' AND deleted_at IS NULL`,
       { id: currentUserId }
     );
     if (users.length === 0) {
@@ -383,6 +395,7 @@ export class AuthService {
       tenantId: targetTenantId,
       email: users[0].email,
       role: 'super_admin',
+      tokenVersion: users[0].token_version,
     });
 
     await AuditService.log(targetTenantId, users[0].id, 'SUPER_ADMIN_SWITCHED_TENANT', 'tenants', targetTenantId);
@@ -446,13 +459,18 @@ export class AuthService {
       } else {
         // Create new user
         if (!profile.tenantId) {
-          // Get default tenant
-          const defaultTenant = await DatabaseService.query<{ id: number }>(
-            IS_PG
-              ? 'SELECT id FROM tenants ORDER BY id LIMIT 1'
-              : 'SELECT TOP 1 id FROM tenants ORDER BY id'
+          // SSO is a single, global identity provider config for this backend instance,
+          // not per-tenant, so a new SSO identity can't be assigned to "the tenant it
+          // belongs to" -- resolve to the operator's explicit DEFAULT_TENANT_ID rather
+          // than silently picking whichever tenant happens to have the lowest id.
+          const configuredTenant = await DatabaseService.query<{ id: number }>(
+            `SELECT id FROM tenants WHERE id = @tenantId`,
+            { tenantId: config.defaultTenantId }
           );
-          tenantId = defaultTenant[0]?.id || 1;
+          if (configuredTenant.length === 0) {
+            throw UnauthorizedError('SSO login is not available: no default tenant is configured for auto-provisioning');
+          }
+          tenantId = configuredTenant[0].id;
         } else {
           tenantId = profile.tenantId;
         }
@@ -502,9 +520,10 @@ export class AuthService {
       enterprise_id: number;
       direction_id: number;
       service_id: number;
+      token_version: number;
     }>(
-      `SELECT id, tenant_id, email, display_name, role, 
-              enterprise_id, direction_id, service_id
+      `SELECT id, tenant_id, email, display_name, role,
+              enterprise_id, direction_id, service_id, token_version
        FROM users WHERE id = @userId`,
       { userId }
     );
@@ -516,6 +535,7 @@ export class AuthService {
       tenantId: user.tenant_id,
       email: user.email,
       role: user.role,
+      tokenVersion: user.token_version,
       enterpriseId: user.enterprise_id,
       directionId: user.direction_id,
       serviceId: user.service_id,
@@ -565,12 +585,19 @@ export class AuthService {
       }
       userId = existingUsers[0].id;
     } else {
-      const defaultTenant = await DatabaseService.query<{ id: number }>(
-        IS_PG
-          ? 'SELECT id FROM tenants ORDER BY id LIMIT 1'
-          : 'SELECT TOP 1 id FROM tenants ORDER BY id'
+      // LDAP is a single, global directory server for this whole backend instance
+      // (config.ldap.*, not per-tenant), so a newly-seen LDAP identity can't be
+      // assigned to "the tenant it belongs to" -- there's no such signal in an LDAP
+      // bind. Resolve to the operator's explicit DEFAULT_TENANT_ID rather than
+      // silently picking whichever tenant happens to have the lowest id.
+      const configuredTenant = await DatabaseService.query<{ id: number }>(
+        `SELECT id FROM tenants WHERE id = @tenantId`,
+        { tenantId: config.defaultTenantId }
       );
-      const tenantId = defaultTenant[0]?.id || config.defaultTenantId;
+      if (configuredTenant.length === 0) {
+        throw UnauthorizedError('LDAP login is not available: no default tenant is configured for auto-provisioning');
+      }
+      const tenantId = configuredTenant[0].id;
 
       const result = await DatabaseService.query<{ id: number }>(
         IS_PG
@@ -601,8 +628,9 @@ export class AuthService {
       enterprise_id: number;
       direction_id: number;
       service_id: number;
+      token_version: number;
     }>(
-      `SELECT id, tenant_id, email, display_name, role, enterprise_id, direction_id, service_id
+      `SELECT id, tenant_id, email, display_name, role, enterprise_id, direction_id, service_id, token_version
        FROM users WHERE id = @userId`,
       { userId }
     );
@@ -614,6 +642,7 @@ export class AuthService {
       tenantId: user.tenant_id,
       email: user.email,
       role: user.role,
+      tokenVersion: user.token_version,
       enterpriseId: user.enterprise_id,
       directionId: user.direction_id,
       serviceId: user.service_id,
@@ -644,7 +673,7 @@ export class AuthService {
     userId: number,
     currentPassword: string,
     newPassword: string
-  ): Promise<void> {
+  ): Promise<{ id: number; subject: string; recipientEmail: string } | null> {
     const users = await DatabaseService.query<{
       password_hash: string;
       tenant_id: number;
@@ -674,15 +703,31 @@ export class AuthService {
     );
 
     await AuditService.log(user.tenant_id, userId, 'PASSWORD_CHANGED', 'users', userId);
+
+    // Queue a confirmation email -- self-service, so the user confirms it
+    // themselves right away (triggeredBy = the same user).
+    try {
+      return await PendingNotificationService.queue({
+        tenantId: user.tenant_id,
+        userId,
+        eventType: 'password_changed',
+        subject: 'Votre mot de passe E-Formation a été modifié',
+        body: `Bonjour,\n\nLe mot de passe de votre compte E-Formation vient d'être modifié. Si vous n'êtes pas à l'origine de ce changement, contactez votre administrateur immédiatement.`,
+        triggeredBy: userId,
+      });
+    } catch (error) {
+      logger.error('Failed to queue password-changed email', { error, userId });
+      return null;
+    }
   }
 
   /**
    * Request password reset
    */
   static async requestPasswordReset(email: string, tenantId?: number): Promise<string> {
-    const users = await DatabaseService.query<{ id: number; tenant_id: number }>(
-      `SELECT id, tenant_id FROM users 
-       WHERE email = @email 
+    const users = await DatabaseService.query<{ id: number; tenant_id: number; token_version: number }>(
+      `SELECT id, tenant_id, token_version FROM users
+       WHERE email = @email
        ${tenantId ? 'AND tenant_id = @tenantId' : ''}
        AND deleted_at IS NULL`,
       { email, tenantId }
@@ -695,9 +740,11 @@ export class AuthService {
 
     const user = users[0];
 
-    // Generate reset token
+    // tokenVersion pins this reset link to the account's password state at the moment
+    // it was requested -- resetPassword() bumps it on use, so the same link can't be
+    // replayed, and a second "forgot password" request invalidates any earlier one.
     const resetToken = jwt.sign(
-      { userId: user.id, type: 'password_reset' },
+      { userId: user.id, type: 'password_reset', tokenVersion: user.token_version },
       config.jwt.secret,
       { expiresIn: '1h' }
     );
@@ -746,10 +793,29 @@ export class AuthService {
         throw BadRequestError('Invalid reset token');
       }
 
+      const users = await DatabaseService.query<{ id: number; token_version: number }>(
+        'SELECT id, token_version FROM users WHERE id = @userId',
+        { userId: payload.userId }
+      );
+      if (users.length === 0) {
+        throw NotFoundError('User');
+      }
+
+      // The token carries the token_version that was current when it was issued --
+      // if it no longer matches (already used, or superseded by a newer reset
+      // request), the token is a replay and must be rejected even though its
+      // signature and expiry are still valid.
+      if ((payload.tokenVersion ?? -1) !== users[0].token_version) {
+        throw BadRequestError('Invalid or expired reset token');
+      }
+
       const passwordHash = await bcrypt.hash(newPassword, config.bcryptRounds);
 
+      // Bump token_version in the same update: consumes this reset token and, since
+      // outstanding refresh tokens carry the old version too, signs the account out
+      // of every other session as well.
       const result = await DatabaseService.execute(
-        'UPDATE users SET password_hash = @passwordHash WHERE id = @userId',
+        'UPDATE users SET password_hash = @passwordHash, token_version = token_version + 1 WHERE id = @userId',
         { passwordHash, userId: payload.userId }
       );
 
@@ -780,18 +846,21 @@ export class AuthService {
     tenantId: number;
     email: string;
     role: string;
+    tokenVersion?: number;
     enterpriseId?: number;
     directionId?: number;
     serviceId?: number;
   }): TokenPair {
+    const { tokenVersion, ...accessPayload } = payload;
+
     // @ts-expect-error - jwt.sign overload resolution with dynamic expiresIn string type
-    const accessToken = jwt.sign(payload, config.jwt.secret, {
+    const accessToken = jwt.sign(accessPayload, config.jwt.secret, {
       expiresIn: config.jwt.expiresIn,
     });
 
     // @ts-expect-error - jwt.sign overload resolution with dynamic expiresIn string type
     const refreshToken = jwt.sign(
-      { id: payload.id, type: 'refresh' },
+      { id: payload.id, type: 'refresh', tokenVersion: tokenVersion ?? 0 },
       config.jwt.refreshSecret,
       { expiresIn: config.jwt.refreshExpiresIn }
     );

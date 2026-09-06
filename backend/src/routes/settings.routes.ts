@@ -8,6 +8,7 @@ import { BadRequestError } from '../middleware/error.middleware';
 import { NotificationService } from '../services/notification.service';
 import { InactivityPolicyService, INACTIVITY_POLICY_ROLES } from '../services/inactivity.service';
 import { LiveKitService } from '../services/livekit.service';
+import { RecordingService } from '../services/recording.service';
 
 const router = Router();
 
@@ -283,6 +284,113 @@ router.post('/livekit/test', authenticate, authorize('admin'), async (req: AuthR
     next(error);
   }
 });
+
+/**
+ * @route GET /api/v1/settings/recording-storage
+ * @desc Get the tenant's S3-compatible storage settings for live-session recordings (LiveKit Egress)
+ */
+router.get('/recording-storage', authenticate, authorize('admin'), async (req: AuthRequest, res, next) => {
+  try {
+    const tenantId = req.user!.tenantId;
+
+    const rows = await DatabaseService.query<any>(
+      'SELECT * FROM recording_storage_settings WHERE tenant_id = @tenantId',
+      { tenantId }
+    );
+
+    const settings = rows[0] || {
+      enabled: false,
+      bucket: '',
+      region: '',
+      endpoint: '',
+      access_key: '',
+      secret_key: null,
+    };
+
+    res.json({
+      success: true,
+      data: {
+        enabled: !!settings.enabled,
+        bucket: settings.bucket || '',
+        region: settings.region || '',
+        endpoint: settings.endpoint || '',
+        accessKey: settings.access_key || '',
+        // Never return the real secret; the frontend only re-sends it if the admin types a new one.
+        secretKey: settings.secret_key ? MASKED_PASSWORD : '',
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @route PUT /api/v1/settings/recording-storage
+ * @desc Update the tenant's recording storage settings
+ */
+router.put(
+  '/recording-storage',
+  authenticate,
+  authorize('admin'),
+  [
+    body('enabled').isBoolean(),
+    body('bucket').optional({ nullable: true }).isString(),
+    body('region').optional({ nullable: true }).isString(),
+    body('endpoint').optional({ nullable: true }).isString(),
+    body('accessKey').optional({ nullable: true }).isString(),
+    body('secretKey').optional({ nullable: true }).isString(),
+  ],
+  async (req: AuthRequest, res, next) => {
+    try {
+      validate(req);
+      const tenantId = req.user!.tenantId;
+
+      const existing = await DatabaseService.query<{ id: number; secret_key: string | null }>(
+        'SELECT id, secret_key FROM recording_storage_settings WHERE tenant_id = @tenantId',
+        { tenantId }
+      );
+
+      // Keep the stored secret if the client sent back the masked placeholder (i.e. didn't change it).
+      const incomingSecret = req.body.secretKey;
+      const secretKey =
+        incomingSecret === MASKED_PASSWORD || incomingSecret === undefined
+          ? existing[0]?.secret_key ?? null
+          : incomingSecret || null;
+
+      const params = {
+        tenantId,
+        enabled: req.body.enabled,
+        bucket: req.body.bucket || null,
+        region: req.body.region || null,
+        endpoint: req.body.endpoint || null,
+        accessKey: req.body.accessKey || null,
+        secretKey,
+      };
+
+      if (existing.length === 0) {
+        await DatabaseService.execute(
+          `INSERT INTO recording_storage_settings (tenant_id, enabled, bucket, region, endpoint, access_key, secret_key)
+           VALUES (@tenantId, @enabled, @bucket, @region, @endpoint, @accessKey, @secretKey)`,
+          params
+        );
+      } else {
+        await DatabaseService.execute(
+          `UPDATE recording_storage_settings SET
+             enabled = @enabled, bucket = @bucket, region = @region, endpoint = @endpoint,
+             access_key = @accessKey, secret_key = @secretKey, updated_at = ${db.now()}
+           WHERE tenant_id = @tenantId`,
+          params
+        );
+      }
+
+      RecordingService.invalidateRecordingStorageCache(tenantId);
+
+      res.json({ success: true, message: 'Recording storage settings updated' });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 /**
  * @route GET /api/v1/settings/inactivity-policies

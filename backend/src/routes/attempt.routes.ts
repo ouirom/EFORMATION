@@ -4,6 +4,9 @@ import { authenticate, AuthRequest } from '../middleware/auth.middleware';
 import { DatabaseService } from '../services/database.service';
 import { db, IS_PG } from '../database/db-helpers';
 import { BadRequestError, NotFoundError } from '../middleware/error.middleware';
+import { PendingNotificationService } from '../services/pending-notification.service';
+import { config } from '../config';
+import { logger } from '../utils/logger';
 
 const router = Router();
 
@@ -247,6 +250,25 @@ router.post(
         { attemptId, score, passed, timeSpent: timeSpent || 0 }
       );
 
+      // Queue a result notification -- the learner isn't the one reviewing
+      // their own result, so this always goes to the admin review queue
+      // rather than showing a confirm dialog.
+      try {
+        await PendingNotificationService.queue({
+          tenantId: req.user!.tenantId,
+          userId: req.user!.id,
+          eventType: 'quiz_result',
+          subject: passed ? `Quiz réussi : ${quiz.title}` : `Quiz échoué : ${quiz.title}`,
+          body: passed
+            ? `Bonjour,\n\nVous avez réussi le quiz "${quiz.title}" avec un score de ${score}% (seuil de réussite : ${quiz.passing_score}%). Félicitations !`
+            : `Bonjour,\n\nVous n'avez pas atteint le seuil de réussite du quiz "${quiz.title}" (score : ${score}%, seuil requis : ${quiz.passing_score}%). Vous pouvez retenter ce quiz.`,
+          actionUrl: `${config.frontendUrl}/quizzes/${quizId}`,
+          metadata: { attemptId, score, passed },
+        });
+      } catch (error) {
+        logger.error('Failed to queue quiz-result notification', { error, attemptId });
+      }
+
       // Get feedback for each question
       const feedback = await DatabaseService.query<any>(
         `SELECT qa.question_id, qa.is_correct as correct, qa.choice_id as selected_choice,
@@ -419,7 +441,7 @@ router.post('/:id/submit', authenticate, async (req: AuthRequest, res, next) => 
 
     // Verify attempt
     const attempts = await DatabaseService.query<any>(
-      `SELECT a.*, q.passing_score 
+      `SELECT a.*, q.passing_score, q.title as quiz_title
        FROM attempts a
        JOIN quizzes q ON a.quiz_id = q.id
        WHERE a.id = @attemptId AND a.user_id = @userId AND a.status = 'in_progress'`,
@@ -480,6 +502,22 @@ router.post('/:id/submit', authenticate, async (req: AuthRequest, res, next) => 
        WHERE id = @attemptId`,
       { attemptId, score }
     );
+
+    try {
+      await PendingNotificationService.queue({
+        tenantId: req.user!.tenantId,
+        userId: req.user!.id,
+        eventType: 'quiz_result',
+        subject: passed ? `Quiz réussi : ${attempt.quiz_title}` : `Quiz échoué : ${attempt.quiz_title}`,
+        body: passed
+          ? `Bonjour,\n\nVous avez réussi le quiz "${attempt.quiz_title}" avec un score de ${score}% (seuil de réussite : ${attempt.passing_score}%). Félicitations !`
+          : `Bonjour,\n\nVous n'avez pas atteint le seuil de réussite du quiz "${attempt.quiz_title}" (score : ${score}%, seuil requis : ${attempt.passing_score}%). Vous pouvez retenter ce quiz.`,
+        actionUrl: `${config.frontendUrl}/quizzes/${attempt.quiz_id}`,
+        metadata: { attemptId, score, passed },
+      });
+    } catch (error) {
+      logger.error('Failed to queue quiz-result notification', { error, attemptId });
+    }
 
     // Award badge if passed
     if (passed) {

@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import DOMPurify from 'dompurify'
+import { useTranslation } from 'react-i18next'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -7,6 +9,12 @@ import { Progress } from '@/components/ui/progress'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { PageLoading } from '@/components/ui/loading'
 import { useToast } from '@/components/ui/use-toast'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
+import { PresenceCheckDialog } from '@/components/PresenceCheckDialog'
+import { DocxViewer } from '@/components/DocxViewer'
+import { XlsxViewer } from '@/components/XlsxViewer'
+import { PptxViewer } from '@/components/PptxViewer'
+import { FavoriteButton } from '@/components/FavoriteButton'
 import {
   ArrowLeft,
   ArrowRight,
@@ -22,20 +30,23 @@ import {
   BookOpen,
   Clock,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   ClipboardCheck,
   Lock,
   Trophy,
+  Star,
+  MessageSquare,
+  Trash2,
+  Send,
 } from 'lucide-react'
 import { api } from '@/services/api'
 import { fileService } from '@/services/file.service'
-import { useSessionTimeoutContext, idleLimitForLessonDuration } from '@/contexts/SessionTimeoutContext'
-
-// <video>/<iframe> elements can't send an Authorization header, so the token
-// travels as a query param for this one streaming endpoint.
-function streamUrl(fileId: number) {
-  const token = localStorage.getItem('accessToken')
-  return `/api/v1/files/${fileId}/stream${token ? `?token=${encodeURIComponent(token)}` : ''}`
-}
+import { useSessionTimeoutContext } from '@/contexts/SessionTimeoutContext'
+import { idleLimitForLessonDuration } from '@/lib/idleLimit'
+import { useAuth } from '@/contexts/AuthContext'
+import { cn, formatDateTime } from '@/lib/utils'
+import { useStreamUrl } from '@/hooks/useStreamUrl'
 
 interface Content {
   id: number
@@ -53,6 +64,8 @@ interface Content {
 
 interface LessonData {
   id: number
+  public_id: string
+  course_id: number
   title: string
   type: 'video' | 'document' | 'link' | 'quiz' | 'text' | null
   duration_min: number
@@ -60,12 +73,15 @@ interface LessonData {
   module_id: number
   contents: Content[]
   quizzes: any[]
+  presence_check_percent: number | null
+  reset_time_on_reopen: boolean
+  allow_document_download: boolean
 }
 
 interface Module {
   id: number
   title: string
-  lessons: { id: number; title: string; type: string; duration_min: number; position: number }[]
+  lessons: { id: number; public_id: string; title: string; type: string; duration_min: number; position: number }[]
 }
 
 interface LessonProgress {
@@ -79,7 +95,10 @@ interface LessonProgress {
 }
 
 export default function LessonPage() {
+  const { t } = useTranslation('courses')
+  const { t: tCommon } = useTranslation('common')
   const { courseId, lessonId } = useParams()
+  const navigate = useNavigate()
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -87,25 +106,48 @@ export default function LessonPage() {
   const startTimeRef = useRef<number>(Date.now())
   const lastUpdateRef = useRef<number>(Date.now())
 
+  const { user } = useAuth()
+  const ratingPromptedRef = useRef(false)
+
   const [isPlaying, setIsPlaying] = useState(false)
   const [isMuted, setIsMuted] = useState(false)
   const [progress, setProgress] = useState(0)
   const [activeTab, setActiveTab] = useState('content')
   const [isPageFullscreen, setIsPageFullscreen] = useState(false)
+  const [showDetails, setShowDetails] = useState(true)
+  const [notesDraft, setNotesDraft] = useState('')
+  const [commentDraft, setCommentDraft] = useState('')
+  const [showRatingDialog, setShowRatingDialog] = useState(false)
+  const [ratingValue, setRatingValue] = useState(0)
+  const [ratingHover, setRatingHover] = useState(0)
+  const [ratingComment, setRatingComment] = useState('')
+  const [showPresenceCheck, setShowPresenceCheck] = useState(false)
+  const [presenceCountdown, setPresenceCountdown] = useState(15)
+  const presenceCheckShownRef = useRef(false)
+
+  // Fetch lesson data
+  const { data: lesson, isLoading: lessonLoading, error: lessonError } = useQuery<LessonData>({
+    queryKey: ['lesson', lessonId],
+    queryFn: async () => {
+      const response = await api.get(`/lessons/${lessonId}`)
+      return response.data.data
+    },
+  })
 
   // Fetch lesson progress
   const { data: lessonProgress } = useQuery<LessonProgress>({
     queryKey: ['lesson-progress', lessonId],
     queryFn: async () => {
-      const response = await api.get(`/lessons/${lessonId}/progress`)
+      const response = await api.get(`/lessons/${lesson!.id}/progress`)
       return response.data.data
     },
+    enabled: !!lesson,
   })
 
   // Start lesson tracking mutation
   const startLessonMutation = useMutation({
     mutationFn: async () => {
-      await api.post(`/lessons/${lessonId}/start`, { courseId: parseInt(courseId || '0') })
+      await api.post(`/lessons/${lesson!.id}/start`, { courseId: lesson!.course_id })
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['lesson-progress', lessonId] })
@@ -116,20 +158,92 @@ export default function LessonPage() {
   // Update progress mutation
   const updateProgressMutation = useMutation({
     mutationFn: async ({ progressPercent, timeSpentSeconds }: { progressPercent: number; timeSpentSeconds: number }) => {
-      await api.post(`/lessons/${lessonId}/progress`, { progressPercent, timeSpentSeconds })
+      await api.post(`/lessons/${lesson!.id}/progress`, { progressPercent, timeSpentSeconds })
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['lesson-progress', lessonId] })
     },
   })
 
-  // Fetch lesson data
-  const { data: lesson, isLoading: lessonLoading, error: lessonError } = useQuery<LessonData>({
-    queryKey: ['lesson', lessonId],
+  // Personal notes (private to the current user)
+  const { data: savedNote } = useQuery<{ body: string } | null>({
+    queryKey: ['lesson-notes', lessonId],
     queryFn: async () => {
-      const response = await api.get(`/lessons/${lessonId}`)
-      console.log('Lesson API response:', response.data)
+      const response = await api.get(`/lessons/${lesson!.id}/notes`)
       return response.data.data
+    },
+    enabled: !!lesson,
+  })
+
+  useEffect(() => {
+    setNotesDraft(savedNote?.body || '')
+  }, [savedNote])
+
+  const saveNotesMutation = useMutation({
+    mutationFn: async (body: string) => {
+      await api.put(`/lessons/${lesson!.id}/notes`, { body })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lesson-notes', lessonId] })
+      toast({ title: tCommon('status.success'), description: t('lesson.notesSavedDescription') })
+    },
+  })
+
+  // Shared discussion comments
+  interface LessonComment {
+    id: number
+    user_id: number
+    body: string
+    created_at: string
+    author_name?: string
+  }
+
+  const { data: comments = [] } = useQuery<LessonComment[]>({
+    queryKey: ['lesson-comments', lessonId],
+    queryFn: async () => {
+      const response = await api.get(`/lessons/${lesson!.id}/comments`)
+      return response.data.data || []
+    },
+    enabled: showDetails && !!lesson,
+  })
+
+  const addCommentMutation = useMutation({
+    mutationFn: async (body: string) => {
+      await api.post(`/lessons/${lesson!.id}/comments`, { body })
+    },
+    onSuccess: () => {
+      setCommentDraft('')
+      queryClient.invalidateQueries({ queryKey: ['lesson-comments', lessonId] })
+    },
+  })
+
+  const deleteCommentMutation = useMutation({
+    mutationFn: async (commentId: number) => {
+      await api.delete(`/lessons/${lesson!.id}/comments/${commentId}`)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lesson-comments', lessonId] })
+    },
+  })
+
+  // Optional star rating, prompted once when the lesson is first marked complete
+  const { data: existingEvaluation } = useQuery<{ rating: number; comment: string | null } | null>({
+    queryKey: ['lesson-evaluation', lessonId],
+    queryFn: async () => {
+      const response = await api.get(`/lessons/${lesson!.id}/evaluations/me`)
+      return response.data.data
+    },
+    enabled: !!lesson,
+  })
+
+  const submitEvaluationMutation = useMutation({
+    mutationFn: async ({ rating, comment }: { rating: number; comment?: string }) => {
+      await api.post(`/lessons/${lesson!.id}/evaluations`, { rating, comment })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lesson-evaluation', lessonId] })
+      setShowRatingDialog(false)
+      toast({ title: tCommon('status.success'), description: t('lesson.ratingThanks') })
     },
   })
 
@@ -138,7 +252,6 @@ export default function LessonPage() {
     queryKey: ['course-modules', courseId],
     queryFn: async () => {
       const response = await api.get(`/modules?courseId=${courseId}`)
-      console.log('Modules API response:', response.data)
       return response.data.data || []
     },
   })
@@ -152,8 +265,8 @@ export default function LessonPage() {
   }, [lesson?.duration_min, setIdleLimitOverrideMs])
 
   const completeMutation = useMutation({
-    mutationFn: async () => {
-      await api.post(`/lessons/${lessonId}/complete`, { courseId: parseInt(courseId || '0') })
+    mutationFn: async (_variables: { silent?: boolean } = {}) => {
+      await api.post(`/lessons/${lesson!.id}/complete`, { courseId: lesson!.course_id })
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['lesson', lessonId] })
@@ -162,13 +275,31 @@ export default function LessonPage() {
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
       queryClient.invalidateQueries({ queryKey: ['my-courses'] })
       
+      // Prompt for an optional star rating once, the first time this lesson
+      // reaches 'completed' -- guarded so the silent auto-complete call (fired
+      // on every video timeupdate tick past 90%) doesn't reopen it repeatedly.
+      if (!ratingPromptedRef.current && !existingEvaluation) {
+        ratingPromptedRef.current = true
+        setShowRatingDialog(true)
+      }
+
       // Check if lesson has quizzes
       const hasQuizzes = lesson?.quizzes && lesson.quizzes.length > 0
       toast({
-        title: 'Leçon terminée ! 🎉',
-        description: hasQuizzes 
-          ? 'Vous pouvez maintenant passer le quiz d\'évaluation.'
-          : 'Vous pouvez passer à la leçon suivante.',
+        title: t('lesson.completedToastTitle'),
+        description: hasQuizzes
+          ? t('lesson.completedToastWithQuiz')
+          : t('lesson.completedToastNoQuiz'),
+      })
+    },
+    onError: (error: any, variables) => {
+      // Swallow the auto-complete-at-90%-watched call (no explicit user action to
+      // react to); only surface the rejection when the user clicked the button.
+      if (variables?.silent) return
+      toast({
+        title: tCommon('status.error'),
+        description: error?.response?.data?.error?.message || tCommon('status.error'),
+        variant: 'destructive',
       })
     },
   })
@@ -186,41 +317,112 @@ export default function LessonPage() {
   useEffect(() => {
     const interval = setInterval(() => {
       const timeSpent = Math.floor((Date.now() - lastUpdateRef.current) / 1000)
-      if (timeSpent >= 30 && lessonProgress?.status !== 'completed') {
+      // Paused while the presence-check prompt is up -- the wait for a response
+      // isn't watched time (see the presence-check effect, which flushes real
+      // time up to the prompt and resets the ref on trigger/continue).
+      if (timeSpent >= 30 && lessonProgress?.status !== 'completed' && !showPresenceCheck) {
         // Update every 30 seconds
-        updateProgressMutation.mutate({ 
-          progressPercent: lessonProgress?.progress_percent || 0, 
-          timeSpentSeconds: timeSpent 
+        updateProgressMutation.mutate({
+          progressPercent: lessonProgress?.progress_percent || 0,
+          timeSpentSeconds: timeSpent
         })
         lastUpdateRef.current = Date.now()
       }
     }, 30000) // Check every 30 seconds
 
     return () => clearInterval(interval)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mutation object is recreated each render; only re-run when progress changes
-  }, [lessonProgress])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mutation object is recreated each render; only re-run when progress/prompt state changes
+  }, [lessonProgress, showPresenceCheck])
+
+  // "Are you still there?" presence check -- fires once per page load, part-way
+  // through the lesson (per-lesson configurable trigger point, as a percentage of
+  // duration_min), to catch a tab left open unattended while time keeps accumulating
+  // toward the completion gate. Based on time spent, not video-scrub position, since
+  // that's the only progress measure common to every lesson type.
+  useEffect(() => {
+    if (!lesson?.duration_min || !lesson.presence_check_percent) return
+    if (lessonProgress?.status === 'completed') return
+
+    const requiredSeconds = lesson.duration_min * 60
+    const checkInterval = setInterval(() => {
+      if (presenceCheckShownRef.current) return
+      const baseSeconds = lessonProgress?.time_spent_seconds || 0
+      const localElapsed = (Date.now() - lastUpdateRef.current) / 1000
+      const percent = ((baseSeconds + localElapsed) / requiredSeconds) * 100
+      if (percent >= (lesson.presence_check_percent as number)) {
+        presenceCheckShownRef.current = true
+
+        // Flush real watched time up to this moment, then reset the ref so the
+        // wait for a response isn't itself counted as watched time.
+        const elapsed = Math.floor((Date.now() - lastUpdateRef.current) / 1000)
+        if (elapsed > 0) {
+          updateProgressMutation.mutate({
+            progressPercent: lessonProgress?.progress_percent || 0,
+            timeSpentSeconds: elapsed,
+          })
+        }
+        lastUpdateRef.current = Date.now()
+
+        const video = videoRef.current
+        if (video && !video.paused) {
+          video.pause()
+          setIsPlaying(false)
+        }
+
+        setPresenceCountdown(15)
+        setShowPresenceCheck(true)
+      }
+    }, 5000)
+
+    return () => clearInterval(checkInterval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mutation object is recreated each render; only re-run when the lesson/progress identity changes
+  }, [lesson, lessonProgress])
+
+  // Countdown while the presence-check prompt is shown -- expiring it (no click)
+  // sends the learner back instead of letting the lesson silently keep "running".
+  useEffect(() => {
+    if (!showPresenceCheck) return
+    if (presenceCountdown <= 0) {
+      navigate(-1)
+      return
+    }
+    const timer = setTimeout(() => setPresenceCountdown((c) => c - 1), 1000)
+    return () => clearTimeout(timer)
+  }, [showPresenceCheck, presenceCountdown, navigate])
+
+  const handlePresenceContinue = () => {
+    setShowPresenceCheck(false)
+    // The wait itself doesn't count as watched/spent time.
+    lastUpdateRef.current = Date.now()
+    const video = videoRef.current
+    if (video && lesson?.type === 'video') {
+      video.play().catch(() => {})
+      setIsPlaying(true)
+    }
+  }
 
   // Save progress when leaving the page
   useEffect(() => {
+    if (!lesson) return
     const handleBeforeUnload = () => {
       const timeSpent = Math.floor((Date.now() - lastUpdateRef.current) / 1000)
       if (timeSpent > 5) {
         // Use sendBeacon for reliable tracking on page unload
-        const data = JSON.stringify({ 
-          progressPercent: progress, 
-          timeSpentSeconds: timeSpent 
+        const data = JSON.stringify({
+          progressPercent: progress,
+          timeSpentSeconds: timeSpent
         })
-        navigator.sendBeacon(`/api/v1/lessons/${lessonId}/progress`, data)
+        navigator.sendBeacon(`/api/v1/lessons/${lesson.id}/progress`, data)
       }
     }
 
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
-  }, [lessonId, progress])
+  }, [lesson, progress])
 
   // Find current lesson position - filter out undefined values
   const allLessons = modules.flatMap((m) => m.lessons || []).filter(Boolean)
-  const currentIndex = allLessons.findIndex((l) => l && l.id === parseInt(lessonId || '0'))
+  const currentIndex = allLessons.findIndex((l) => l && l.public_id === lessonId)
   const prevLesson = currentIndex > 0 ? allLessons[currentIndex - 1] : null
   const nextLesson = currentIndex < allLessons.length - 1 ? allLessons[currentIndex + 1] : null
 
@@ -233,9 +435,10 @@ export default function LessonPage() {
       const progressValue = (video.currentTime / video.duration) * 100
       setProgress(progressValue)
 
-      // Auto-complete when 90% watched
+      // Auto-complete when 90% watched (silently no-ops if the required lesson
+      // duration hasn't been reached yet -- see completeMutation's onError)
       if (progressValue >= 90) {
-        completeMutation.mutate()
+        completeMutation.mutate({ silent: true })
       }
     }
 
@@ -280,8 +483,8 @@ export default function LessonPage() {
     } else {
       el.requestFullscreen().catch(() => {
         toast({
-          title: 'Plein écran indisponible',
-          description: "Votre navigateur a refusé le passage en plein écran.",
+          title: t('lesson.fullscreenUnavailableTitle'),
+          description: t('lesson.fullscreenUnavailableDescription'),
           variant: 'destructive',
         })
       })
@@ -302,9 +505,72 @@ export default function LessonPage() {
     try {
       await fileService.downloadFile(fileId, filename)
     } catch {
-      toast({ title: 'Erreur', description: 'Impossible de télécharger le fichier', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: t('lesson.downloadError'), variant: 'destructive' })
     }
   }
+
+  // Helper function to check if URL is a video link
+  const isVideoUrl = (url: string): boolean => {
+    if (!url) return false
+    return url.includes('youtube.com') || url.includes('youtu.be') || url.includes('vimeo.com') || url.endsWith('.mp4')
+  }
+
+  // Helper function to check if URL is a document link
+  const isDocumentUrl = (url: string): boolean => {
+    if (!url) return false
+    return url.includes('docs.google.com') || url.endsWith('.pdf') || url.endsWith('.docx') || url.endsWith('.doc')
+  }
+
+  // The stored `contents.type` is a coarse classifier that doesn't reliably
+  // reflect the real file format for an uploaded document (every uploaded file
+  // is inserted with type='pdf' regardless of its actual type -- see
+  // AdminCourseEditPage.tsx's createLessonMutation). mime_type is what's
+  // actually accurate and what the viewer branching below keys off of, so the
+  // label shown to the user must be derived from it too, not from `type`.
+  const documentTypeLabel = (content: Content | undefined): string => {
+    const mime = content?.mime_type
+    if (mime?.includes('pdf')) return t('lesson.documentTypePdf')
+    if (mime?.includes('wordprocessingml') || mime === 'application/msword') return t('lesson.documentTypeWord')
+    if (mime?.includes('spreadsheet') || mime?.includes('excel')) return t('lesson.documentTypeExcel')
+    if (mime?.includes('presentation')) return t('lesson.presentationTitle')
+    // No file_id (a pasted link, e.g. Google Docs) -- no mime_type to key off of,
+    // fall back to the URL's own extension.
+    const url = content?.url?.toLowerCase()
+    if (url?.endsWith('.pdf')) return t('lesson.documentTypePdf')
+    if (url?.endsWith('.docx') || url?.endsWith('.doc')) return t('lesson.documentTypeWord')
+    // Not document-shaped (video/image/text content, listed in the generic
+    // "Contenu" tab alongside documents) -- `type` is accurate for those, only
+    // uploaded documents have the stale-'pdf' problem this function exists for.
+    return content?.type || content?.mime_type || t('lesson.defaultDocumentType')
+  }
+
+  // Get content for display. Computed here (ahead of the loading/error early
+  // returns below) rather than after them, because the useStreamUrl() hooks that
+  // depend on these must themselves run unconditionally on every render.
+  const videoContent = lesson?.contents?.find(c =>
+    c.mime_type?.startsWith('video/') ||
+    (c.url && isVideoUrl(c.url)) ||
+    c.type === 'youtube_link' ||
+    c.type === 'video_mp4'
+  )
+  const documentContent = lesson?.contents?.find(c =>
+    c.type === 'pdf' ||
+    c.type === 'docx' ||
+    (c.file_id && c.type !== 'image' && !c.mime_type?.startsWith('image/')) || // Support for uploaded files with file_id
+    (c.url && isDocumentUrl(c.url))
+  )
+  // A "link" lesson's content is also stored with type 'text' (no dedicated link
+  // type exists in the schema) but only carries a url, not a body — require a
+  // real body here so that row doesn't fall through to the empty text block below.
+  const textContent = lesson?.contents?.find(c => c.body)
+  const imageContent = lesson?.contents?.find(c =>
+    c.type === 'image' || c.mime_type?.startsWith('image/')
+  )
+  const mainContent = lesson?.contents?.[0]
+
+  const videoStreamUrl = useStreamUrl(videoContent?.file_id)
+  const documentStreamUrl = useStreamUrl(documentContent?.file_id)
+  const imageStreamUrl = useStreamUrl(imageContent?.file_id)
 
   if (lessonLoading) {
     return <PageLoading />
@@ -314,10 +580,10 @@ export default function LessonPage() {
     return (
       <div className="container mx-auto px-4 py-12 text-center">
         <BookOpen className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-        <h2 className="text-xl font-semibold mb-2">Leçon non trouvée</h2>
-        <p className="text-muted-foreground mb-4">Cette leçon n'existe pas ou n'est pas accessible.</p>
+        <h2 className="text-xl font-semibold mb-2">{t('lesson.notFoundTitle')}</h2>
+        <p className="text-muted-foreground mb-4">{t('lesson.notFoundHint')}</p>
         <Link to={`/courses/${courseId}`}>
-          <Button>Retour au cours</Button>
+          <Button>{t('lesson.backToCourse')}</Button>
         </Link>
       </div>
     )
@@ -339,40 +605,6 @@ export default function LessonPage() {
     }
     return null
   }
-
-  // Helper function to check if URL is a video link
-  const isVideoUrl = (url: string): boolean => {
-    if (!url) return false
-    return url.includes('youtube.com') || url.includes('youtu.be') || url.includes('vimeo.com') || url.endsWith('.mp4')
-  }
-
-  // Helper function to check if URL is a document link
-  const isDocumentUrl = (url: string): boolean => {
-    if (!url) return false
-    return url.includes('docs.google.com') || url.endsWith('.pdf') || url.endsWith('.docx') || url.endsWith('.doc')
-  }
-
-  // Get content for display
-  const videoContent = lesson.contents?.find(c => 
-    c.mime_type?.startsWith('video/') || 
-    (c.url && isVideoUrl(c.url)) ||
-    c.type === 'youtube_link' ||
-    c.type === 'video_mp4'
-  )
-  const documentContent = lesson.contents?.find(c =>
-    c.type === 'pdf' ||
-    c.type === 'docx' ||
-    (c.file_id && c.type !== 'image' && !c.mime_type?.startsWith('image/')) || // Support for uploaded files with file_id
-    (c.url && isDocumentUrl(c.url))
-  )
-  // A "link" lesson's content is also stored with type 'text' (no dedicated link
-  // type exists in the schema) but only carries a url, not a body — require a
-  // real body here so that row doesn't fall through to the empty text block below.
-  const textContent = lesson.contents?.find(c => c.body)
-  const imageContent = lesson.contents?.find(c =>
-    c.type === 'image' || c.mime_type?.startsWith('image/')
-  )
-  const mainContent = lesson.contents?.[0]
 
   // Determine what to display based on lesson type and content. lesson.type is only
   // a fallback for lessons with no content rows at all — it must not be OR'd in
@@ -398,24 +630,24 @@ export default function LessonPage() {
 
   // Format time spent
   const formatTimeSpent = (seconds: number) => {
-    if (!seconds) return '0 min'
+    if (!seconds) return t('lesson.timeSpentMinutes', { minutes: 0 })
     const minutes = Math.floor(seconds / 60)
     const hours = Math.floor(minutes / 60)
     if (hours > 0) {
-      return `${hours}h ${minutes % 60}min`
+      return t('lesson.timeSpentHours', { hours, minutes: minutes % 60 })
     }
-    return `${minutes} min`
+    return t('lesson.timeSpentMinutes', { minutes })
   }
 
   // Get status color and label
   const getStatusInfo = (status: string | undefined) => {
     switch (status) {
       case 'completed':
-        return { color: 'bg-green-500', label: 'Terminée', icon: CheckCircle }
+        return { color: 'bg-green-500', label: t('lesson.status.completed'), icon: CheckCircle }
       case 'in_progress':
-        return { color: 'bg-blue-500', label: 'En cours', icon: Play }
+        return { color: 'bg-blue-500', label: t('lesson.status.inProgress'), icon: Play }
       default:
-        return { color: 'bg-gray-400', label: 'Non commencée', icon: Clock }
+        return { color: 'bg-gray-400', label: t('lesson.status.notStarted'), icon: Clock }
     }
   }
 
@@ -426,7 +658,7 @@ export default function LessonPage() {
     <div ref={pageContainerRef} className="min-h-screen bg-background overflow-y-auto">
       {/* Header with Progress Indicator */}
       <div className="border-b bg-card">
-        <div className="container mx-auto px-4 py-4">
+        <div className={cn('mx-auto px-4 py-4', isPageFullscreen ? 'w-[90%]' : 'container')}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <Link to={`/courses/${courseId}`}>
@@ -445,11 +677,17 @@ export default function LessonPage() {
                 </div>
                 <p className="text-sm text-muted-foreground flex items-center gap-2">
                   <Clock className="h-3 w-3" />
-                  {lesson.duration_min || '-'} min • {lesson.type || 'Leçon'}
+                  {lesson.duration_min || '-'} min • {lesson.type || t('lesson.defaultType')}
                   {lessonProgress?.time_spent_seconds ? (
-                    <span className="ml-2">• Temps passé: {formatTimeSpent(lessonProgress.time_spent_seconds)}</span>
+                    <span className="ml-2">• {t('lesson.timeSpent', { time: formatTimeSpent(lessonProgress.time_spent_seconds) })}</span>
                   ) : null}
                 </p>
+                {lessonProgress?.status !== 'completed' && !lessonDurationReached && (
+                  <p className="text-xs text-amber-600 flex items-center gap-1 mt-0.5">
+                    <Lock className="h-3 w-3" />
+                    {t('lesson.markCompleteLockedTimeRemaining', { minutes: remainingLessonMinutes })}
+                  </p>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -462,26 +700,32 @@ export default function LessonPage() {
                   <span>{lessonProgress?.progress_percent || 0}%</span>
                 </div>
               )}
+              <FavoriteButton type="lesson" id={lesson.id} showLabel={false} size="icon" />
               <Button
                 variant="outline"
                 size="icon"
                 onClick={togglePageFullscreen}
-                title={isPageFullscreen ? 'Quitter le plein écran' : 'Ouvrir le cours en plein écran'}
+                title={isPageFullscreen ? t('lesson.exitFullscreen') : t('lesson.enterFullscreen')}
               >
                 {isPageFullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
               </Button>
               <Button
-                onClick={() => completeMutation.mutate()}
+                onClick={() => completeMutation.mutate({})}
                 variant={lessonProgress?.status === 'completed' ? 'outline' : 'default'}
-                disabled={lessonProgress?.status === 'completed'}
+                disabled={lessonProgress?.status === 'completed' || !lessonDurationReached}
+                title={
+                  lessonProgress?.status !== 'completed' && !lessonDurationReached
+                    ? t('lesson.markCompleteLockedTimeRemaining', { minutes: remainingLessonMinutes })
+                    : undefined
+                }
               >
                 {lessonProgress?.status === 'completed' ? (
                   <>
                     <CheckCircle className="h-4 w-4 mr-2" />
-                    Terminée
+                    {t('lesson.status.completed')}
                   </>
                 ) : (
-                  'Marquer comme terminé'
+                  t('lesson.markComplete')
                 )}
               </Button>
             </div>
@@ -501,7 +745,7 @@ export default function LessonPage() {
         )}
       </div>
 
-      <div className="container mx-auto px-4 py-6">
+      <div className={cn('mx-auto px-4 py-6', isPageFullscreen ? 'w-[90%]' : 'container')}>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Main content area */}
           <div className="lg:col-span-2 space-y-6">
@@ -542,7 +786,7 @@ export default function LessonPage() {
                         <>
                           <video
                             ref={videoRef}
-                            src={streamUrl(videoContent.file_id)}
+                            src={videoStreamUrl}
                             className="w-full h-full"
                             onPlay={() => setIsPlaying(true)}
                             onPause={() => setIsPlaying(false)}
@@ -582,8 +826,8 @@ export default function LessonPage() {
                         <div className="w-full h-full flex items-center justify-center text-white">
                           <div className="text-center">
                             <Play className="h-16 w-16 mx-auto mb-4 opacity-50" />
-                            <p>Aucune vidéo disponible pour cette leçon</p>
-                            <p className="text-sm opacity-70">Ajoutez une URL vidéo dans l'administration</p>
+                            <p>{t('lesson.noVideoAvailable')}</p>
+                            <p className="text-sm opacity-70">{t('lesson.noVideoHint')}</p>
                           </div>
                         </div>
                       )
@@ -602,20 +846,22 @@ export default function LessonPage() {
                       <FileText className="h-8 w-8 text-muted-foreground" />
                       <div>
                         <h3 className="font-medium">{documentContent?.title || lesson.title}</h3>
-                        <p className="text-sm text-muted-foreground">{documentContent?.type || documentContent?.mime_type || 'Document'}</p>
-                        
+                        <p className="text-sm text-muted-foreground">{documentTypeLabel(documentContent)}</p>
+
                       </div>
                     </div>
                     {documentContent?.file_id ? (
-                      <Button onClick={() => handleFileDownload(documentContent.file_id!, documentContent.filename)}>
-                        <Download className="h-4 w-4 mr-2" />
-                        Télécharger le document
-                      </Button>
+                      lesson.allow_document_download !== false && (
+                        <Button onClick={() => handleFileDownload(documentContent.file_id!, documentContent.filename)}>
+                          <Download className="h-4 w-4 mr-2" />
+                          {t('lesson.downloadDocument')}
+                        </Button>
+                      )
                     ) : documentContent?.url ? (
                       <a href={documentContent.url} target="_blank" rel="noopener noreferrer">
                         <Button>
                           <Download className="h-4 w-4 mr-2" />
-                          Télécharger le document
+                          {t('lesson.downloadDocument')}
                         </Button>
                       </a>
                     ) : null}
@@ -633,57 +879,32 @@ export default function LessonPage() {
                     <div className="space-y-4">
                       {documentContent.mime_type?.includes('pdf') ? (
                         <iframe
-                          src={streamUrl(documentContent.file_id!)}
+                          src={documentStreamUrl}
                           className="w-full h-[600px] border rounded-lg"
                           title={lesson.title}
                         />
-                      ) : documentContent.mime_type?.includes('document') || documentContent.mime_type?.includes('wordprocessingml') ? (
-                        <div className="border rounded-lg p-6 text-center">
-                          <FileText className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                          <p className="font-medium mb-2">Document Word</p>
-                          <p className="text-sm text-muted-foreground mb-4">
-                            Ce document ne peut pas être prévisualisé directement. Téléchargez-le pour le consulter.
-                          </p>
-                          <Button onClick={() => handleFileDownload(documentContent.file_id!, documentContent.filename)}>
-                            <Download className="h-4 w-4 mr-2" />
-                            Télécharger le document
-                          </Button>
-                        </div>
+                      ) : documentContent.mime_type?.includes('wordprocessingml') ? (
+                        // Deliberately not also matching the broader 'document' substring here --
+                        // both the xlsx and pptx OOXML mime types contain "...officedocument...",
+                        // so a loose 'document' check would misroute them into the Word viewer.
+                        <DocxViewer fileUrl={documentStreamUrl} />
                       ) : documentContent.mime_type?.includes('spreadsheet') || documentContent.mime_type?.includes('excel') ? (
-                        <div className="border rounded-lg p-6 text-center">
-                          <FileText className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                          <p className="font-medium mb-2">Feuille de calcul</p>
-                          <p className="text-sm text-muted-foreground mb-4">
-                            Cette feuille de calcul ne peut pas être prévisualisée directement. Téléchargez-la pour la consulter.
-                          </p>
-                          <Button onClick={() => handleFileDownload(documentContent.file_id!, documentContent.filename)}>
-                            <Download className="h-4 w-4 mr-2" />
-                            Télécharger le fichier
-                          </Button>
-                        </div>
+                        <XlsxViewer fileUrl={documentStreamUrl} />
                       ) : documentContent.mime_type?.includes('presentation') ? (
-                        <div className="border rounded-lg p-6 text-center">
-                          <FileText className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                          <p className="font-medium mb-2">Présentation</p>
-                          <p className="text-sm text-muted-foreground mb-4">
-                            Cette présentation ne peut pas être prévisualisée directement. Téléchargez-la pour la consulter.
-                          </p>
-                          <Button onClick={() => handleFileDownload(documentContent.file_id!, documentContent.filename)}>
-                            <Download className="h-4 w-4 mr-2" />
-                            Télécharger la présentation
-                          </Button>
-                        </div>
+                        <PptxViewer fileUrl={documentStreamUrl} />
                       ) : (
                         <div className="border rounded-lg p-6 text-center">
                           <FileText className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                          <p className="font-medium mb-2">{documentContent.filename || 'Document'}</p>
+                          <p className="font-medium mb-2">{documentContent.filename || t('lesson.defaultDocumentType')}</p>
                           <p className="text-sm text-muted-foreground mb-4">
-                            Ce type de document ne peut pas être prévisualisé directement.
+                            {t('lesson.genericDocumentHint')}
                           </p>
-                          <Button onClick={() => handleFileDownload(documentContent.file_id!, documentContent.filename)}>
-                            <Download className="h-4 w-4 mr-2" />
-                            Télécharger le document
-                          </Button>
+                          {lesson.allow_document_download !== false && (
+                            <Button onClick={() => handleFileDownload(documentContent.file_id!, documentContent.filename)}>
+                              <Download className="h-4 w-4 mr-2" />
+                              {t('lesson.downloadDocument')}
+                            </Button>
+                          )}
                         </div>
                       )}
                     </div>
@@ -691,7 +912,7 @@ export default function LessonPage() {
                   {!documentContent?.url && !documentContent?.file_id && (
                     <div className="text-center text-muted-foreground py-8">
                       <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                      <p>Aucun document disponible</p>
+                      <p>{t('lesson.noDocumentAvailable')}</p>
                     </div>
                   )}
                 </CardContent>
@@ -706,11 +927,11 @@ export default function LessonPage() {
                     <FileText className="h-8 w-8 text-muted-foreground" />
                     <div>
                       <h3 className="font-medium">{imageContent?.title || lesson.title}</h3>
-                      <p className="text-sm text-muted-foreground">Image</p>
+                      <p className="text-sm text-muted-foreground">{t('lesson.imageLabel')}</p>
                     </div>
                   </div>
                   <img
-                    src={imageContent?.file_id ? streamUrl(imageContent.file_id) : imageContent?.url}
+                    src={imageContent?.file_id ? imageStreamUrl : imageContent?.url}
                     alt={imageContent?.title || lesson.title}
                     className="w-full rounded-lg border"
                   />
@@ -727,12 +948,12 @@ export default function LessonPage() {
                       <BookOpen className="h-8 w-8 text-muted-foreground" />
                       <div>
                         <h3 className="font-medium">{mainContent?.title || lesson.title}</h3>
-                        <p className="text-sm text-muted-foreground">Ressource externe</p>
+                        <p className="text-sm text-muted-foreground">{t('lesson.externalResource')}</p>
                       </div>
                     </div>
                     <a href={mainContent?.url} target="_blank" rel="noopener noreferrer">
                       <Button>
-                        Ouvrir le lien
+                        {t('lesson.openLink')}
                         <ArrowRight className="h-4 w-4 ml-2" />
                       </Button>
                     </a>
@@ -750,7 +971,7 @@ export default function LessonPage() {
             {hasTextContent && (
               <Card>
                 <CardContent className="p-6 prose dark:prose-invert max-w-none">
-                  <div dangerouslySetInnerHTML={{ __html: textContent?.body || 'Aucun contenu texte disponible.' }} />
+                  <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(textContent?.body || t('lesson.noTextContent')) }} />
                 </CardContent>
               </Card>
             )}
@@ -760,7 +981,7 @@ export default function LessonPage() {
               <Card>
                 <CardContent className="p-6 text-center text-muted-foreground">
                   <BookOpen className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>Aucun contenu disponible pour cette leçon.</p>
+                  <p>{t('lesson.noContentAvailable')}</p>
                 </CardContent>
               </Card>
             )}
@@ -771,14 +992,14 @@ export default function LessonPage() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <ClipboardCheck className="h-5 w-5" />
-                    Quiz d'évaluation
+                    {t('lesson.quizSectionTitle')}
                   </CardTitle>
                   <CardDescription>
                     {quizUnlocked
-                      ? 'Testez vos connaissances avec le quiz de cette leçon'
+                      ? t('lesson.quizUnlockedHint')
                       : lessonProgress?.status !== 'completed'
-                        ? 'Terminez la leçon pour débloquer le quiz'
-                        : `Passez encore environ ${remainingLessonMinutes} minute(s) sur la leçon pour débloquer le quiz`
+                        ? t('lesson.quizLockedCompleteFirst')
+                        : t('lesson.quizLockedTimeRemaining', { minutes: remainingLessonMinutes })
                     }
                   </CardDescription>
                 </CardHeader>
@@ -801,21 +1022,21 @@ export default function LessonPage() {
                         <div>
                           <p className="font-medium">{quiz.title}</p>
                           <p className="text-sm text-muted-foreground">
-                            Score requis: {quiz.passing_score}%
+                            {t('lesson.passingScoreRequired', { score: quiz.passing_score })}
                           </p>
                         </div>
                       </div>
                       {quizUnlocked ? (
                         <Link to={`/quizzes/${quiz.id}`}>
                           <Button>
-                            Commencer le quiz
+                            {t('lesson.startQuiz')}
                             <ArrowRight className="h-4 w-4 ml-2" />
                           </Button>
                         </Link>
                       ) : (
                         <Button disabled variant="outline">
                           <Lock className="h-4 w-4 mr-2" />
-                          Verrouillé
+                          {t('lesson.locked')}
                         </Button>
                       )}
                     </div>
@@ -824,12 +1045,31 @@ export default function LessonPage() {
               </Card>
             )}
 
-            {/* Tabs for content, resources, notes */}
+            {/* Lesson details: content, resources, notes, comments -- collapsible */}
+            <div className="flex items-center justify-between">
+              <h2 className="font-semibold text-lg">{t('lesson.detailsTitle')}</h2>
+              <Button variant="ghost" size="sm" onClick={() => setShowDetails((v) => !v)}>
+                {showDetails ? (
+                  <>
+                    <ChevronUp className="h-4 w-4 mr-2" />
+                    {t('lesson.hideDetails')}
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="h-4 w-4 mr-2" />
+                    {t('lesson.showDetails')}
+                  </>
+                )}
+              </Button>
+            </div>
+
+            {showDetails && (
             <Tabs value={activeTab} onValueChange={setActiveTab}>
               <TabsList>
-                <TabsTrigger value="content">Contenu</TabsTrigger>
-                <TabsTrigger value="resources">Ressources</TabsTrigger>
-                <TabsTrigger value="notes">Mes notes</TabsTrigger>
+                <TabsTrigger value="content">{t('lesson.tabs.content')}</TabsTrigger>
+                <TabsTrigger value="resources">{t('lesson.tabs.resources')}</TabsTrigger>
+                <TabsTrigger value="notes">{t('lesson.tabs.notes')}</TabsTrigger>
+                <TabsTrigger value="comments">{t('lesson.tabs.comments')}</TabsTrigger>
               </TabsList>
               <TabsContent value="content" className="mt-4">
                 <Card>
@@ -841,18 +1081,18 @@ export default function LessonPage() {
                             <div className="flex items-center gap-3">
                               <FileText className="h-5 w-5 text-muted-foreground" />
                               <div>
-                                <p className="font-medium">{content.filename || `Contenu ${idx + 1}`}</p>
-                                <p className="text-sm text-muted-foreground">{content.type || content.mime_type}</p>
+                                <p className="font-medium">{content.filename || t('lesson.defaultContentTitle', { index: idx + 1 })}</p>
+                                <p className="text-sm text-muted-foreground">{documentTypeLabel(content)}</p>
                               </div>
                             </div>
                             {content.body && (
-                              <div className="mt-3 prose dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: content.body }} />
+                              <div className="mt-3 prose dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(content.body) }} />
                             )}
                           </div>
                         ))}
                       </div>
                     ) : (
-                      <p className="text-muted-foreground">Aucun contenu supplémentaire pour cette leçon.</p>
+                      <p className="text-muted-foreground">{t('lesson.noAdditionalContent')}</p>
                     )}
                   </CardContent>
                 </Card>
@@ -866,19 +1106,19 @@ export default function LessonPage() {
                           <div key={content.id} className="flex items-center justify-between p-3 border rounded-lg">
                             <div className="flex items-center gap-3">
                               <FileText className="h-5 w-5 text-muted-foreground" />
-                              <span>{content.filename || `Fichier ${content.id}`}</span>
+                              <span>{content.filename || t('lesson.defaultFileTitle', { id: content.id })}</span>
                             </div>
-                            {content.file_id ? (
+                            {content.file_id && lesson.allow_document_download !== false ? (
                               <Button size="sm" variant="outline" onClick={() => handleFileDownload(content.file_id!, content.filename)}>
                                 <Download className="h-4 w-4 mr-2" />
-                                Télécharger
+                                {t('lesson.download')}
                               </Button>
                             ) : null}
                           </div>
                         ))}
                       </div>
                     ) : (
-                      <p className="text-muted-foreground">Aucune ressource supplémentaire pour cette leçon.</p>
+                      <p className="text-muted-foreground">{t('lesson.noAdditionalResources')}</p>
                     )}
                   </CardContent>
                 </Card>
@@ -887,19 +1127,79 @@ export default function LessonPage() {
                 <Card>
                   <CardContent className="p-6">
                     <textarea
-                      placeholder="Prenez des notes pendant votre apprentissage..."
+                      value={notesDraft}
+                      onChange={(e) => setNotesDraft(e.target.value)}
+                      placeholder={t('lesson.notesPlaceholder')}
                       className="w-full h-40 p-3 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary"
                     />
-                    <Button className="mt-4">Sauvegarder les notes</Button>
+                    <Button
+                      className="mt-4"
+                      onClick={() => saveNotesMutation.mutate(notesDraft)}
+                      disabled={saveNotesMutation.isPending}
+                    >
+                      {t('lesson.saveNotes')}
+                    </Button>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+              <TabsContent value="comments" className="mt-4">
+                <Card>
+                  <CardContent className="p-6 space-y-4">
+                    <div className="flex items-start gap-2">
+                      <textarea
+                        value={commentDraft}
+                        onChange={(e) => setCommentDraft(e.target.value)}
+                        placeholder={t('lesson.commentPlaceholder')}
+                        className="w-full h-20 p-3 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                      <Button
+                        size="icon"
+                        onClick={() => commentDraft.trim() && addCommentMutation.mutate(commentDraft.trim())}
+                        disabled={addCommentMutation.isPending || !commentDraft.trim()}
+                      >
+                        <Send className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    {comments.length === 0 ? (
+                      <p className="text-muted-foreground text-sm flex items-center gap-2">
+                        <MessageSquare className="h-4 w-4" />
+                        {t('lesson.noComments')}
+                      </p>
+                    ) : (
+                      <div className="space-y-3">
+                        {comments.map((comment) => (
+                          <div key={comment.id} className="flex items-start justify-between gap-2 p-3 border rounded-lg">
+                            <div>
+                              <div className="flex items-center gap-2 text-sm">
+                                <span className="font-medium">{comment.author_name || t('lesson.anonymousAuthor')}</span>
+                                <span className="text-muted-foreground text-xs">{formatDateTime(comment.created_at)}</span>
+                              </div>
+                              <p className="text-sm mt-1 whitespace-pre-wrap">{comment.body}</p>
+                            </div>
+                            {(comment.user_id === user?.id || ['admin', 'director', 'super_admin'].includes(user?.role || '')) && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 shrink-0"
+                                onClick={() => deleteCommentMutation.mutate(comment.id)}
+                              >
+                                <Trash2 className="h-4 w-4 text-muted-foreground" />
+                              </Button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </TabsContent>
             </Tabs>
+            )}
 
             {/* Navigation */}
             <div className="flex items-center justify-between">
               {prevLesson ? (
-                <Link to={`/courses/${courseId}/lessons/${prevLesson.id}`}>
+                <Link to={`/courses/${courseId}/lessons/${prevLesson.public_id}`}>
                   <Button variant="outline">
                     <ArrowLeft className="h-4 w-4 mr-2" />
                     {prevLesson.title}
@@ -909,19 +1209,40 @@ export default function LessonPage() {
                 <div />
               )}
               {nextLesson ? (
-                <Link to={`/courses/${courseId}/lessons/${nextLesson.id}`}>
+                <Link to={`/courses/${courseId}/lessons/${nextLesson.public_id}`}>
                   <Button>
                     {nextLesson.title}
                     <ArrowRight className="h-4 w-4 ml-2" />
                   </Button>
                 </Link>
-              ) : (
+              ) : lessonProgress?.status === 'completed' ? (
                 <Link to={`/courses/${courseId}`}>
                   <Button>
-                    Terminer le cours
+                    {t('lesson.finishCourse')}
                     <CheckCircle className="h-4 w-4 ml-2" />
                   </Button>
                 </Link>
+              ) : (
+                <Button
+                  onClick={() =>
+                    completeMutation.mutate(
+                      {},
+                      { onSuccess: () => navigate(`/courses/${courseId}`) }
+                    )
+                  }
+                  disabled={!lessonDurationReached || completeMutation.isPending}
+                  title={
+                    !lessonDurationReached
+                      ? t('lesson.markCompleteLockedTimeRemaining', { minutes: remainingLessonMinutes })
+                      : undefined
+                  }
+                >
+                  {!lessonDurationReached ? (
+                    <Lock className="h-4 w-4 mr-2" />
+                  ) : null}
+                  {t('lesson.finishCourse')}
+                  {lessonDurationReached ? <CheckCircle className="h-4 w-4 ml-2" /> : null}
+                </Button>
               )}
             </div>
           </div>
@@ -930,9 +1251,9 @@ export default function LessonPage() {
           <div className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg">Contenu du cours</CardTitle>
+                <CardTitle className="text-lg">{t('lesson.courseContent')}</CardTitle>
                 <CardDescription>
-                  {allLessons.length} leçons
+                  {t('lesson.lessonsCount', { count: allLessons.length })}
                 </CardDescription>
               </CardHeader>
               <CardContent className="p-0">
@@ -945,9 +1266,9 @@ export default function LessonPage() {
                       {(module.lessons || []).map((l) => (
                         <Link
                           key={l.id}
-                          to={`/courses/${courseId}/lessons/${l.id}`}
+                          to={`/courses/${courseId}/lessons/${l.public_id}`}
                           className={`flex items-center gap-3 px-4 py-3 hover:bg-muted/50 transition-colors ${
-                            l.id === parseInt(lessonId || '0') ? 'bg-primary/10 border-l-2 border-l-primary' : ''
+                            l.public_id === lessonId ? 'bg-primary/10 border-l-2 border-l-primary' : ''
                           }`}
                         >
                           <div className="h-6 w-6 rounded-full flex items-center justify-center shrink-0 bg-muted">
@@ -967,7 +1288,7 @@ export default function LessonPage() {
                   </div>
                 )) : (
                   <div className="p-4 text-center text-muted-foreground">
-                    Aucun module disponible
+                    {t('lesson.noModulesAvailable')}
                   </div>
                 )}
               </CardContent>
@@ -975,6 +1296,62 @@ export default function LessonPage() {
           </div>
         </div>
       </div>
+
+      {/* Optional star rating, prompted once when the lesson is first marked complete */}
+      <Dialog open={showRatingDialog} onOpenChange={setShowRatingDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t('lesson.ratingDialogTitle')}</DialogTitle>
+            <DialogDescription>{t('lesson.ratingDialogDescription')}</DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-center gap-2 py-4">
+            {[1, 2, 3, 4, 5].map((star) => (
+              <button
+                key={star}
+                type="button"
+                onClick={() => setRatingValue(star)}
+                onMouseEnter={() => setRatingHover(star)}
+                onMouseLeave={() => setRatingHover(0)}
+                aria-label={t('lesson.ratingStarLabel', { count: star })}
+              >
+                <Star
+                  className={cn(
+                    'h-8 w-8 transition-colors',
+                    (ratingHover || ratingValue) >= star
+                      ? 'fill-yellow-400 text-yellow-400'
+                      : 'text-muted-foreground'
+                  )}
+                />
+              </button>
+            ))}
+          </div>
+          <textarea
+            value={ratingComment}
+            onChange={(e) => setRatingComment(e.target.value)}
+            placeholder={t('lesson.ratingCommentPlaceholder')}
+            className="w-full h-20 p-3 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+          <DialogFooter className="sm:justify-between">
+            <Button variant="ghost" onClick={() => setShowRatingDialog(false)}>
+              {t('lesson.ratingSkip')}
+            </Button>
+            <Button
+              disabled={ratingValue === 0 || submitEvaluationMutation.isPending}
+              onClick={() =>
+                submitEvaluationMutation.mutate({ rating: ratingValue, comment: ratingComment.trim() || undefined })
+              }
+            >
+              {t('lesson.ratingSubmit')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <PresenceCheckDialog
+        open={showPresenceCheck}
+        secondsRemaining={presenceCountdown}
+        onContinue={handlePresenceContinue}
+      />
     </div>
   )
 }

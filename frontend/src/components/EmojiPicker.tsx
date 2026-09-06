@@ -1,5 +1,7 @@
+import { useTranslation } from 'react-i18next'
+
 interface EmojiCategory {
-  label: string
+  labelKey: string
   emojis: string[]
 }
 
@@ -7,11 +9,11 @@ interface EmojiCategory {
 // for a workplace chat without pulling in a full emoji database.
 const EMOJI_CATEGORIES: EmojiCategory[] = [
   {
-    label: 'Fréquents',
+    labelKey: 'emojiCategories.frequent',
     emojis: ['😀', '😂', '😊', '😍', '👍', '🙏', '🎉', '❤️', '😢', '😮', '😅', '🔥'],
   },
   {
-    label: 'Visages',
+    labelKey: 'emojiCategories.faces',
     emojis: [
       '😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '🙃', '😉', '😊',
       '😇', '🥰', '😍', '😘', '😋', '😛', '🤔', '🤨', '😐', '😑', '😴', '🤯',
@@ -19,11 +21,11 @@ const EMOJI_CATEGORIES: EmojiCategory[] = [
     ],
   },
   {
-    label: 'Gestes & personnes',
+    labelKey: 'emojiCategories.gestures',
     emojis: ['👍', '👎', '👏', '🙌', '🤝', '🙏', '💪', '✌️', '🤞', '👋', '🤦', '🤷'],
   },
   {
-    label: 'Objets & symboles',
+    labelKey: 'emojiCategories.objects',
     emojis: [
       '❤️', '🎉', '🔥', '💡', '📌', '✅', '❌', '⚠️', '📎', '📅', '⏰', '🚀',
       '🏆', '🎯', '📢', '💬',
@@ -36,15 +38,16 @@ interface EmojiPickerProps {
 }
 
 export function EmojiPicker({ onSelect }: EmojiPickerProps) {
+  const { t } = useTranslation('chat')
   return (
     <div className="max-h-72 overflow-y-auto space-y-3">
       {EMOJI_CATEGORIES.map((category) => (
-        <div key={category.label}>
-          <p className="text-xs font-medium text-muted-foreground mb-1">{category.label}</p>
+        <div key={category.labelKey}>
+          <p className="text-xs font-medium text-muted-foreground mb-1">{t(category.labelKey)}</p>
           <div className="grid grid-cols-8 gap-1">
             {category.emojis.map((emoji, i) => (
               <button
-                key={`${category.label}-${i}`}
+                key={`${category.labelKey}-${i}`}
                 type="button"
                 className="text-xl rounded hover:bg-muted p-1 leading-none"
                 onClick={() => onSelect(emoji)}

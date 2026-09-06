@@ -1,7 +1,7 @@
 import { DatabaseService } from './database.service';
 import { db } from '../database/db-helpers';
 import { AuditService } from './audit.service';
-import { NotificationService } from './notification.service';
+import { PendingNotificationService } from './pending-notification.service';
 import { logger } from '../utils/logger';
 
 export interface InactivityPolicy {
@@ -90,15 +90,17 @@ export class InactivitySuspensionService {
           maxInactiveDays: policy.max_inactive_days,
         });
 
-        await NotificationService.send({
-          tenantId: user.tenant_id,
-          userId: user.id,
-          channel: 'email',
-          subject: 'Votre compte E-Formation a été suspendu pour inactivité',
-          body: `Bonjour ${user.display_name},\n\nVotre compte a été suspendu après ${policy.max_inactive_days} jours d'inactivité. Contactez votre administrateur pour le réactiver.`,
-        }).catch((error) => {
-          logger.error('Failed to send inactivity-suspension notice', { error, userId: user.id });
-        });
+        try {
+          await PendingNotificationService.queue({
+            tenantId: user.tenant_id,
+            userId: user.id,
+            eventType: 'account_suspended',
+            subject: 'Votre compte E-Formation a été suspendu pour inactivité',
+            body: `Bonjour ${user.display_name},\n\nVotre compte a été suspendu après ${policy.max_inactive_days} jours d'inactivité. Contactez votre administrateur pour le réactiver.`,
+          });
+        } catch (error) {
+          logger.error('Failed to queue inactivity-suspension notice', { error, userId: user.id });
+        }
 
         suspended++;
       }

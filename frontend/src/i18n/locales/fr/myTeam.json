@@ -1,0 +1,40 @@
+{
+  "weekdays": ["Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"],
+  "title": "Mon équipe",
+  "subtitle": "Progression et activité des collaborateurs qui vous sont rattachés",
+  "report": {
+    "title": "Rapport périodique",
+    "description": "Recevez un résumé automatique de la progression de votre équipe, dans l'interface et/ou par email",
+    "loading": "Chargement...",
+    "enable": "Recevoir un rapport automatique",
+    "frequency": "Fréquence",
+    "daily": "Quotidien",
+    "weekly": "Hebdomadaire",
+    "day": "Jour",
+    "channels": "Canaux",
+    "channelInApp": "Notification dans l'application",
+    "channelEmail": "Email",
+    "lastSent": "Dernier rapport envoyé {{time}}",
+    "saving": "Enregistrement...",
+    "save": "Enregistrer",
+    "savedTitle": "Préférences enregistrées",
+    "savedDescription": "Vos réglages de rapport ont été mis à jour.",
+    "saveErrorDescription": "Impossible d'enregistrer vos préférences"
+  },
+  "stats": {
+    "collaborators": "Collaborateurs",
+    "averageProgress": "Progression moyenne",
+    "overdueMandatory": "Formations obligatoires en retard"
+  },
+  "table": {
+    "empty": "Aucun collaborateur rattaché n'a été trouvé pour votre profil.",
+    "collaborator": "Collaborateur",
+    "role": "Rôle",
+    "coursesFollowed": "Cours suivis",
+    "averageProgress": "Progression moyenne",
+    "overdue": "En retard",
+    "lastActivity": "Dernière activité",
+    "completedOf": "{{completed}} / {{enrolled}} terminés",
+    "never": "Jamais"
+  }
+}

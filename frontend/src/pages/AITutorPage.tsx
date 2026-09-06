@@ -4,6 +4,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/components/ui/use-toast'
 import {
   Bot,
@@ -14,12 +15,12 @@ import {
   Lightbulb,
   HelpCircle,
   Copy,
-  ThumbsUp,
-  ThumbsDown,
   RefreshCcw,
-  Mic,
+  Loader2,
+  Languages,
 } from 'lucide-react'
 import { api } from '@/services/api'
+import i18n from '@/i18n'
 
 interface Message {
   id: string
@@ -29,35 +30,51 @@ interface Message {
   suggestions?: string[]
 }
 
+type TutorLanguage = 'fr' | 'en'
+
+const LANGUAGE_STORAGE_KEY = 'ai-tutor-language'
+
+function readStoredLanguage(): TutorLanguage {
+  const stored = localStorage.getItem(LANGUAGE_STORAGE_KEY)
+  return stored === 'en' ? 'en' : 'fr'
+}
+
+// Answer language is switchable at any time (the dropdown below), independently of
+// the app's own UI language -- so this page's copy is pulled from the aiTutor i18next
+// namespace with a language fixed to the user's chosen answer language, via
+// getFixedT, rather than the app-wide active locale from useTranslation().
+function greetingMessage(language: TutorLanguage): Message {
+  const t = i18n.getFixedT(language, 'aiTutor')
+  return {
+    id: '1',
+    role: 'assistant',
+    content: t('greeting'),
+    timestamp: new Date(),
+    suggestions: t('greetingSuggestions', { returnObjects: true }) as string[],
+  }
+}
+
 export default function AITutorPage() {
   const { toast } = useToast()
+  const [language, setLanguage] = useState<TutorLanguage>(readStoredLanguage)
   const [input, setInput] = useState('')
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      role: 'assistant',
-      content: `Bonjour! 👋 Je suis votre assistant IA pédagogique. Je suis là pour vous aider dans votre apprentissage.
-
-Je peux:
-• Répondre à vos questions sur les cours
-• Expliquer des concepts complexes
-• Vous suggérer des ressources
-• Vous aider à préparer les quiz
-
-Comment puis-je vous aider aujourd'hui?`,
-      timestamp: new Date(),
-      suggestions: [
-        'Explique-moi le Machine Learning',
-        'Quels cours me recommandes-tu?',
-        'Aide-moi à comprendre React',
-      ],
-    },
-  ])
+  const [messages, setMessages] = useState<Message[]>(() => [greetingMessage(readStoredLanguage())])
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const [isTyping, setIsTyping] = useState(false)
+  const [regeneratingId, setRegeneratingId] = useState<string | null>(null)
+  const t = i18n.getFixedT(language, 'aiTutor')
+
+  const handleLanguageChange = (value: string) => {
+    const next = value as TutorLanguage
+    setLanguage(next)
+    localStorage.setItem(LANGUAGE_STORAGE_KEY, next)
+    // Past messages were answered in the previous language -- starting a fresh
+    // conversation in the new language avoids a confusing mixed-language thread.
+    setMessages([greetingMessage(next)])
+  }
 
   const chatMutation = useMutation({
-    mutationFn: (message: string) => api.ai.askTutor(message),
+    mutationFn: (message: string) => api.ai.askTutor(message, { language }),
     onSuccess: (response) => {
       const assistantMessage: Message = {
         id: Date.now().toString(),
@@ -70,8 +87,8 @@ Comment puis-je vous aider aujourd'hui?`,
     },
     onError: () => {
       toast({
-        title: 'Erreur',
-        description: 'Impossible de générer une réponse',
+        title: t('errorTitle'),
+        description: t('errorDescription'),
         variant: 'destructive',
       })
       setIsTyping(false)
@@ -104,7 +121,28 @@ Comment puis-je vous aider aujourd'hui?`,
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text)
-    toast({ title: 'Copié dans le presse-papier' })
+    toast({ title: t('copied') })
+  }
+
+  // Re-asks the question that led to this response, in place -- bypasses
+  // chatMutation (whose onSuccess always appends a new message) since this
+  // needs to replace an existing one instead.
+  const handleRegenerate = async (assistantMessageId: string) => {
+    const idx = messages.findIndex((m) => m.id === assistantMessageId)
+    const priorUserMessage = idx > 0 ? messages[idx - 1] : null
+    if (!priorUserMessage || priorUserMessage.role !== 'user') return
+
+    setRegeneratingId(assistantMessageId)
+    try {
+      const response = await api.ai.askTutor(priorUserMessage.content, { language })
+      setMessages((prev) =>
+        prev.map((m) => (m.id === assistantMessageId ? { ...m, content: response.answer, timestamp: new Date() } : m))
+      )
+    } catch {
+      toast({ title: t('errorTitle'), description: t('errorDescription'), variant: 'destructive' })
+    } finally {
+      setRegeneratingId(null)
+    }
   }
 
   return (
@@ -116,8 +154,8 @@ Comment puis-je vous aider aujourd'hui?`,
             <Bot className="h-6 w-6 text-white" />
           </div>
           <div>
-            <h1 className="text-xl font-semibold">Assistant IA</h1>
-            <p className="text-sm text-muted-foreground">Votre tuteur personnel</p>
+            <h1 className="text-xl font-semibold">{t('title')}</h1>
+            <p className="text-sm text-muted-foreground">{t('subtitle')}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -125,14 +163,24 @@ Comment puis-je vous aider aujourd'hui?`,
             <Sparkles className="h-3 w-3" />
             GPT-4
           </Badge>
+          <Select value={language} onValueChange={handleLanguageChange}>
+            <SelectTrigger className="w-[140px]" aria-label={t('languageLabel')}>
+              <Languages className="h-4 w-4 mr-1 shrink-0" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="fr">{t('languageOptions.fr')}</SelectItem>
+              <SelectItem value="en">{t('languageOptions.en')}</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
       {/* Quick Actions */}
       <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
-        <QuickAction icon={BookOpen} label="Résumer un cours" onClick={() => setInput("Résume-moi le cours sur ")} />
-        <QuickAction icon={Lightbulb} label="Expliquer un concept" onClick={() => setInput("Explique-moi ")} />
-        <QuickAction icon={HelpCircle} label="Préparer un quiz" onClick={() => setInput("Aide-moi à préparer le quiz sur ")} />
+        <QuickAction icon={BookOpen} label={t('quickActions.summarize')} onClick={() => setInput(t('quickActionPrompts.summarize'))} />
+        <QuickAction icon={Lightbulb} label={t('quickActions.explain')} onClick={() => setInput(t('quickActionPrompts.explain'))} />
+        <QuickAction icon={HelpCircle} label={t('quickActions.quiz')} onClick={() => setInput(t('quickActionPrompts.quiz'))} />
       </div>
 
       {/* Messages */}
@@ -144,6 +192,8 @@ Comment puis-je vous aider aujourd'hui?`,
               message={message}
               onCopy={() => copyToClipboard(message.content)}
               onSuggestionClick={handleSuggestionClick}
+              onRegenerate={() => handleRegenerate(message.id)}
+              isRegenerating={regeneratingId === message.id}
             />
           ))}
 
@@ -168,11 +218,8 @@ Comment puis-je vous aider aujourd'hui?`,
         {/* Input */}
         <div className="p-4 border-t">
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon">
-              <Mic className="h-5 w-5" />
-            </Button>
             <Input
-              placeholder="Posez votre question..."
+              placeholder={t('placeholder')}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSend()}
@@ -214,10 +261,14 @@ function MessageBubble({
   message,
   onCopy,
   onSuggestionClick,
+  onRegenerate,
+  isRegenerating,
 }: {
   message: Message
   onCopy: () => void
   onSuggestionClick: (suggestion: string) => void
+  onRegenerate: () => void
+  isRegenerating: boolean
 }) {
   const isUser = message.role === 'user'
 
@@ -251,14 +302,8 @@ function MessageBubble({
             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onCopy}>
               <Copy className="h-3 w-3" />
             </Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7">
-              <ThumbsUp className="h-3 w-3" />
-            </Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7">
-              <ThumbsDown className="h-3 w-3" />
-            </Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7">
-              <RefreshCcw className="h-3 w-3" />
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onRegenerate} disabled={isRegenerating}>
+              {isRegenerating ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCcw className="h-3 w-3" />}
             </Button>
           </div>
         )}

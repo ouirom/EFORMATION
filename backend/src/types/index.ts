@@ -71,7 +71,7 @@ export interface Course {
 }
 
 export interface AudienceScope {
-  level: 'enterprise' | 'direction' | 'service' | 'role';
+  level: 'general' | 'enterprise' | 'direction' | 'service' | 'role';
   ids?: number[];
   roles?: UserRole[];
 }
@@ -99,6 +99,7 @@ export interface Lesson {
   type?: string;
   position: number;
   durationMin?: number;
+  isMandatory?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }

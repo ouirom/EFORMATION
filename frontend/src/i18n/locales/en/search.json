@@ -1,0 +1,41 @@
+{
+  "title": "Search",
+  "subtitle": "Find courses, articles, users and more",
+  "placeholder": "Search courses, articles, users...",
+  "searchButton": "Search",
+  "searching": "Searching...",
+  "resultsCount_one": "{{count}} result for \"{{query}}\"",
+  "resultsCount_other": "{{count}} results for \"{{query}}\"",
+  "tabs": {
+    "all": "All ({{count}})",
+    "course": "Courses ({{count}})",
+    "blog": "Articles ({{count}})",
+    "user": "Users ({{count}})",
+    "liveSession": "Sessions ({{count}})"
+  },
+  "resultTypes": {
+    "course": "Course",
+    "user": "User",
+    "blog": "Article",
+    "chat": "Discussion",
+    "live_session": "Live session"
+  },
+  "bestMatch": "Best match",
+  "noResults": {
+    "title": "No results found",
+    "description": "Try different keywords or check your spelling"
+  },
+  "recentSearches": {
+    "title": "Recent searches",
+    "description": "Your latest searches",
+    "none": "You haven't searched for anything yet."
+  },
+  "browseByCategory": {
+    "title": "Browse by category",
+    "description": "Explore our content by topic",
+    "development": "Development",
+    "design": "Design",
+    "management": "Management",
+    "marketing": "Marketing"
+  }
+}

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
 import { api } from '../services/api';
@@ -9,6 +10,7 @@ import { QuizQuestionSelector } from '../components/QuizQuestionSelector';
 import { Textarea } from '../components/ui/textarea';
 
 export const QuizCreatePage: React.FC = () => {
+  const { t } = useTranslation('courses');
   const { lessonId } = useParams<{ lessonId: string }>();
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
@@ -33,7 +35,7 @@ export const QuizCreatePage: React.FC = () => {
         setCreatedQuizId(quizId);
         setCreateError(null);
       } else {
-        setCreateError('Quiz créé mais ID introuvable dans la réponse.');
+        setCreateError(t('quizCreate.quizIdMissing'));
         console.error('Unexpected response shape:', response.data);
       }
     },
@@ -41,7 +43,7 @@ export const QuizCreatePage: React.FC = () => {
       const msg =
         error?.response?.data?.error?.message ||
         error?.response?.data?.message ||
-        'Erreur lors de la création du quiz';
+        t('quizCreate.creationError');
       setCreateError(msg);
     },
   });
@@ -72,9 +74,9 @@ export const QuizCreatePage: React.FC = () => {
     return (
       <div className="max-w-4xl mx-auto p-6">
         <div className="mb-6">
-          <h1 className="text-3xl font-bold mb-2">Quiz créé ✓</h1>
+          <h1 className="text-3xl font-bold mb-2">{t('quizCreate.createdTitle')}</h1>
           <p className="text-gray-600">
-            Maintenant, sélectionnez les questions pour ce quiz.
+            {t('quizCreate.selectQuestionsHint')}
           </p>
         </div>
 
@@ -95,42 +97,42 @@ export const QuizCreatePage: React.FC = () => {
           onClick={() => navigate(-1)}
           className="text-blue-600 hover:text-blue-800 mb-4"
         >
-          ← Retour
+          {t('quizCreate.back')}
         </button>
-        <h1 className="text-3xl font-bold">Créer un nouveau quiz</h1>
+        <h1 className="text-3xl font-bold">{t('quizCreate.title')}</h1>
       </div>
 
       <form onSubmit={handleCreateQuiz} className="space-y-4">
         <Card className="p-6 space-y-4">
           <div>
-            <label className="block text-sm font-medium mb-1">Titre *</label>
+            <label className="block text-sm font-medium mb-1">{t('quizCreate.titleLabel')}</label>
             <Input
               name="title"
               value={formData.title}
               onChange={handleChange}
-              placeholder="Titre du quiz"
+              placeholder={t('quizCreate.titlePlaceholder')}
               required
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Description</label>
+            <label className="block text-sm font-medium mb-1">{t('quizCreate.descriptionLabel')}</label>
             <Textarea
               name="description"
               value={formData.description}
               onChange={handleChange}
-              placeholder="Description du quiz"
+              placeholder={t('quizCreate.descriptionPlaceholder')}
               rows={3}
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Instructions</label>
+            <label className="block text-sm font-medium mb-1">{t('quizCreate.instructionsLabel')}</label>
             <Textarea
               name="instructions"
               value={formData.instructions}
               onChange={handleChange}
-              placeholder="Instructions pour le quiz"
+              placeholder={t('quizCreate.instructionsPlaceholder')}
               rows={3}
             />
           </div>
@@ -138,7 +140,7 @@ export const QuizCreatePage: React.FC = () => {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">
-                Score minimum de passage (%) *
+                {t('quizCreate.passingScoreLabel')}
               </label>
               <Input
                 name="passingScore"
@@ -152,7 +154,7 @@ export const QuizCreatePage: React.FC = () => {
 
             <div>
               <label className="block text-sm font-medium mb-1">
-                Limite de temps (minutes, 0 = illimité)
+                {t('quizCreate.timeLimitLabel')}
               </label>
               <Input
                 name="timeLimitMinutes"
@@ -166,7 +168,7 @@ export const QuizCreatePage: React.FC = () => {
 
           <div>
             <label className="block text-sm font-medium mb-1">
-              Nombre de questions par tentative (vide = toutes les questions)
+              {t('quizCreate.questionsToDrawLabel')}
             </label>
             <Input
               name="questionsToDraw"
@@ -176,7 +178,7 @@ export const QuizCreatePage: React.FC = () => {
               onChange={handleChange}
             />
             <p className="text-xs text-gray-500 mt-1">
-              Chaque tentative tirera aléatoirement ce nombre de questions parmi celles du quiz.
+              {t('quizCreate.questionsToDrawHint')}
             </p>
           </div>
 
@@ -190,17 +192,17 @@ export const QuizCreatePage: React.FC = () => {
               className="rounded"
             />
             <label htmlFor="randomized" className="text-sm font-medium cursor-pointer">
-              Randomiser les questions
+              {t('quizCreate.randomize')}
             </label>
           </div>
         </Card>
 
         <div className="flex gap-2">
           <Button type="submit" disabled={createQuizMutation.isPending}>
-            {createQuizMutation.isPending ? 'Création...' : 'Créer le quiz'}
+            {createQuizMutation.isPending ? t('quizCreate.creating') : t('quizCreate.create')}
           </Button>
           <Button type="button" variant="outline" onClick={() => navigate(-1)}>
-            Annuler
+            {t('quizCreate.cancel')}
           </Button>
         </div>
 

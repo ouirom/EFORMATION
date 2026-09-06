@@ -3,6 +3,7 @@ import { query, validationResult } from 'express-validator';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.middleware';
 import { DatabaseService } from '../services/database.service';
 import { BadRequestError } from '../middleware/error.middleware';
+import { parsePagination, buildPaginationMeta } from '../utils/pagination';
 
 const router = Router();
 
@@ -68,9 +69,7 @@ router.get(
   async (req: AuthRequest, res, next) => {
     try {
       validate(req);
-      const page = parseInt(req.query.page as string) || 1;
-      const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
-      const offset = (page - 1) * limit;
+      const { page, limit, offset } = parsePagination(req, { defaultLimit: 50, maxLimit: 200 });
 
       const { whereClause, params } = buildFilters(req);
 
@@ -94,12 +93,7 @@ router.get(
       res.json({
         success: true,
         data: logs,
-        meta: {
-          page,
-          limit,
-          total: countResult[0].total,
-          totalPages: Math.ceil(countResult[0].total / limit),
-        },
+        meta: buildPaginationMeta(countResult[0].total, page, limit),
       });
     } catch (error) {
       next(error);
@@ -269,9 +263,7 @@ router.get(
   async (req: AuthRequest, res, next) => {
     try {
       validate(req);
-      const page = parseInt(req.query.page as string) || 1;
-      const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
-      const offset = (page - 1) * limit;
+      const { page, limit, offset } = parsePagination(req, { defaultLimit: 50, maxLimit: 200 });
 
       const { whereClause, params } = buildTrainingFilters(req);
       const aggregateSql = TRAINING_AGGREGATE_SQL.replace('{whereClause}', whereClause);
@@ -290,12 +282,7 @@ router.get(
       res.json({
         success: true,
         data: withProgressPercent(rows),
-        meta: {
-          page,
-          limit,
-          total: countRows[0]?.total || 0,
-          totalPages: Math.ceil((countRows[0]?.total || 0) / limit),
-        },
+        meta: buildPaginationMeta(countRows[0]?.total || 0, page, limit),
       });
     } catch (error) {
       next(error);

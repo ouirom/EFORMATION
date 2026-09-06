@@ -1,10 +1,12 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Badge } from '@/components/ui/badge'
 import { FileUpload } from '@/components/ui/file-upload'
 import { Progress } from '@/components/ui/progress'
 import {
@@ -24,6 +26,7 @@ import {
 } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { PageLoading } from '@/components/ui/loading'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { useToast } from '@/components/ui/use-toast'
 import {
   ArrowLeft,
@@ -53,6 +56,10 @@ interface Lesson {
   type: string
   duration_min: number
   position: number
+  is_mandatory?: boolean
+  presence_check_percent?: number | null
+  reset_time_on_reopen?: boolean
+  allow_document_download?: boolean
   quizzes?: Quiz[]
 }
 
@@ -90,6 +97,8 @@ interface Choice {
 }
 
 export default function AdminCourseEditPage() {
+  const { t } = useTranslation('admin')
+  const { t: tCommon } = useTranslation('common')
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { toast } = useToast()
@@ -108,13 +117,18 @@ export default function AdminCourseEditPage() {
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null)
   const [selectedModuleId, setSelectedModuleId] = useState<number | null>(null)
   const [selectedLessonId, setSelectedLessonId] = useState<number | null>(null)
+  const [modulePendingDelete, setModulePendingDelete] = useState<Module | null>(null)
+  const [lessonPendingDelete, setLessonPendingDelete] = useState<Lesson | null>(null)
+  const [quizPendingDelete, setQuizPendingDelete] = useState<Quiz | null>(null)
+  const [questionPendingDelete, setQuestionPendingDelete] = useState<Question | null>(null)
   const [selectedQuiz, setSelectedQuiz] = useState<Quiz | null>(null)
 
   const [moduleForm, setModuleForm] = useState({ title: '' })
-  const [lessonForm, setLessonForm] = useState({ title: '', type: 'video', duration_min: 10, videoUrl: '', documentUrl: '', linkUrl: '' })
-  const [lessonDocumentFile, setLessonDocumentFile] = useState<File | null>(null)
-  const [lessonDocumentUploading, setLessonDocumentUploading] = useState(false)
-  const [lessonDocumentProgress, setLessonDocumentProgress] = useState(0)
+  const [lessonForm, setLessonForm] = useState({ title: '', type: 'video', duration_min: 10, is_mandatory: false, videoUrl: '', documentUrl: '', linkUrl: '', presence_check_percent: null as number | null, reset_time_on_reopen: false, allow_document_download: true })
+  const [lessonVideoSource, setLessonVideoSource] = useState<'url' | 'upload'>('url')
+  const [lessonUploadFile, setLessonUploadFile] = useState<File | null>(null)
+  const [lessonUploadUploading, setLessonUploadUploading] = useState(false)
+  const [lessonUploadProgress, setLessonUploadProgress] = useState(0)
   const [quizForm, setQuizForm] = useState({
     title: '',
     description: '',
@@ -168,12 +182,12 @@ export default function AdminCourseEditPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['course-edit', courseId] })
-      toast({ title: 'Succès', description: 'Module créé avec succès' })
+      toast({ title: tCommon('status.success'), description: t('courseEdit.toasts.moduleCreated') })
       setIsModuleDialogOpen(false)
       setModuleForm({ title: '' })
     },
     onError: (error: any) => {
-      toast({ title: 'Erreur', description: error.response?.data?.error?.message || 'Erreur lors de la création', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: error.response?.data?.error?.message || t('courseEdit.genericCreateError'), variant: 'destructive' })
     },
   })
 
@@ -184,13 +198,13 @@ export default function AdminCourseEditPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['course-edit', courseId] })
-      toast({ title: 'Succès', description: 'Module mis à jour' })
+      toast({ title: tCommon('status.success'), description: t('courseEdit.toasts.moduleUpdated') })
       setIsModuleDialogOpen(false)
       setEditingModule(null)
       setModuleForm({ title: '' })
     },
     onError: (error: any) => {
-      toast({ title: 'Erreur', description: error.response?.data?.error?.message || 'Erreur lors de la mise à jour', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: error.response?.data?.error?.message || t('courseEdit.genericUpdateError'), variant: 'destructive' })
     },
   })
 
@@ -200,10 +214,10 @@ export default function AdminCourseEditPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['course-edit', courseId] })
-      toast({ title: 'Succès', description: 'Module supprimé' })
+      toast({ title: tCommon('status.success'), description: t('courseEdit.toasts.moduleDeleted') })
     },
     onError: (error: any) => {
-      toast({ title: 'Erreur', description: error.response?.data?.error?.message || 'Erreur lors de la suppression', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: error.response?.data?.error?.message || t('courseEdit.genericDeleteError'), variant: 'destructive' })
     },
   })
 
@@ -219,70 +233,79 @@ export default function AdminCourseEditPage() {
 
   // Lesson mutations
   const createLessonMutation = useMutation({
-    mutationFn: async (data: { 
-      moduleId: number; 
-      title: string; 
-      type: string; 
+    mutationFn: async (data: {
+      moduleId: number;
+      title: string;
+      type: string;
       duration_min: number;
+      is_mandatory?: boolean;
+      presence_check_percent?: number | null;
+      reset_time_on_reopen?: boolean;
+      allow_document_download?: boolean;
       videoUrl?: string;
       documentUrl?: string;
       documentFileId?: number;
+      videoFileId?: number;
       linkUrl?: string;
     }) => {
-      console.log('createLessonMutation - sending to API:', data)
-      
       // 1. Create the lesson first
       const response = await api.post(`/lessons`, {
         moduleId: data.moduleId,
         title: data.title,
         type: data.type,
         durationMin: data.duration_min,
+        isMandatory: data.is_mandatory,
+        presenceCheckPercent: data.presence_check_percent,
+        resetTimeOnReopen: data.reset_time_on_reopen,
+        allowDocumentDownload: data.allow_document_download,
       })
       const lesson = response.data.data
-      console.log('createLessonMutation - lesson created:', lesson)
-      
+
       // 2. Create associated content if URL or FileID is provided
       if (data.documentFileId) {
         // Pour les fichiers uploadés, utiliser fileId
-        console.log('Creating content with fileId:', data.documentFileId)
-        
         await api.post('/contents', {
           lessonId: lesson.id,
           type: 'pdf',
           title: data.title,
           fileId: data.documentFileId,
         })
-        console.log('Content created successfully')
+      } else if (data.videoFileId) {
+        // Vidéo uploadée localement, jouée depuis le stockage du serveur
+        await api.post('/contents', {
+          lessonId: lesson.id,
+          type: 'video_mp4',
+          title: data.title,
+          fileId: data.videoFileId,
+        })
       } else {
         const url = data.videoUrl || data.documentUrl || data.linkUrl
         if (url && url.trim()) {
           const contentType = mapLessonTypeToContentType(data.type)
-          console.log('Creating content with type:', contentType, 'url:', url)
-          
           await api.post('/contents', {
             lessonId: lesson.id,
             type: contentType,
             title: data.title,
             url: url.trim(),
           })
-          console.log('Content created successfully')
         }
       }
-      
+
       return lesson
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['course-edit', courseId] })
-      toast({ title: 'Succès', description: 'Leçon créée avec succès' })
+      toast({ title: tCommon('status.success'), description: t('courseEdit.toasts.lessonCreated') })
       setIsLessonDialogOpen(false)
-      setLessonForm({ title: '', type: 'video', duration_min: 10, videoUrl: '', documentUrl: '', linkUrl: '' })
-      setLessonDocumentFile(null)
-      setLessonDocumentProgress(0)
+      setLessonForm({ title: '', type: 'video', duration_min: 10, is_mandatory: false, videoUrl: '', documentUrl: '', linkUrl: '', presence_check_percent: null, reset_time_on_reopen: false, allow_document_download: true })
+      setLessonVideoSource('url')
+      setLessonUploadFile(null)
+      setLessonUploadProgress(0)
       setSelectedModuleId(null)
     },
     onError: (error: any) => {
       console.error('createLessonMutation - error:', error.response?.data || error)
-      toast({ title: 'Erreur', description: error.response?.data?.error?.message || 'Erreur lors de la création', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: error.response?.data?.error?.message || t('courseEdit.genericCreateError'), variant: 'destructive' })
     },
   })
 
@@ -293,15 +316,16 @@ export default function AdminCourseEditPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['course-edit', courseId] })
-      toast({ title: 'Succès', description: 'Leçon mise à jour' })
+      toast({ title: tCommon('status.success'), description: t('courseEdit.toasts.lessonUpdated') })
       setIsLessonDialogOpen(false)
       setEditingLesson(null)
-      setLessonForm({ title: '', type: 'video', duration_min: 10, videoUrl: '', documentUrl: '', linkUrl: '' })
-      setLessonDocumentFile(null)
-      setLessonDocumentProgress(0)
+      setLessonForm({ title: '', type: 'video', duration_min: 10, is_mandatory: false, videoUrl: '', documentUrl: '', linkUrl: '', presence_check_percent: null, reset_time_on_reopen: false, allow_document_download: true })
+      setLessonVideoSource('url')
+      setLessonUploadFile(null)
+      setLessonUploadProgress(0)
     },
     onError: (error: any) => {
-      toast({ title: 'Erreur', description: error.response?.data?.error?.message || 'Erreur lors de la mise à jour', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: error.response?.data?.error?.message || t('courseEdit.genericUpdateError'), variant: 'destructive' })
     },
   })
 
@@ -311,10 +335,10 @@ export default function AdminCourseEditPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['course-edit', courseId] })
-      toast({ title: 'Succès', description: 'Leçon supprimée' })
+      toast({ title: tCommon('status.success'), description: t('courseEdit.toasts.lessonDeleted') })
     },
     onError: (error: any) => {
-      toast({ title: 'Erreur', description: error.response?.data?.error?.message || 'Erreur lors de la suppression', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: error.response?.data?.error?.message || t('courseEdit.genericDeleteError'), variant: 'destructive' })
     },
   })
 
@@ -340,13 +364,13 @@ export default function AdminCourseEditPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['course-edit', courseId] })
-      toast({ title: 'Succès', description: 'Quiz créé avec succès' })
+      toast({ title: tCommon('status.success'), description: t('courseEdit.toasts.quizCreated') })
       setIsQuizDialogOpen(false)
       resetQuizForm()
       setSelectedLessonId(null)
     },
     onError: (error: any) => {
-      toast({ title: 'Erreur', description: error.response?.data?.error?.message || 'Erreur lors de la création', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: error.response?.data?.error?.message || t('courseEdit.genericCreateError'), variant: 'destructive' })
     },
   })
 
@@ -357,13 +381,13 @@ export default function AdminCourseEditPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['course-edit', courseId] })
-      toast({ title: 'Succès', description: 'Quiz mis à jour' })
+      toast({ title: tCommon('status.success'), description: t('courseEdit.toasts.quizUpdated') })
       setIsQuizDialogOpen(false)
       setEditingQuiz(null)
       resetQuizForm()
     },
     onError: (error: any) => {
-      toast({ title: 'Erreur', description: error.response?.data?.error?.message || 'Erreur lors de la mise à jour', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: error.response?.data?.error?.message || t('courseEdit.genericUpdateError'), variant: 'destructive' })
     },
   })
 
@@ -373,10 +397,10 @@ export default function AdminCourseEditPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['course-edit', courseId] })
-      toast({ title: 'Succès', description: 'Quiz supprimé' })
+      toast({ title: tCommon('status.success'), description: t('courseEdit.toasts.quizDeleted') })
     },
     onError: (error: any) => {
-      toast({ title: 'Erreur', description: error.response?.data?.error?.message || 'Erreur lors de la suppression', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: error.response?.data?.error?.message || t('courseEdit.genericDeleteError'), variant: 'destructive' })
     },
   })
 
@@ -401,7 +425,7 @@ export default function AdminCourseEditPage() {
         setQuizQuestions(questions)
       }
       queryClient.invalidateQueries({ queryKey: ['course-edit', courseId] })
-      toast({ title: 'Succès', description: 'Question ajoutée' })
+      toast({ title: tCommon('status.success'), description: t('courseEdit.toasts.questionAdded') })
       setIsQuestionDialogOpen(false)
       setQuestionForm({
         type: 'mcq',
@@ -410,7 +434,7 @@ export default function AdminCourseEditPage() {
       })
     },
     onError: (error: any) => {
-      toast({ title: 'Erreur', description: error.response?.data?.error?.message || 'Erreur lors de la création', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: error.response?.data?.error?.message || t('courseEdit.genericCreateError'), variant: 'destructive' })
     },
   })
 
@@ -428,7 +452,7 @@ export default function AdminCourseEditPage() {
         setQuizQuestions(questions)
       }
       queryClient.invalidateQueries({ queryKey: ['course-edit', courseId] })
-      toast({ title: 'Succès', description: 'Question mise à jour' })
+      toast({ title: tCommon('status.success'), description: t('courseEdit.toasts.questionUpdated') })
       setIsQuestionDialogOpen(false)
       setEditingQuestion(null)
       setQuestionForm({
@@ -438,7 +462,7 @@ export default function AdminCourseEditPage() {
       })
     },
     onError: (error: any) => {
-      toast({ title: 'Erreur', description: error.response?.data?.error?.message || 'Erreur lors de la mise à jour', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: error.response?.data?.error?.message || t('courseEdit.genericUpdateError'), variant: 'destructive' })
     },
   })
 
@@ -453,10 +477,10 @@ export default function AdminCourseEditPage() {
         setQuizQuestions(questions)
       }
       queryClient.invalidateQueries({ queryKey: ['course-edit', courseId] })
-      toast({ title: 'Succès', description: 'Question supprimée' })
+      toast({ title: tCommon('status.success'), description: t('courseEdit.toasts.questionDeleted') })
     },
     onError: (error: any) => {
-      toast({ title: 'Erreur', description: error.response?.data?.error?.message || 'Erreur lors de la suppression', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: error.response?.data?.error?.message || t('courseEdit.genericDeleteError'), variant: 'destructive' })
     },
   })
 
@@ -479,27 +503,32 @@ export default function AdminCourseEditPage() {
   }
 
   const openAddLesson = (moduleId: number) => {
-    console.log('openAddLesson called with moduleId:', moduleId)
     setSelectedModuleId(moduleId)
     setEditingLesson(null)
-    setLessonForm({ title: '', type: 'video', duration_min: 10, videoUrl: '', documentUrl: '', linkUrl: '' })
-    setLessonDocumentFile(null)
-    setLessonDocumentProgress(0)
+    setLessonForm({ title: '', type: 'video', duration_min: 10, is_mandatory: false, videoUrl: '', documentUrl: '', linkUrl: '', presence_check_percent: null, reset_time_on_reopen: false, allow_document_download: true })
+    setLessonVideoSource('url')
+    setLessonUploadFile(null)
+    setLessonUploadProgress(0)
     setIsLessonDialogOpen(true)
   }
 
   const openEditLesson = (lesson: Lesson) => {
     setEditingLesson(lesson)
-    setLessonForm({ 
-      title: lesson.title, 
-      type: lesson.type || 'video', 
+    setLessonForm({
+      title: lesson.title,
+      type: lesson.type || 'video',
       duration_min: lesson.duration_min,
+      is_mandatory: lesson.is_mandatory || false,
       videoUrl: (lesson as any).videoUrl || '',
       documentUrl: (lesson as any).documentUrl || '',
-      linkUrl: (lesson as any).linkUrl || ''
+      linkUrl: (lesson as any).linkUrl || '',
+      presence_check_percent: lesson.presence_check_percent ?? null,
+      reset_time_on_reopen: lesson.reset_time_on_reopen || false,
+      allow_document_download: lesson.allow_document_download ?? true,
     })
-    setLessonDocumentFile(null)
-    setLessonDocumentProgress(0)
+    setLessonVideoSource('url')
+    setLessonUploadFile(null)
+    setLessonUploadProgress(0)
     setIsLessonDialogOpen(true)
   }
 
@@ -637,50 +666,46 @@ export default function AdminCourseEditPage() {
   }
 
   const handleLessonSubmit = async () => {
-    console.log('handleLessonSubmit called', { editingLesson, selectedModuleId, lessonForm })
-    
-    // Si c'est un document et qu'un fichier est sélectionné, l'uploader d'abord
-    if (!editingLesson && lessonForm.type === 'document' && lessonDocumentFile) {
-      setLessonDocumentUploading(true)
-      setLessonDocumentProgress(0)
-      
+    // Si un fichier local est sélectionné (document, ou vidéo en mode upload),
+    // l'uploader d'abord puis créer la leçon avec l'ID du fichier obtenu.
+    const isDocumentUpload = lessonForm.type === 'document' && !!lessonUploadFile
+    const isVideoUpload = lessonForm.type === 'video' && lessonVideoSource === 'upload' && !!lessonUploadFile
+    if (!editingLesson && (isDocumentUpload || isVideoUpload)) {
+      setLessonUploadUploading(true)
+      setLessonUploadProgress(0)
+
       try {
         const uploadedFile = await fileService.uploadFile(
-          lessonDocumentFile,
-          (progress) => setLessonDocumentProgress(progress),
+          lessonUploadFile!,
+          (progress) => setLessonUploadProgress(progress),
           'lessons'
         )
-        
+
         // Créer la leçon avec l'ID du fichier uploadé
         if (selectedModuleId) {
-          console.log('Creating lesson with uploaded document:', {
-            moduleId: selectedModuleId,
-            title: lessonForm.title,
-            type: lessonForm.type,
-            duration_min: lessonForm.duration_min,
-            documentFileId: uploadedFile.id,
-          })
           createLessonMutation.mutate({
             moduleId: selectedModuleId,
             title: lessonForm.title,
             type: lessonForm.type,
             duration_min: lessonForm.duration_min,
-            documentFileId: uploadedFile.id,
+            is_mandatory: lessonForm.is_mandatory,
+            documentFileId: isDocumentUpload ? uploadedFile.id : undefined,
+            videoFileId: isVideoUpload ? uploadedFile.id : undefined,
           })
         }
       } catch (error) {
-        console.error('Erreur lors de l\'upload du document:', error)
+        console.error('Erreur lors de l\'upload du fichier:', error)
         toast({
-          title: 'Erreur',
-          description: 'Impossible de télécharger le document. Veuillez réessayer.',
+          title: tCommon('status.error'),
+          description: isVideoUpload ? t('courseEdit.toasts.videoUploadError') : t('courseEdit.toasts.documentUploadError'),
           variant: 'destructive',
         })
       } finally {
-        setLessonDocumentUploading(false)
+        setLessonUploadUploading(false)
       }
       return
     }
-    
+
     if (editingLesson) {
       updateLessonMutation.mutate({
         lessonId: editingLesson.id,
@@ -688,13 +713,13 @@ export default function AdminCourseEditPage() {
           title: lessonForm.title,
           type: lessonForm.type,
           durationMin: lessonForm.duration_min,
+          isMandatory: lessonForm.is_mandatory,
+          presenceCheckPercent: lessonForm.presence_check_percent,
+          resetTimeOnReopen: lessonForm.reset_time_on_reopen,
+          allowDocumentDownload: lessonForm.allow_document_download,
         },
       })
     } else if (selectedModuleId) {
-      console.log('Creating lesson with data:', {
-        moduleId: selectedModuleId,
-        ...lessonForm,
-      })
       createLessonMutation.mutate({
         moduleId: selectedModuleId,
         ...lessonForm,
@@ -761,8 +786,8 @@ export default function AdminCourseEditPage() {
     return (
       <div className="text-center py-12">
         <BookOpen className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-        <h2 className="text-xl font-semibold mb-2">Cours non trouvé</h2>
-        <Button onClick={() => navigate('/admin/courses')}>Retour aux cours</Button>
+        <h2 className="text-xl font-semibold mb-2">{t('courseEdit.notFound.title')}</h2>
+        <Button onClick={() => navigate('/admin/courses')}>{t('courseEdit.notFound.backButton')}</Button>
       </div>
     )
   }
@@ -770,23 +795,21 @@ export default function AdminCourseEditPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" onClick={() => navigate('/admin/courses')}>
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Retour
-          </Button>
-          <div>
-            <h1 className="text-2xl font-bold">{course.title}</h1>
-            <p className="text-muted-foreground">Gérer le contenu du cours</p>
-          </div>
+      <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+        <Button variant="ghost" onClick={() => navigate('/admin/courses')} className="self-start">
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          {t('courseEdit.header.back')}
+        </Button>
+        <div>
+          <h1 className="text-2xl font-bold">{course.title}</h1>
+          <p className="text-muted-foreground">{t('courseEdit.header.manageContent')}</p>
         </div>
       </div>
 
       <Tabs defaultValue="content">
         <TabsList>
-          <TabsTrigger value="content">Contenu</TabsTrigger>
-          <TabsTrigger value="settings">Paramètres</TabsTrigger>
+          <TabsTrigger value="content">{t('courseEdit.tabs.content')}</TabsTrigger>
+          <TabsTrigger value="settings">{t('courseEdit.tabs.settings')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="content" className="space-y-4">
@@ -794,7 +817,7 @@ export default function AdminCourseEditPage() {
           <div className="flex justify-end">
             <Button onClick={openAddModule}>
               <Plus className="h-4 w-4 mr-2" />
-              Ajouter un module
+              {t('courseEdit.addModule')}
             </Button>
           </div>
 
@@ -804,22 +827,22 @@ export default function AdminCourseEditPage() {
               {course.modules.map((module: Module, index: number) => (
                 <Card key={module.id}>
                   <CardHeader className="pb-2">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
                       <div
-                        className="flex items-center gap-2 cursor-pointer flex-1"
+                        className="flex items-center gap-2 cursor-pointer flex-1 min-w-0"
                         onClick={() => toggleModule(module.id)}
                       >
                         {expandedModules.includes(module.id) ? (
-                          <ChevronDown className="h-5 w-5" />
+                          <ChevronDown className="h-5 w-5 shrink-0" />
                         ) : (
-                          <ChevronRight className="h-5 w-5" />
+                          <ChevronRight className="h-5 w-5 shrink-0" />
                         )}
-                        <span className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-sm font-bold text-primary">
+                        <span className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-sm font-bold text-primary shrink-0">
                           {index + 1}
                         </span>
-                        <CardTitle className="text-lg">{module.title}</CardTitle>
-                        <span className="text-sm text-muted-foreground">
-                          ({module.lessons?.length || 0} leçons)
+                        <CardTitle className="text-lg truncate">{module.title}</CardTitle>
+                        <span className="text-sm text-muted-foreground whitespace-nowrap">
+                          {t('courseEdit.lessonsCount', { count: module.lessons?.length || 0 })}
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
@@ -829,11 +852,7 @@ export default function AdminCourseEditPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => {
-                            if (confirm('Supprimer ce module ?')) {
-                              deleteModuleMutation.mutate(module.id)
-                            }
-                          }}
+                          onClick={() => setModulePendingDelete(module)}
                         >
                           <Trash2 className="h-4 w-4 text-red-500" />
                         </Button>
@@ -847,11 +866,16 @@ export default function AdminCourseEditPage() {
                         {module.lessons && module.lessons.length > 0 ? (
                           module.lessons.map((lesson: Lesson) => (
                             <div key={lesson.id} className="border rounded-lg p-3">
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-3">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex items-center gap-3 min-w-0">
                                   {getLessonIcon(lesson.type)}
-                                  <div>
-                                    <p className="font-medium">{lesson.title}</p>
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-2">
+                                      <p className="font-medium truncate">{lesson.title}</p>
+                                      {lesson.is_mandatory && (
+                                        <Badge variant="secondary" className="shrink-0">{t('courseEdit.lessonDialog.mandatory')}</Badge>
+                                      )}
+                                    </div>
                                     <p className="text-sm text-muted-foreground">
                                       {lesson.type} · {lesson.duration_min} min
                                     </p>
@@ -864,7 +888,7 @@ export default function AdminCourseEditPage() {
                                     onClick={() => openAddQuiz(lesson.id)}
                                   >
                                     <HelpCircle className="h-4 w-4 mr-1" />
-                                    Quiz
+                                    {t('courseEdit.quizButton')}
                                   </Button>
                                   <Button variant="ghost" size="sm" onClick={() => openEditLesson(lesson)}>
                                     <Edit className="h-4 w-4" />
@@ -872,11 +896,7 @@ export default function AdminCourseEditPage() {
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => {
-                                      if (confirm('Supprimer cette leçon ?')) {
-                                        deleteLessonMutation.mutate(lesson.id)
-                                      }
-                                    }}
+                                    onClick={() => setLessonPendingDelete(lesson)}
                                   >
                                     <Trash2 className="h-4 w-4 text-red-500" />
                                   </Button>
@@ -889,13 +909,13 @@ export default function AdminCourseEditPage() {
                                   {lesson.quizzes.map((quiz: Quiz) => (
                                     <div
                                       key={quiz.id}
-                                      className="flex items-center justify-between bg-muted/50 rounded p-2"
+                                      className="flex flex-wrap items-center justify-between gap-2 bg-muted/50 rounded p-2"
                                     >
                                       <div className="flex items-center gap-2">
                                         <HelpCircle className="h-4 w-4 text-primary" />
                                         <span className="text-sm">{quiz.title}</span>
                                         <span className="text-xs text-muted-foreground">
-                                          (Score requis: {quiz.passing_score}% · {quiz.question_count || 0} questions)
+                                          {t('courseEdit.passingScoreInfo', { score: quiz.passing_score, count: quiz.question_count || 0 })}
                                         </span>
                                       </div>
                                       <div className="flex items-center gap-1">
@@ -905,7 +925,7 @@ export default function AdminCourseEditPage() {
                                           onClick={() => openQuizQuestions(quiz)}
                                         >
                                           <Plus className="h-3 w-3 mr-1" />
-                                          Questions
+                                          {t('courseEdit.questionsButton')}
                                         </Button>
                                         <Button
                                           variant="ghost"
@@ -917,11 +937,7 @@ export default function AdminCourseEditPage() {
                                         <Button
                                           variant="ghost"
                                           size="sm"
-                                          onClick={() => {
-                                            if (confirm('Supprimer ce quiz ?')) {
-                                              deleteQuizMutation.mutate(quiz.id)
-                                            }
-                                          }}
+                                          onClick={() => setQuizPendingDelete(quiz)}
                                         >
                                           <Trash2 className="h-3 w-3 text-red-500" />
                                         </Button>
@@ -934,7 +950,7 @@ export default function AdminCourseEditPage() {
                           ))
                         ) : (
                           <p className="text-sm text-muted-foreground py-4 text-center">
-                            Aucune leçon dans ce module
+                            {t('courseEdit.noLessonsInModule')}
                           </p>
                         )}
 
@@ -944,7 +960,7 @@ export default function AdminCourseEditPage() {
                           onClick={() => openAddLesson(module.id)}
                         >
                           <Plus className="h-4 w-4 mr-2" />
-                          Ajouter une leçon
+                          {t('courseEdit.addLesson')}
                         </Button>
                       </div>
                     </CardContent>
@@ -956,13 +972,13 @@ export default function AdminCourseEditPage() {
             <Card>
               <CardContent className="py-12 text-center">
                 <BookOpen className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                <h3 className="text-lg font-medium mb-2">Aucun module</h3>
+                <h3 className="text-lg font-medium mb-2">{t('courseEdit.noModules.title')}</h3>
                 <p className="text-muted-foreground mb-4">
-                  Commencez par ajouter un module pour structurer votre cours
+                  {t('courseEdit.noModules.description')}
                 </p>
                 <Button onClick={openAddModule}>
                   <Plus className="h-4 w-4 mr-2" />
-                  Ajouter un module
+                  {t('courseEdit.addModule')}
                 </Button>
               </CardContent>
             </Card>
@@ -972,12 +988,12 @@ export default function AdminCourseEditPage() {
         <TabsContent value="settings">
           <Card>
             <CardHeader>
-              <CardTitle>Paramètres du cours</CardTitle>
-              <CardDescription>Configuration générale du cours</CardDescription>
+              <CardTitle>{t('courseEdit.settingsTab.title')}</CardTitle>
+              <CardDescription>{t('courseEdit.settingsTab.description')}</CardDescription>
             </CardHeader>
             <CardContent>
               <p className="text-muted-foreground">
-                Utilisez la page de gestion des cours pour modifier les paramètres généraux.
+                {t('courseEdit.settingsTab.hint')}
               </p>
             </CardContent>
           </Card>
@@ -988,31 +1004,31 @@ export default function AdminCourseEditPage() {
       <Dialog open={isModuleDialogOpen} onOpenChange={setIsModuleDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editingModule ? 'Modifier le module' : 'Ajouter un module'}</DialogTitle>
+            <DialogTitle>{editingModule ? t('courseEdit.moduleDialog.editTitle') : t('courseEdit.moduleDialog.addTitle')}</DialogTitle>
             <DialogDescription>
-              {editingModule ? 'Modifiez les informations du module' : 'Créez un nouveau module pour structurer votre cours'}
+              {editingModule ? t('courseEdit.moduleDialog.editDescription') : t('courseEdit.moduleDialog.addDescription')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label htmlFor="module-title">Titre du module</Label>
+              <Label htmlFor="module-title">{t('courseEdit.moduleDialog.titleLabel')}</Label>
               <Input
                 id="module-title"
                 value={moduleForm.title}
                 onChange={(e) => setModuleForm({ ...moduleForm, title: e.target.value })}
-                placeholder="Ex: Introduction au sujet"
+                placeholder={t('courseEdit.moduleDialog.titlePlaceholder')}
               />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsModuleDialogOpen(false)}>
-              Annuler
+              {t('courseEdit.moduleDialog.cancel')}
             </Button>
             <Button
               onClick={handleModuleSubmit}
               disabled={!moduleForm.title || createModuleMutation.isPending || updateModuleMutation.isPending}
             >
-              {editingModule ? 'Mettre à jour' : 'Créer'}
+              {editingModule ? t('courseEdit.moduleDialog.update') : t('courseEdit.moduleDialog.create')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1022,106 +1038,173 @@ export default function AdminCourseEditPage() {
       <Dialog open={isLessonDialogOpen} onOpenChange={setIsLessonDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editingLesson ? 'Modifier la leçon' : 'Ajouter une leçon'}</DialogTitle>
+            <DialogTitle>{editingLesson ? t('courseEdit.lessonDialog.editTitle') : t('courseEdit.lessonDialog.addTitle')}</DialogTitle>
             <DialogDescription>
-              {editingLesson ? 'Modifiez les informations de la leçon' : 'Créez une nouvelle leçon'}
+              {editingLesson ? t('courseEdit.lessonDialog.editDescription') : t('courseEdit.lessonDialog.addDescription')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label htmlFor="lesson-title">Titre de la leçon</Label>
+              <Label htmlFor="lesson-title">{t('courseEdit.lessonDialog.titleLabel')}</Label>
               <Input
                 id="lesson-title"
                 value={lessonForm.title}
                 onChange={(e) => setLessonForm({ ...lessonForm, title: e.target.value })}
-                placeholder="Ex: Comprendre les bases"
+                placeholder={t('courseEdit.lessonDialog.titlePlaceholder')}
               />
             </div>
             <div>
-              <Label htmlFor="lesson-type">Type de contenu</Label>
+              <Label htmlFor="lesson-type">{t('courseEdit.lessonDialog.contentType')}</Label>
               <Select
                 value={lessonForm.type}
                 onValueChange={(value: string) => {
                   setLessonForm({ ...lessonForm, type: value, videoUrl: '', documentUrl: '', linkUrl: '' })
-                  setLessonDocumentFile(null)
-                  setLessonDocumentProgress(0)
+                  setLessonVideoSource('url')
+                  setLessonUploadFile(null)
+                  setLessonUploadProgress(0)
                 }}
               >
-                <SelectTrigger>
+                <SelectTrigger id="lesson-type">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="video">
                     <div className="flex items-center gap-2">
                       <Video className="h-4 w-4" />
-                      Vidéo
+                      {t('courseEdit.lessonDialog.video')}
                     </div>
                   </SelectItem>
                   <SelectItem value="document">
                     <div className="flex items-center gap-2">
                       <FileText className="h-4 w-4" />
-                      Document
+                      {t('courseEdit.lessonDialog.document')}
                     </div>
                   </SelectItem>
                   <SelectItem value="link">
                     <div className="flex items-center gap-2">
                       <BookOpen className="h-4 w-4" />
-                      Lien externe
+                      {t('courseEdit.lessonDialog.link')}
                     </div>
                   </SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
-            {/* Champ URL Vidéo */}
+            {/* Vidéo : lien externe ou fichier uploadé localement */}
             {lessonForm.type === 'video' && (
-              <div>
-                <Label htmlFor="lesson-video-url">URL de la vidéo</Label>
-                <Input
-                  id="lesson-video-url"
-                  value={lessonForm.videoUrl}
-                  onChange={(e) => setLessonForm({ ...lessonForm, videoUrl: e.target.value })}
-                  placeholder="Ex: https://youtube.com/watch?v=... ou https://vimeo.com/..."
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Supporte YouTube, Vimeo et autres liens vidéo directs
-                </p>
+              <div className="space-y-3">
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant={lessonVideoSource === 'url' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setLessonVideoSource('url')}
+                  >
+                    {t('courseEdit.lessonDialog.videoSourceUrl')}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={lessonVideoSource === 'upload' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => {
+                      setLessonVideoSource('upload')
+                      setLessonForm({ ...lessonForm, videoUrl: '' })
+                    }}
+                  >
+                    {t('courseEdit.lessonDialog.videoSourceUpload')}
+                  </Button>
+                </div>
+
+                {lessonVideoSource === 'url' ? (
+                  <div>
+                    <Label htmlFor="lesson-video-url">{t('courseEdit.lessonDialog.videoUrl')}</Label>
+                    <Input
+                      id="lesson-video-url"
+                      value={lessonForm.videoUrl}
+                      onChange={(e) => setLessonForm({ ...lessonForm, videoUrl: e.target.value })}
+                      placeholder={t('courseEdit.lessonDialog.videoUrlPlaceholder')}
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {t('courseEdit.lessonDialog.videoUrlHint')}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <Label>{t('courseEdit.lessonDialog.videoToUpload')}</Label>
+                    <FileUpload
+                      accept=".mp4,.webm"
+                      multiple={false}
+                      maxFiles={1}
+                      maxSize={100 * 1024 * 1024}
+                      disabled={lessonUploadUploading}
+                      onFilesSelected={(files) => {
+                        if (files.length > 0) {
+                          setLessonUploadFile(files[0])
+                        }
+                      }}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {t('courseEdit.lessonDialog.videoToUploadHint')}
+                    </p>
+
+                    {lessonUploadFile && (
+                      <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900">
+                        <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                          🎬 {lessonUploadFile.name}
+                        </p>
+                        {lessonUploadUploading && (
+                          <div className="mt-2 space-y-2">
+                            <Progress value={lessonUploadProgress} className="h-1" />
+                            <p className="text-xs text-blue-600 dark:text-blue-300">
+                              {t('courseEdit.lessonDialog.uploadProgress', { percent: lessonUploadProgress })}
+                            </p>
+                          </div>
+                        )}
+                        {!lessonUploadUploading && lessonUploadProgress === 100 && (
+                          <p className="text-xs text-green-600 dark:text-green-300 mt-2">
+                            {t('courseEdit.lessonDialog.uploadReady')}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
             {/* Champ Upload Document */}
             {lessonForm.type === 'document' && (
               <div className="space-y-3">
-                <Label>Document à uploader</Label>
+                <Label>{t('courseEdit.lessonDialog.documentToUpload')}</Label>
                 <FileUpload
                   accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.png,.jpg,.jpeg,.gif,.mp4"
                   multiple={false}
                   maxFiles={1}
                   maxSize={100 * 1024 * 1024}
-                  disabled={lessonDocumentUploading}
+                  disabled={lessonUploadUploading}
                   onFilesSelected={(files) => {
                     if (files.length > 0) {
-                      setLessonDocumentFile(files[0])
+                      setLessonUploadFile(files[0])
                     }
                   }}
                 />
                 
-                {lessonDocumentFile && (
+                {lessonUploadFile && (
                   <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900">
                     <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
-                      📄 {lessonDocumentFile.name}
+                      📄 {lessonUploadFile.name}
                     </p>
-                    {lessonDocumentUploading && (
+                    {lessonUploadUploading && (
                       <div className="mt-2 space-y-2">
-                        <Progress value={lessonDocumentProgress} className="h-1" />
+                        <Progress value={lessonUploadProgress} className="h-1" />
                         <p className="text-xs text-blue-600 dark:text-blue-300">
-                          Téléchargement: {lessonDocumentProgress}%
+                          {t('courseEdit.lessonDialog.uploadProgress', { percent: lessonUploadProgress })}
                         </p>
                       </div>
                     )}
-                    {!lessonDocumentUploading && lessonDocumentProgress === 100 && (
+                    {!lessonUploadUploading && lessonUploadProgress === 100 && (
                       <p className="text-xs text-green-600 dark:text-green-300 mt-2">
-                        ✓ Fichier prêt à être uploadé lors de la création
+                        {t('courseEdit.lessonDialog.uploadReady')}
                       </p>
                     )}
                   </div>
@@ -1132,21 +1215,21 @@ export default function AdminCourseEditPage() {
             {/* Champ URL Lien externe */}
             {lessonForm.type === 'link' && (
               <div>
-                <Label htmlFor="lesson-link-url">URL du lien</Label>
+                <Label htmlFor="lesson-link-url">{t('courseEdit.lessonDialog.linkUrl')}</Label>
                 <Input
                   id="lesson-link-url"
                   value={lessonForm.linkUrl}
                   onChange={(e) => setLessonForm({ ...lessonForm, linkUrl: e.target.value })}
-                  placeholder="Ex: https://example.com/ressource"
+                  placeholder={t('courseEdit.lessonDialog.linkUrlPlaceholder')}
                 />
                 <p className="text-xs text-muted-foreground mt-1">
-                  Lien vers une ressource externe
+                  {t('courseEdit.lessonDialog.linkUrlHint')}
                 </p>
               </div>
             )}
 
             <div>
-              <Label htmlFor="lesson-duration">Durée estimée (minutes)</Label>
+              <Label htmlFor="lesson-duration">{t('courseEdit.lessonDialog.duration')}</Label>
               <Input
                 id="lesson-duration"
                 type="number"
@@ -1155,23 +1238,75 @@ export default function AdminCourseEditPage() {
                 onChange={(e) => setLessonForm({ ...lessonForm, duration_min: parseInt(e.target.value) || 10 })}
               />
             </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="lesson-mandatory"
+                checked={lessonForm.is_mandatory}
+                onChange={(e) => setLessonForm({ ...lessonForm, is_mandatory: e.target.checked })}
+                className="rounded"
+              />
+              <Label htmlFor="lesson-mandatory">{t('courseEdit.lessonDialog.mandatory')}</Label>
+            </div>
+
+            <div>
+              <Label htmlFor="lesson-presence-check">{t('courseEdit.lessonDialog.presenceCheckPercent')}</Label>
+              <Input
+                id="lesson-presence-check"
+                type="number"
+                min="0"
+                max="100"
+                value={lessonForm.presence_check_percent ?? ''}
+                onChange={(e) => {
+                  const value = e.target.value
+                  setLessonForm({ ...lessonForm, presence_check_percent: value === '' ? null : Math.min(100, Math.max(0, parseInt(value) || 0)) })
+                }}
+                placeholder={t('courseEdit.lessonDialog.presenceCheckPercentPlaceholder')}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                {t('courseEdit.lessonDialog.presenceCheckPercentHint')}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="lesson-reset-time"
+                checked={lessonForm.reset_time_on_reopen}
+                onChange={(e) => setLessonForm({ ...lessonForm, reset_time_on_reopen: e.target.checked })}
+                className="rounded"
+              />
+              <Label htmlFor="lesson-reset-time">{t('courseEdit.lessonDialog.resetTimeOnReopen')}</Label>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="lesson-allow-download"
+                checked={lessonForm.allow_document_download}
+                onChange={(e) => setLessonForm({ ...lessonForm, allow_document_download: e.target.checked })}
+                className="rounded"
+              />
+              <Label htmlFor="lesson-allow-download">{t('courseEdit.lessonDialog.allowDownload')}</Label>
+            </div>
           </div>
           <DialogFooter>
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={() => {
                 setIsLessonDialogOpen(false)
-                setLessonDocumentFile(null)
-                setLessonDocumentProgress(0)
+                setLessonUploadFile(null)
+                setLessonUploadProgress(0)
               }}
             >
-              Annuler
+              {t('courseEdit.lessonDialog.cancel')}
             </Button>
             <Button
               onClick={handleLessonSubmit}
-              disabled={!lessonForm.title || createLessonMutation.isPending || updateLessonMutation.isPending || lessonDocumentUploading}
+              disabled={!lessonForm.title || createLessonMutation.isPending || updateLessonMutation.isPending || lessonUploadUploading}
             >
-              {lessonDocumentUploading ? 'Téléchargement...' : editingLesson ? 'Mettre à jour' : 'Créer'}
+              {lessonUploadUploading ? t('courseEdit.lessonDialog.uploading') : editingLesson ? t('courseEdit.lessonDialog.update') : t('courseEdit.lessonDialog.create')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1181,41 +1316,41 @@ export default function AdminCourseEditPage() {
       <Dialog open={isQuizDialogOpen} onOpenChange={setIsQuizDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editingQuiz ? 'Modifier le quiz' : 'Ajouter un quiz'}</DialogTitle>
+            <DialogTitle>{editingQuiz ? t('courseEdit.quizDialog.editTitle') : t('courseEdit.quizDialog.addTitle')}</DialogTitle>
             <DialogDescription>
-              {editingQuiz ? 'Modifiez les informations du quiz' : 'Créez un quiz pour évaluer les connaissances des apprenants'}
+              {editingQuiz ? t('courseEdit.quizDialog.editDescription') : t('courseEdit.quizDialog.addDescription')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label htmlFor="quiz-title">Titre du quiz</Label>
+              <Label htmlFor="quiz-title">{t('courseEdit.quizDialog.titleLabel')}</Label>
               <Input
                 id="quiz-title"
                 value={quizForm.title}
                 onChange={(e) => setQuizForm({ ...quizForm, title: e.target.value })}
-                placeholder="Ex: Quiz de fin de chapitre"
+                placeholder={t('courseEdit.quizDialog.titlePlaceholder')}
               />
             </div>
             <div>
-              <Label htmlFor="quiz-description">Description</Label>
+              <Label htmlFor="quiz-description">{t('courseEdit.quizDialog.description')}</Label>
               <Input
                 id="quiz-description"
                 value={quizForm.description}
                 onChange={(e) => setQuizForm({ ...quizForm, description: e.target.value })}
-                placeholder="Description du quiz (optionnel)"
+                placeholder={t('courseEdit.quizDialog.descriptionPlaceholder')}
               />
             </div>
             <div>
-              <Label htmlFor="quiz-instructions">Instructions</Label>
+              <Label htmlFor="quiz-instructions">{t('courseEdit.quizDialog.instructions')}</Label>
               <Input
                 id="quiz-instructions"
                 value={quizForm.instructions}
                 onChange={(e) => setQuizForm({ ...quizForm, instructions: e.target.value })}
-                placeholder="Instructions pour les participants (optionnel)"
+                placeholder={t('courseEdit.quizDialog.instructionsPlaceholder')}
               />
             </div>
             <div>
-              <Label htmlFor="quiz-passing-score">Score de réussite (%)</Label>
+              <Label htmlFor="quiz-passing-score">{t('courseEdit.quizDialog.passingScore')}</Label>
               <Input
                 id="quiz-passing-score"
                 type="number"
@@ -1225,46 +1360,46 @@ export default function AdminCourseEditPage() {
                 onChange={(e) => setQuizForm({ ...quizForm, passing_score: parseInt(e.target.value) || 70 })}
               />
             </div>
-            <div className="flex gap-4">
+            <div className="flex flex-col sm:flex-row gap-4">
               <div className="flex-1">
-                <Label htmlFor="quiz-time-limit">Durée limite (minutes)</Label>
+                <Label htmlFor="quiz-time-limit">{t('courseEdit.quizDialog.timeLimit')}</Label>
                 <Input
                   id="quiz-time-limit"
                   type="number"
                   min="0"
                   value={quizForm.time_limit_minutes ?? ''}
                   onChange={(e) => setQuizForm({ ...quizForm, time_limit_minutes: e.target.value ? parseInt(e.target.value) : null })}
-                  placeholder="Ex: 30"
+                  placeholder={t('courseEdit.quizDialog.timeLimitPlaceholder')}
                 />
               </div>
               <div className="flex-1">
-                <Label htmlFor="quiz-max-attempts">Nombre d'essais max</Label>
+                <Label htmlFor="quiz-max-attempts">{t('courseEdit.quizDialog.maxAttempts')}</Label>
                 <Input
                   id="quiz-max-attempts"
                   type="number"
                   min="1"
                   value={quizForm.max_attempts ?? 3}
                   onChange={(e) => setQuizForm({ ...quizForm, max_attempts: e.target.value ? parseInt(e.target.value) : 3 })}
-                  placeholder="Ex: 3"
+                  placeholder={t('courseEdit.quizDialog.maxAttemptsPlaceholder')}
                 />
               </div>
             </div>
             <div>
-              <Label htmlFor="quiz-questions-to-draw">Questions tirées au hasard (sur la banque de questions)</Label>
+              <Label htmlFor="quiz-questions-to-draw">{t('courseEdit.quizDialog.questionsToDraw')}</Label>
               <Input
                 id="quiz-questions-to-draw"
                 type="number"
                 min="1"
                 value={quizForm.questions_to_draw ?? ''}
                 onChange={(e) => setQuizForm({ ...quizForm, questions_to_draw: e.target.value ? parseInt(e.target.value) : null })}
-                placeholder="Laisser vide pour utiliser toutes les questions"
+                placeholder={t('courseEdit.quizDialog.questionsToDrawPlaceholder')}
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Chaque tentative tirera aléatoirement ce nombre de questions parmi celles du quiz.
+                {t('courseEdit.quizDialog.questionsToDrawHint')}
               </p>
             </div>
             <div>
-              <Label htmlFor="quiz-expires-at">Date d'expiration</Label>
+              <Label htmlFor="quiz-expires-at">{t('courseEdit.quizDialog.expiresAt')}</Label>
               <Input
                 id="quiz-expires-at"
                 type="date"
@@ -1273,14 +1408,14 @@ export default function AdminCourseEditPage() {
               />
             </div>
             <div>
-              <Label htmlFor="quiz-badge">Badge associé</Label>
+              <Label htmlFor="quiz-badge">{t('courseEdit.quizDialog.badge')}</Label>
               <select
                 id="quiz-badge"
                 className="w-full border rounded px-2 py-1"
                 value={quizForm.badge_id ?? ''}
                 onChange={(e) => setQuizForm({ ...quizForm, badge_id: e.target.value ? parseInt(e.target.value) : null })}
               >
-                <option value="">Aucun</option>
+                <option value="">{t('courseEdit.quizDialog.noBadge')}</option>
                 {badgesList && badgesList.map((badge: any) => (
                   <option key={badge.id} value={badge.id}>{badge.name}</option>
                 ))}
@@ -1294,7 +1429,7 @@ export default function AdminCourseEditPage() {
                 onChange={(e) => setQuizForm({ ...quizForm, certificate_enabled: e.target.checked })}
                 className="rounded"
               />
-              <Label htmlFor="quiz-certificate-enabled">Délivrer un certificat si réussi</Label>
+              <Label htmlFor="quiz-certificate-enabled">{t('courseEdit.quizDialog.certificateEnabled')}</Label>
             </div>
             <div className="flex items-center gap-2">
               <input
@@ -1304,7 +1439,7 @@ export default function AdminCourseEditPage() {
                 onChange={(e) => setQuizForm({ ...quizForm, show_correct_answers: e.target.checked })}
                 className="rounded"
               />
-              <Label htmlFor="quiz-show-correct-answers">Afficher les bonnes réponses après soumission</Label>
+              <Label htmlFor="quiz-show-correct-answers">{t('courseEdit.quizDialog.showCorrectAnswers')}</Label>
             </div>
             <div className="flex items-center gap-2">
               <input
@@ -1314,7 +1449,7 @@ export default function AdminCourseEditPage() {
                 onChange={(e) => setQuizForm({ ...quizForm, shuffle_choices: e.target.checked })}
                 className="rounded"
               />
-              <Label htmlFor="quiz-shuffle-choices">Mélanger l'ordre des choix</Label>
+              <Label htmlFor="quiz-shuffle-choices">{t('courseEdit.quizDialog.shuffleChoices')}</Label>
             </div>
             <div className="flex items-center gap-2">
               <input
@@ -1324,18 +1459,18 @@ export default function AdminCourseEditPage() {
                 onChange={(e) => setQuizForm({ ...quizForm, randomized: e.target.checked })}
                 className="rounded"
               />
-              <Label htmlFor="quiz-randomized">Randomiser les questions</Label>
+              <Label htmlFor="quiz-randomized">{t('courseEdit.quizDialog.randomized')}</Label>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsQuizDialogOpen(false)}>
-              Annuler
+              {t('courseEdit.quizDialog.cancel')}
             </Button>
             <Button
               onClick={handleQuizSubmit}
               disabled={!quizForm.title || createQuizMutation.isPending || updateQuizMutation.isPending}
             >
-              {editingQuiz ? 'Mettre à jour' : 'Créer le quiz'}
+              {editingQuiz ? t('courseEdit.quizDialog.update') : t('courseEdit.quizDialog.create')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1345,9 +1480,9 @@ export default function AdminCourseEditPage() {
       <Dialog open={isQuizQuestionsOpen} onOpenChange={setIsQuizQuestionsOpen}>
         <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Questions du quiz: {selectedQuiz?.title}</DialogTitle>
+            <DialogTitle>{t('courseEdit.quizQuestionsDialog.title', { title: selectedQuiz?.title })}</DialogTitle>
             <DialogDescription>
-              Gérez les questions de ce quiz
+              {t('courseEdit.quizQuestionsDialog.description')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -1363,9 +1498,9 @@ export default function AdminCourseEditPage() {
                             Q{index + 1}
                           </span>
                           <span className="text-xs text-muted-foreground uppercase">
-                            {question.type === 'mcq' ? 'QCM' : 
-                             question.type === 'true_false' ? 'Vrai/Faux' :
-                             question.type === 'short_text' ? 'Réponse courte' : 'Rédaction'}
+                            {question.type === 'mcq' ? t('courseEdit.quizQuestionsDialog.types.mcq') :
+                             question.type === 'true_false' ? t('courseEdit.quizQuestionsDialog.types.trueFalse') :
+                             question.type === 'short_text' ? t('courseEdit.quizQuestionsDialog.types.shortText') : t('courseEdit.quizQuestionsDialog.types.essay')}
                           </span>
                         </div>
                         <p className="font-medium">{question.prompt}</p>
@@ -1395,11 +1530,7 @@ export default function AdminCourseEditPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => {
-                            if (confirm('Supprimer cette question ?')) {
-                              deleteQuestionMutation.mutate(question.id)
-                            }
-                          }}
+                          onClick={() => setQuestionPendingDelete(question)}
                         >
                           <Trash2 className="h-4 w-4 text-red-500" />
                         </Button>
@@ -1410,18 +1541,18 @@ export default function AdminCourseEditPage() {
               </div>
             ) : (
               <div className="text-center py-8 text-muted-foreground">
-                Aucune question dans ce quiz
+                {t('courseEdit.quizQuestionsDialog.noQuestions')}
               </div>
             )}
 
             <Button onClick={openAddQuestion} className="w-full">
               <Plus className="h-4 w-4 mr-2" />
-              Ajouter une question
+              {t('courseEdit.quizQuestionsDialog.addQuestion')}
             </Button>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsQuizQuestionsOpen(false)}>
-              Fermer
+              {t('courseEdit.quizQuestionsDialog.close')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1431,14 +1562,14 @@ export default function AdminCourseEditPage() {
       <Dialog open={isQuestionDialogOpen} onOpenChange={setIsQuestionDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{editingQuestion ? 'Modifier la question' : 'Ajouter une question'}</DialogTitle>
+            <DialogTitle>{editingQuestion ? t('courseEdit.questionDialog.editTitle') : t('courseEdit.questionDialog.addTitle')}</DialogTitle>
             <DialogDescription>
-              {editingQuestion ? 'Modifiez les informations de la question' : 'Créez une nouvelle question pour le quiz'}
+              {editingQuestion ? t('courseEdit.questionDialog.editDescription') : t('courseEdit.questionDialog.addDescription')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>Type de question</Label>
+              <Label htmlFor="question-type">{t('courseEdit.questionDialog.questionType')}</Label>
               <Select
                 value={questionForm.type}
                 onValueChange={(value: 'mcq' | 'true_false' | 'short_text' | 'essay') => {
@@ -1447,8 +1578,8 @@ export default function AdminCourseEditPage() {
                       ...questionForm,
                       type: value,
                       choices: [
-                        { label: 'Vrai', isCorrect: true },
-                        { label: 'Faux', isCorrect: false },
+                        { label: t('courseEdit.questionDialog.trueLabel'), isCorrect: true },
+                        { label: t('courseEdit.questionDialog.falseLabel'), isCorrect: false },
                       ],
                     })
                   } else if (value === 'mcq') {
@@ -1466,32 +1597,32 @@ export default function AdminCourseEditPage() {
                 }}
                 disabled={!!editingQuestion}
               >
-                <SelectTrigger>
+                <SelectTrigger id="question-type">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="mcq">QCM (Choix multiples)</SelectItem>
-                  <SelectItem value="true_false">Vrai / Faux</SelectItem>
-                  <SelectItem value="short_text">Réponse courte</SelectItem>
-                  <SelectItem value="essay">Rédaction</SelectItem>
+                  <SelectItem value="mcq">{t('courseEdit.questionDialog.types.mcq')}</SelectItem>
+                  <SelectItem value="true_false">{t('courseEdit.questionDialog.types.trueFalse')}</SelectItem>
+                  <SelectItem value="short_text">{t('courseEdit.questionDialog.types.shortText')}</SelectItem>
+                  <SelectItem value="essay">{t('courseEdit.questionDialog.types.essay')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             <div>
-              <Label htmlFor="question-prompt">Question</Label>
+              <Label htmlFor="question-prompt">{t('courseEdit.questionDialog.question')}</Label>
               <Input
                 id="question-prompt"
                 value={questionForm.prompt}
                 onChange={(e) => setQuestionForm({ ...questionForm, prompt: e.target.value })}
-                placeholder="Entrez votre question..."
+                placeholder={t('courseEdit.questionDialog.questionPlaceholder')}
               />
             </div>
 
             {/* Choices for MCQ */}
             {questionForm.type === 'mcq' && (
               <div className="space-y-3">
-                <Label>Choix de réponses</Label>
+                <Label>{t('courseEdit.questionDialog.choicesLabel')}</Label>
                 {questionForm.choices.map((choice, index) => (
                   <div key={`choice-${index}`} className="flex items-center gap-2">
                     <input
@@ -1505,7 +1636,7 @@ export default function AdminCourseEditPage() {
                     <Input
                       value={choice.label}
                       onChange={(e) => updateChoice(index, 'label', e.target.value)}
-                      placeholder={`Choix ${index + 1}`}
+                      placeholder={t('courseEdit.questionDialog.choicePlaceholder', { number: index + 1 })}
                       className="flex-1"
                     />
                     {questionForm.choices.length > 2 && (
@@ -1527,10 +1658,10 @@ export default function AdminCourseEditPage() {
                   onClick={addChoice}
                 >
                   <Plus className="h-4 w-4 mr-1" />
-                  Ajouter un choix
+                  {t('courseEdit.questionDialog.addChoice')}
                 </Button>
                 <p className="text-xs text-muted-foreground">
-                  Sélectionnez le bouton radio pour indiquer la bonne réponse
+                  {t('courseEdit.questionDialog.selectCorrectHint')}
                 </p>
               </div>
             )}
@@ -1538,7 +1669,7 @@ export default function AdminCourseEditPage() {
             {/* Choices for True/False */}
             {questionForm.type === 'true_false' && (
               <div className="space-y-3">
-                <Label>Bonne réponse</Label>
+                <Label>{t('courseEdit.questionDialog.correctAnswerLabel')}</Label>
                 <div className="flex gap-4">
                   {questionForm.choices.map((choice, index) => (
                     <label key={`tf-choice-${index}`} className="flex items-center gap-2 cursor-pointer">
@@ -1559,17 +1690,66 @@ export default function AdminCourseEditPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsQuestionDialogOpen(false)}>
-              Annuler
+              {t('courseEdit.questionDialog.cancel')}
             </Button>
             <Button
               onClick={handleQuestionSubmit}
               disabled={!questionForm.prompt || createQuestionMutation.isPending || updateQuestionMutation.isPending}
             >
-              {editingQuestion ? 'Mettre à jour' : 'Ajouter la question'}
+              {editingQuestion ? t('courseEdit.questionDialog.update') : t('courseEdit.questionDialog.add')}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!modulePendingDelete}
+        onOpenChange={(open) => !open && setModulePendingDelete(null)}
+        title={tCommon('actions.delete')}
+        description={t('courseEdit.confirmDeleteModule')}
+        onConfirm={() => {
+          if (modulePendingDelete) {
+            deleteModuleMutation.mutate(modulePendingDelete.id)
+            setModulePendingDelete(null)
+          }
+        }}
+      />
+      <ConfirmDialog
+        open={!!lessonPendingDelete}
+        onOpenChange={(open) => !open && setLessonPendingDelete(null)}
+        title={tCommon('actions.delete')}
+        description={t('courseEdit.confirmDeleteLesson')}
+        onConfirm={() => {
+          if (lessonPendingDelete) {
+            deleteLessonMutation.mutate(lessonPendingDelete.id)
+            setLessonPendingDelete(null)
+          }
+        }}
+      />
+      <ConfirmDialog
+        open={!!quizPendingDelete}
+        onOpenChange={(open) => !open && setQuizPendingDelete(null)}
+        title={tCommon('actions.delete')}
+        description={t('courseEdit.confirmDeleteQuiz')}
+        onConfirm={() => {
+          if (quizPendingDelete) {
+            deleteQuizMutation.mutate(quizPendingDelete.id)
+            setQuizPendingDelete(null)
+          }
+        }}
+      />
+      <ConfirmDialog
+        open={!!questionPendingDelete}
+        onOpenChange={(open) => !open && setQuestionPendingDelete(null)}
+        title={tCommon('actions.delete')}
+        description={t('courseEdit.confirmDeleteQuestion')}
+        onConfirm={() => {
+          if (questionPendingDelete) {
+            deleteQuestionMutation.mutate(questionPendingDelete.id)
+            setQuestionPendingDelete(null)
+          }
+        }}
+      />
     </div>
   )
 }

@@ -1,6 +1,8 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Toaster } from '@/components/ui/toaster';
 import { GlobalHelp } from '@/components/GlobalHelp';
+import { PageLoading } from '@/components/ui/loading';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { SocketProvider } from '@/contexts/SocketContext';
 import { SessionTimeoutProvider } from '@/contexts/SessionTimeoutContext';
@@ -9,59 +11,66 @@ import { SessionTimeoutProvider } from '@/contexts/SessionTimeoutContext';
 import MainLayout from '@/layouts/MainLayout';
 import AuthLayout from '@/layouts/AuthLayout';
 
-// Auth Pages
+// Auth Pages -- kept eager: small, and needed immediately for unauthenticated users
 import LoginPage from '@/pages/auth/LoginPage';
 import RegisterPage from '@/pages/auth/RegisterPage';
 import ForgotPasswordPage from '@/pages/auth/ForgotPasswordPage';
 import ResetPasswordPage from '@/pages/auth/ResetPasswordPage';
-import SSOCallbackPage from '@/pages/auth/SSOCallbackPage';
+import SSOCallbackPage from '@/pages/auth/SSOCallbackPage'
+const VerifyCertificatePage = lazy(() => import('@/pages/auth/VerifyCertificatePage'));
 
-// Main Pages
-import DashboardPage from '@/pages/DashboardPage';
-import CoursesPage from '@/pages/CoursesPage';
-import CourseDetailPage from '@/pages/CourseDetailPage';
-import BadgesPage from '@/pages/BadgesPage';
-import ChatPage from '@/pages/ChatPage';
-import LiveSessionsPage from '@/pages/LiveSessionsPage';
-import LiveSessionDetailPage from '@/pages/LiveSessionDetailPage';
-import BlogPage from '@/pages/BlogPage';
-import ProfilePage from '@/pages/ProfilePage';
-import SettingsPage from '@/pages/SettingsPage';
-import AITutorPage from '@/pages/AITutorPage';
-import CertificatesPage from '@/pages/CertificatesPage';
-import NotificationsPage from '@/pages/NotificationsPage';
-import QuizPage from '@/pages/QuizPage';
-import LessonPage from '@/pages/LessonPage';
-import SearchPage from '@/pages/SearchPage';
-import ContentUploadPage from '@/pages/ContentUploadPage';
-import MyTeamPage from '@/pages/MyTeamPage';
+// Main Pages -- lazy: each becomes its own chunk, only fetched when visited
+const DashboardPage = lazy(() => import('@/pages/DashboardPage'));
+const CoursesPage = lazy(() => import('@/pages/CoursesPage'));
+const LessonsPage = lazy(() => import('@/pages/LessonsPage'));
+const CourseDetailPage = lazy(() => import('@/pages/CourseDetailPage'));
+const BadgesPage = lazy(() => import('@/pages/BadgesPage'));
+const ChatPage = lazy(() => import('@/pages/ChatPage'));
+const LiveSessionsPage = lazy(() => import('@/pages/LiveSessionsPage'));
+const LiveSessionDetailPage = lazy(() => import('@/pages/LiveSessionDetailPage'));
+const BlogPage = lazy(() => import('@/pages/BlogPage'));
+const BlogPostPage = lazy(() => import('@/pages/BlogPostPage'));
+const ProfilePage = lazy(() => import('@/pages/ProfilePage'));
+const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
+const AITutorPage = lazy(() => import('@/pages/AITutorPage'));
+const CertificatesPage = lazy(() => import('@/pages/CertificatesPage'));
+const NotificationsPage = lazy(() => import('@/pages/NotificationsPage'));
+const QuizPage = lazy(() => import('@/pages/QuizPage'));
+const LessonPage = lazy(() => import('@/pages/LessonPage'));
+const SearchPage = lazy(() => import('@/pages/SearchPage'));
+const ContentUploadPage = lazy(() => import('@/pages/ContentUploadPage'));
+const MyTeamPage = lazy(() => import('@/pages/MyTeamPage'));
 
-// Admin Pages
-import AdminUsersPage from '@/pages/admin/AdminUsersPage';
-import AdminCoursesPage from '@/pages/admin/AdminCoursesPage';
-import AdminCourseEditPage from '@/pages/admin/AdminCourseEditPage';
-import AdminAnalyticsPage from '@/pages/admin/AdminAnalyticsPage';
-import AdminAssignmentsPage from '@/pages/admin/AdminAssignmentsPage';
-import AdminBadgesPage from '@/pages/admin/AdminBadgesPage';
-import AdminCertificatesPage from '@/pages/admin/AdminCertificatesPage';
-import AdminLiveSessionsPage from '@/pages/admin/AdminLiveSessionsPage';
-import AdminNotificationsPage from '@/pages/admin/AdminNotificationsPage';
-import AdminBlogPage from '@/pages/admin/AdminBlogPage';
-import AdminReportsPage from '@/pages/admin/AdminReportsPage';
-import AdminOrganizationPage from '@/pages/admin/AdminOrganizationPage';
-import AdminImportPage from '@/pages/admin/AdminImportPage';
-import AdminEmailSettingsPage from '@/pages/admin/AdminEmailSettingsPage';
-import AdminLiveKitSettingsPage from '@/pages/admin/AdminLiveKitSettingsPage';
-import AdminLogsPage from '@/pages/admin/AdminLogsPage';
-import AdminPlatformPage from '@/pages/admin/AdminPlatformPage';
+// Admin Pages -- lazy: never fetched by learners, who never hit these routes
+const AdminUsersPage = lazy(() => import('@/pages/admin/AdminUsersPage'));
+const AdminCoursesPage = lazy(() => import('@/pages/admin/AdminCoursesPage'));
+const AdminCourseEditPage = lazy(() => import('@/pages/admin/AdminCourseEditPage'));
+const AdminAnalyticsPage = lazy(() => import('@/pages/admin/AdminAnalyticsPage'));
+const AdminAssignmentsPage = lazy(() => import('@/pages/admin/AdminAssignmentsPage'));
+const AdminTeamsPage = lazy(() => import('@/pages/admin/AdminTeamsPage'));
+const AdminBadgesPage = lazy(() => import('@/pages/admin/AdminBadgesPage'));
+const AdminCertificatesPage = lazy(() => import('@/pages/admin/AdminCertificatesPage'));
+const AdminLiveSessionsPage = lazy(() => import('@/pages/admin/AdminLiveSessionsPage'));
+const AdminNotificationsPage = lazy(() => import('@/pages/admin/AdminNotificationsPage'));
+const AdminEmailQueuePage = lazy(() => import('@/pages/admin/AdminEmailQueuePage'));
+const AdminBlogPage = lazy(() => import('@/pages/admin/AdminBlogPage'));
+const AdminReportsPage = lazy(() => import('@/pages/admin/AdminReportsPage'));
+const AdminOrganizationPage = lazy(() => import('@/pages/admin/AdminOrganizationPage'));
+const AdminImportPage = lazy(() => import('@/pages/admin/AdminImportPage'));
+const AdminEmailSettingsPage = lazy(() => import('@/pages/admin/AdminEmailSettingsPage'));
+const AdminLiveKitSettingsPage = lazy(() => import('@/pages/admin/AdminLiveKitSettingsPage'));
+const AdminRecordingSettingsPage = lazy(() => import('@/pages/admin/AdminRecordingSettingsPage'));
+const AdminLogsPage = lazy(() => import('@/pages/admin/AdminLogsPage'));
+const AdminPlatformPage = lazy(() => import('@/pages/admin/AdminPlatformPage'));
 
-// Quiz Pages
-import { LessonQuizzesPage } from '@/pages/LessonQuizzesPage';
-import { QuizCreatePage } from '@/pages/QuizCreatePage';
-import { QuizManageQuestionsPage } from '@/pages/QuizManageQuestionsPage';
+// Quiz Pages (named exports)
+const LessonQuizzesPage = lazy(() => import('@/pages/LessonQuizzesPage').then((m) => ({ default: m.LessonQuizzesPage })));
+const QuizCreatePage = lazy(() => import('@/pages/QuizCreatePage').then((m) => ({ default: m.QuizCreatePage })));
+const QuizManageQuestionsPage = lazy(() => import('@/pages/QuizManageQuestionsPage').then((m) => ({ default: m.QuizManageQuestionsPage })));
 
 function ProtectedRoute({ children, roles }: { children: React.ReactNode; roles?: string[] }) {
   const { user, isLoading, isAuthenticated } = useAuth();
+  const location = useLocation();
 
   if (isLoading) {
     return (
@@ -72,6 +81,11 @@ function ProtectedRoute({ children, roles }: { children: React.ReactNode; roles?
   }
 
   if (!isAuthenticated) {
+    // So the next successful login lands back on the page the user originally
+    // requested (e.g. an email notification link) instead of the dashboard --
+    // read by AuthContext's applySession(), same convention as api.ts's 401
+    // interceptor and MainLayout's idle-timeout handler.
+    sessionStorage.setItem('postLoginRedirect', location.pathname + location.search);
     return <Navigate to="/login" replace />;
   }
 
@@ -87,6 +101,7 @@ function App() {
     <AuthProvider>
       <SocketProvider>
       <SessionTimeoutProvider>
+        <Suspense fallback={<PageLoading />}>
         <Routes>
           {/* Login has its own full-page two-column layout, not the shared AuthLayout */}
           <Route path="/login" element={<LoginPage />} />
@@ -97,6 +112,7 @@ function App() {
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/auth/callback/:provider" element={<SSOCallbackPage />} />
+            <Route path="/verify-certificate/:serial" element={<VerifyCertificatePage />} />
           </Route>
 
           {/* Main App Routes */}
@@ -110,6 +126,7 @@ function App() {
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/courses" element={<CoursesPage />} />
+            <Route path="/lessons" element={<LessonsPage />} />
             <Route path="/courses/:id" element={<CourseDetailPage />} />
             <Route path="/courses/:courseId/lessons/:lessonId" element={<LessonPage />} />
             <Route path="/lessons/:lessonId/quizzes" element={<LessonQuizzesPage />} />
@@ -125,6 +142,7 @@ function App() {
             <Route path="/live" element={<LiveSessionsPage />} />
             <Route path="/live/:id" element={<LiveSessionDetailPage />} />
             <Route path="/blog" element={<BlogPage />} />
+            <Route path="/blog/:id" element={<BlogPostPage />} />
             <Route path="/profile" element={<ProfilePage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/ai-tutor" element={<AITutorPage />} />
@@ -146,16 +164,19 @@ function App() {
             <Route path="courses" element={<AdminCoursesPage />} />
             <Route path="courses/:id/edit" element={<AdminCourseEditPage />} />
             <Route path="assignments" element={<AdminAssignmentsPage />} />
+            <Route path="teams" element={<AdminTeamsPage />} />
             <Route path="badges" element={<AdminBadgesPage />} />
             <Route path="certificates" element={<AdminCertificatesPage />} />
             <Route path="live-sessions" element={<AdminLiveSessionsPage />} />
             <Route path="notifications" element={<AdminNotificationsPage />} />
+            <Route path="email-queue" element={<AdminEmailQueuePage />} />
             <Route path="blog" element={<AdminBlogPage />} />
             <Route path="reports" element={<AdminReportsPage />} />
             <Route path="organization" element={<AdminOrganizationPage />} />
             <Route path="import" element={<AdminImportPage />} />
             <Route path="email-settings" element={<AdminEmailSettingsPage />} />
             <Route path="livekit-settings" element={<AdminLiveKitSettingsPage />} />
+            <Route path="recording-settings" element={<AdminRecordingSettingsPage />} />
             <Route path="logs" element={<AdminLogsPage />} />
             <Route path="analytics" element={<AdminAnalyticsPage />} />
             <Route path="platform" element={<AdminPlatformPage />} />
@@ -164,6 +185,7 @@ function App() {
           {/* 404 */}
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
+        </Suspense>
         <Toaster />
         <GlobalHelp />
       </SessionTimeoutProvider>

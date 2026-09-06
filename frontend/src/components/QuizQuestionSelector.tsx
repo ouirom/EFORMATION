@@ -58,7 +58,6 @@ export const QuizQuestionSelector: React.FC<QuizQuestionSelectorProps> = ({
     mutationFn: (questionIds: number[]) =>
       api.post(`/quizzes/${quizId}/add-questions`, { questionIds }),
     onSuccess: () => {
-      console.log('Questions added successfully');
       queryClient.invalidateQueries({ queryKey: ['quiz', quizId] });
       queryClient.invalidateQueries({ queryKey: ['available-questions', quizId] });
     },
@@ -72,7 +71,6 @@ export const QuizQuestionSelector: React.FC<QuizQuestionSelectorProps> = ({
     mutationFn: (questionId: number) =>
       api.post(`/quizzes/${quizId}/remove-question/${questionId}`, {}),
     onSuccess: () => {
-      console.log('Question removed successfully');
       queryClient.invalidateQueries({ queryKey: ['quiz', quizId] });
       queryClient.invalidateQueries({ queryKey: ['available-questions', quizId] });
     },

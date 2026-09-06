@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -54,6 +55,8 @@ interface LiveSession {
   recordingUrl: string | null
   courseId?: number
   courseName?: string
+  visibility?: 'public' | 'private'
+  invitees?: { user_id: number; display_name: string }[]
 }
 
 interface SessionFormData {
@@ -65,6 +68,8 @@ interface SessionFormData {
   meetingUrl: string
   maxParticipants: number
   courseId: string
+  visibility: 'public' | 'private'
+  inviteeIds: string[]
 }
 
 // Hoisted out of AdminLiveSessionsPage: defining this inline in the parent's render
@@ -86,32 +91,36 @@ function SessionForm({
   courses: any[]
   isEditing: boolean
 }) {
+  const { t } = useTranslation('admin')
+  const idPrefix = isEditing ? 'edit-session' : 'add-session'
   return (
     <div className="space-y-4">
       <div className="space-y-2">
-        <Label>Titre de la session</Label>
+        <Label htmlFor={`${idPrefix}-title`}>{t('liveSessionsAdmin.form.title')}</Label>
         <Input
+          id={`${idPrefix}-title`}
           value={formData.title}
           onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-          placeholder="Ex: Introduction à React - Session Live"
+          placeholder={t('liveSessionsAdmin.form.titlePlaceholder')}
         />
       </div>
 
       <div className="space-y-2">
-        <Label>Description</Label>
+        <Label htmlFor={`${idPrefix}-description`}>{t('liveSessionsAdmin.form.description')}</Label>
         <Textarea
+          id={`${idPrefix}-description`}
           value={formData.description}
           onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-          placeholder="Description de la session..."
+          placeholder={t('liveSessionsAdmin.form.descriptionPlaceholder')}
         />
       </div>
 
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label>Instructeur</Label>
+          <Label htmlFor={`${idPrefix}-instructor`}>{t('liveSessionsAdmin.form.instructor')}</Label>
           <Select value={formData.instructorId} onValueChange={(v) => setFormData({ ...formData, instructorId: v })}>
-            <SelectTrigger>
-              <SelectValue placeholder="Sélectionner un instructeur" />
+            <SelectTrigger id={`${idPrefix}-instructor`}>
+              <SelectValue placeholder={t('liveSessionsAdmin.form.instructorPlaceholder')} />
             </SelectTrigger>
             <SelectContent>
               {users
@@ -125,13 +134,13 @@ function SessionForm({
           </Select>
         </div>
         <div className="space-y-2">
-          <Label>Cours associé (optionnel)</Label>
+          <Label htmlFor={`${idPrefix}-course`}>{t('liveSessionsAdmin.form.associatedCourse')}</Label>
           <Select value={formData.courseId} onValueChange={(v) => setFormData({ ...formData, courseId: v })}>
-            <SelectTrigger>
-              <SelectValue placeholder="Aucun cours" />
+            <SelectTrigger id={`${idPrefix}-course`}>
+              <SelectValue placeholder={t('liveSessionsAdmin.form.noCourse')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="none">Aucun</SelectItem>
+              <SelectItem value="none">{t('liveSessionsAdmin.form.none')}</SelectItem>
               {courses.map((course: any) => (
                 <SelectItem key={course.id} value={course.id.toString()}>
                   {course.title}
@@ -142,18 +151,68 @@ function SessionForm({
         </div>
       </div>
 
+      <div className="space-y-2">
+        <Label htmlFor={`${idPrefix}-visibility`}>{t('liveSessionsAdmin.form.visibility')}</Label>
+        <Select
+          value={formData.visibility}
+          onValueChange={(v) => setFormData({ ...formData, visibility: v as 'public' | 'private', inviteeIds: v === 'public' ? [] : formData.inviteeIds })}
+        >
+          <SelectTrigger id={`${idPrefix}-visibility`}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="public">{t('liveSessionsAdmin.form.visibilityPublic')}</SelectItem>
+            <SelectItem value="private">{t('liveSessionsAdmin.form.visibilityPrivate')}</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {formData.visibility === 'private' && (
+        <div className="space-y-2">
+          <Label>{t('liveSessionsAdmin.form.explicitInvitees')}</Label>
+          <div className="max-h-40 overflow-y-auto rounded-md border p-2 space-y-1">
+            {users.length === 0 && (
+              <p className="text-sm text-muted-foreground">{t('liveSessionsAdmin.form.noUsersAvailable')}</p>
+            )}
+            {users.map((user: any) => {
+              const id = user.id.toString()
+              const checked = formData.inviteeIds.includes(id)
+              return (
+                <label key={user.id} className="flex items-center gap-2 text-sm py-1 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(e) => {
+                      setFormData({
+                        ...formData,
+                        inviteeIds: e.target.checked
+                          ? [...formData.inviteeIds, id]
+                          : formData.inviteeIds.filter((i) => i !== id),
+                      })
+                    }}
+                  />
+                  {user.display_name}
+                </label>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label>Date et heure {!isEditing && <span className="text-destructive">*</span>}</Label>
+          <Label htmlFor={`${idPrefix}-scheduled-at`}>{t('liveSessionsAdmin.form.dateTime')} {!isEditing && <span className="text-destructive">*</span>}</Label>
           <Input
+            id={`${idPrefix}-scheduled-at`}
             type="datetime-local"
             value={formData.scheduledAt}
             onChange={(e) => setFormData({ ...formData, scheduledAt: e.target.value })}
           />
         </div>
         <div className="space-y-2">
-          <Label>Durée (minutes)</Label>
+          <Label htmlFor={`${idPrefix}-duration`}>{t('liveSessionsAdmin.form.duration')}</Label>
           <Input
+            id={`${idPrefix}-duration`}
             type="number"
             min={15}
             value={formData.duration}
@@ -164,16 +223,18 @@ function SessionForm({
 
       <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label>URL de la réunion</Label>
+          <Label htmlFor={`${idPrefix}-meeting-url`}>{t('liveSessionsAdmin.form.meetingUrl')}</Label>
           <Input
+            id={`${idPrefix}-meeting-url`}
             value={formData.meetingUrl}
             onChange={(e) => setFormData({ ...formData, meetingUrl: e.target.value })}
             placeholder="https://meet.google.com/..."
           />
         </div>
         <div className="space-y-2">
-          <Label>Participants max</Label>
+          <Label htmlFor={`${idPrefix}-max-participants`}>{t('liveSessionsAdmin.form.maxParticipants')}</Label>
           <Input
+            id={`${idPrefix}-max-participants`}
             type="number"
             min={1}
             value={formData.maxParticipants}
@@ -186,13 +247,15 @@ function SessionForm({
 }
 
 export default function AdminLiveSessionsPage() {
+  const { t } = useTranslation('admin')
+  const { t: tCommon } = useTranslation('common')
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [editingSession, setEditingSession] = useState<LiveSession | null>(null)
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<SessionFormData>({
     title: '',
     description: '',
     instructorId: '',
@@ -201,6 +264,8 @@ export default function AdminLiveSessionsPage() {
     meetingUrl: '',
     maxParticipants: 100,
     courseId: 'none',
+    visibility: 'public',
+    inviteeIds: [],
   })
 
   const { data: sessions = [], isLoading } = useQuery<LiveSession[]>({
@@ -235,10 +300,10 @@ export default function AdminLiveSessionsPage() {
       queryClient.invalidateQueries({ queryKey: ['admin-live-sessions'] })
       setIsCreateDialogOpen(false)
       resetForm()
-      toast({ title: 'Succès', description: 'Session créée avec succès' })
+      toast({ title: tCommon('status.success'), description: t('liveSessionsAdmin.toasts.createdDescription') })
     },
     onError: (error: any) => {
-      toast({ title: 'Erreur', description: describeApiError(error, 'Erreur lors de la création'), variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: describeApiError(error, t('liveSessionsAdmin.toasts.createErrorFallback')), variant: 'destructive' })
     },
   })
 
@@ -250,10 +315,10 @@ export default function AdminLiveSessionsPage() {
       queryClient.invalidateQueries({ queryKey: ['admin-live-sessions'] })
       setEditingSession(null)
       resetForm()
-      toast({ title: 'Succès', description: 'Session mise à jour' })
+      toast({ title: tCommon('status.success'), description: t('liveSessionsAdmin.toasts.updatedDescription') })
     },
     onError: (error: any) => {
-      toast({ title: 'Erreur', description: describeApiError(error, 'Erreur lors de la mise à jour'), variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: describeApiError(error, t('liveSessionsAdmin.toasts.updateErrorFallback')), variant: 'destructive' })
     },
   })
 
@@ -263,10 +328,10 @@ export default function AdminLiveSessionsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-live-sessions'] })
-      toast({ title: 'Succès', description: 'Session supprimée' })
+      toast({ title: tCommon('status.success'), description: t('liveSessionsAdmin.toasts.deletedDescription') })
     },
     onError: () => {
-      toast({ title: 'Erreur', description: 'Erreur lors de la suppression', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: t('liveSessionsAdmin.toasts.deleteErrorDescription'), variant: 'destructive' })
     },
   })
 
@@ -276,7 +341,7 @@ export default function AdminLiveSessionsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-live-sessions'] })
-      toast({ title: 'Succès', description: 'Session annulée' })
+      toast({ title: tCommon('status.success'), description: t('liveSessionsAdmin.toasts.canceledDescription') })
     },
   })
 
@@ -286,10 +351,10 @@ export default function AdminLiveSessionsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-live-sessions'] })
-      toast({ title: 'Succès', description: 'Session démarrée' })
+      toast({ title: tCommon('status.success'), description: t('liveSessionsAdmin.toasts.startedDescription') })
     },
     onError: () => {
-      toast({ title: 'Erreur', description: 'Impossible de démarrer la session', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: t('liveSessionsAdmin.toasts.startErrorDescription'), variant: 'destructive' })
     },
   })
 
@@ -299,10 +364,10 @@ export default function AdminLiveSessionsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-live-sessions'] })
-      toast({ title: 'Succès', description: 'Session terminée' })
+      toast({ title: tCommon('status.success'), description: t('liveSessionsAdmin.toasts.endedDescription') })
     },
     onError: () => {
-      toast({ title: 'Erreur', description: 'Impossible de terminer la session', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: t('liveSessionsAdmin.toasts.endErrorDescription'), variant: 'destructive' })
     },
   })
 
@@ -316,6 +381,8 @@ export default function AdminLiveSessionsPage() {
       meetingUrl: '',
       maxParticipants: 100,
       courseId: 'none',
+      visibility: 'public',
+      inviteeIds: [],
     })
   }
 
@@ -330,18 +397,21 @@ export default function AdminLiveSessionsPage() {
       meetingUrl: session.meetingUrl || '',
       maxParticipants: session.maxParticipants || 100,
       courseId: session.courseId?.toString() || 'none',
+      visibility: session.visibility || 'public',
+      inviteeIds: session.invitees?.map((i) => String(i.user_id)) || [],
     })
   }
 
   const handleSubmit = () => {
     if (!editingSession && !formData.scheduledAt) {
-      toast({ title: 'Erreur', description: 'La date et l\'heure sont requises', variant: 'destructive' })
+      toast({ title: tCommon('status.error'), description: t('liveSessionsAdmin.toasts.dateRequiredDescription'), variant: 'destructive' })
       return
     }
     const data = {
       ...formData,
       instructorId: parseInt(formData.instructorId),
       courseId: formData.courseId && formData.courseId !== 'none' ? parseInt(formData.courseId) : null,
+      inviteeIds: formData.visibility === 'private' ? formData.inviteeIds.map((id) => parseInt(id)) : [],
     }
     if (editingSession) {
       updateMutation.mutate({ id: editingSession.id, data })
@@ -352,7 +422,7 @@ export default function AdminLiveSessionsPage() {
 
   const copyLink = (url: string) => {
     navigator.clipboard.writeText(url)
-    toast({ title: 'Lien copié', description: 'Le lien a été copié dans le presse-papier' })
+    toast({ title: t('liveSessionsAdmin.toasts.linkCopiedTitle'), description: t('liveSessionsAdmin.toasts.linkCopiedDescription') })
   }
 
   const filteredSessions = sessions
@@ -364,10 +434,10 @@ export default function AdminLiveSessionsPage() {
 
   const getStatusBadge = (status: string) => {
     const styles: Record<string, { variant: 'default' | 'secondary' | 'destructive' | 'outline'; label: string }> = {
-      scheduled: { variant: 'secondary', label: 'Planifiée' },
-      live: { variant: 'default', label: 'En cours' },
-      ended: { variant: 'outline', label: 'Terminée' },
-      canceled: { variant: 'destructive', label: 'Annulée' },
+      scheduled: { variant: 'secondary', label: t('liveSessionsAdmin.statuses.scheduled') },
+      live: { variant: 'default', label: t('liveSessionsAdmin.statuses.live') },
+      ended: { variant: 'outline', label: t('liveSessionsAdmin.statuses.ended') },
+      canceled: { variant: 'destructive', label: t('liveSessionsAdmin.statuses.canceled') },
     }
     const style = styles[status] || { variant: 'outline', label: status }
     return <Badge variant={style.variant}>{style.label}</Badge>
@@ -386,30 +456,30 @@ export default function AdminLiveSessionsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Sessions en direct</h1>
-          <p className="text-muted-foreground">Gérez les sessions de formation en direct</p>
+          <h1 className="text-3xl font-bold">{t('liveSessionsAdmin.title')}</h1>
+          <p className="text-muted-foreground">{t('liveSessionsAdmin.subtitle')}</p>
         </div>
         <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
           <DialogTrigger asChild>
             <Button onClick={resetForm}>
               <Plus className="h-4 w-4 mr-2" />
-              Nouvelle session
+              {t('liveSessionsAdmin.newSession')}
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>Créer une session</DialogTitle>
+              <DialogTitle>{t('liveSessionsAdmin.createDialog.title')}</DialogTitle>
               <DialogDescription>
-                Planifiez une nouvelle session de formation en direct
+                {t('liveSessionsAdmin.createDialog.description')}
               </DialogDescription>
             </DialogHeader>
             <SessionForm formData={formData} setFormData={setFormData} users={users} courses={courses} isEditing={false} />
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
-                Annuler
+                {t('liveSessionsAdmin.createDialog.cancel')}
               </Button>
               <Button onClick={handleSubmit} disabled={createMutation.isPending}>
-                {createMutation.isPending ? 'Création...' : 'Créer la session'}
+                {createMutation.isPending ? t('liveSessionsAdmin.createDialog.creating') : t('liveSessionsAdmin.createDialog.create')}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -426,7 +496,7 @@ export default function AdminLiveSessionsPage() {
               </div>
               <div>
                 <p className="text-2xl font-bold">{sessions.length}</p>
-                <p className="text-sm text-muted-foreground">Total sessions</p>
+                <p className="text-sm text-muted-foreground">{t('liveSessionsAdmin.stats.total')}</p>
               </div>
             </div>
           </CardContent>
@@ -439,7 +509,7 @@ export default function AdminLiveSessionsPage() {
               </div>
               <div>
                 <p className="text-2xl font-bold">{scheduledCount}</p>
-                <p className="text-sm text-muted-foreground">Planifiées</p>
+                <p className="text-sm text-muted-foreground">{t('liveSessionsAdmin.stats.scheduled')}</p>
               </div>
             </div>
           </CardContent>
@@ -452,7 +522,7 @@ export default function AdminLiveSessionsPage() {
               </div>
               <div>
                 <p className="text-2xl font-bold">{liveCount}</p>
-                <p className="text-sm text-muted-foreground">En cours</p>
+                <p className="text-sm text-muted-foreground">{t('liveSessionsAdmin.stats.live')}</p>
               </div>
             </div>
           </CardContent>
@@ -465,7 +535,7 @@ export default function AdminLiveSessionsPage() {
               </div>
               <div>
                 <p className="text-2xl font-bold">{completedCount}</p>
-                <p className="text-sm text-muted-foreground">Terminées</p>
+                <p className="text-sm text-muted-foreground">{t('liveSessionsAdmin.stats.completed')}</p>
               </div>
             </div>
           </CardContent>
@@ -479,7 +549,7 @@ export default function AdminLiveSessionsPage() {
           <Input
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Rechercher une session..."
+            placeholder={t('liveSessionsAdmin.searchPlaceholder')}
             className="pl-9"
           />
         </div>
@@ -488,11 +558,11 @@ export default function AdminLiveSessionsPage() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Tous les statuts</SelectItem>
-            <SelectItem value="scheduled">Planifiées</SelectItem>
-            <SelectItem value="live">En cours</SelectItem>
-            <SelectItem value="ended">Terminées</SelectItem>
-            <SelectItem value="canceled">Annulées</SelectItem>
+            <SelectItem value="all">{t('liveSessionsAdmin.allStatuses')}</SelectItem>
+            <SelectItem value="scheduled">{t('liveSessionsAdmin.stats.scheduled')}</SelectItem>
+            <SelectItem value="live">{t('liveSessionsAdmin.stats.live')}</SelectItem>
+            <SelectItem value="ended">{t('liveSessionsAdmin.stats.completed')}</SelectItem>
+            <SelectItem value="canceled">{t('liveSessionsAdmin.statuses.canceled')}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -502,9 +572,9 @@ export default function AdminLiveSessionsPage() {
         <Card>
           <CardContent className="py-12 text-center">
             <Video className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">Aucune session trouvée</h3>
+            <h3 className="text-lg font-medium mb-2">{t('liveSessionsAdmin.empty.title')}</h3>
             <p className="text-muted-foreground">
-              Créez votre première session de formation en direct
+              {t('liveSessionsAdmin.empty.description')}
             </p>
           </CardContent>
         </Card>
@@ -527,7 +597,7 @@ export default function AdminLiveSessionsPage() {
                         {session.status === 'live' && (
                           <span className="flex items-center gap-1 text-xs text-red-600 animate-pulse">
                             <span className="h-2 w-2 rounded-full bg-red-600" />
-                            EN DIRECT
+                            {t('liveSessionsAdmin.liveNow')}
                           </span>
                         )}
                       </div>
@@ -537,7 +607,7 @@ export default function AdminLiveSessionsPage() {
                       <div className="flex items-center gap-4 mt-2 text-sm text-muted-foreground">
                         <span className="flex items-center gap-1">
                           <User className="h-4 w-4" />
-                          {session.instructorName || `Instructeur #${session.instructorId}`}
+                          {session.instructorName || t('liveSessionsAdmin.instructorFallback', { id: session.instructorId })}
                         </span>
                         <span className="flex items-center gap-1">
                           <Calendar className="h-4 w-4" />
@@ -545,7 +615,7 @@ export default function AdminLiveSessionsPage() {
                         </span>
                         <span className="flex items-center gap-1">
                           <Clock className="h-4 w-4" />
-                          {session.duration} min
+                          {t('liveSessionsAdmin.durationMinutes', { count: session.duration })}
                         </span>
                         <span className="flex items-center gap-1">
                           <Users className="h-4 w-4" />
@@ -579,14 +649,14 @@ export default function AdminLiveSessionsPage() {
                           disabled={startMutation.isPending}
                         >
                           <Play className="h-4 w-4 mr-1" />
-                          Démarrer
+                          {t('liveSessionsAdmin.start')}
                         </Button>
                         <Button
                           variant="outline"
                           size="sm"
                           onClick={() => cancelMutation.mutate(session.id)}
                         >
-                          Annuler
+                          {t('liveSessionsAdmin.cancel')}
                         </Button>
                       </>
                     )}
@@ -597,7 +667,7 @@ export default function AdminLiveSessionsPage() {
                         onClick={() => endMutation.mutate(session.id)}
                         disabled={endMutation.isPending}
                       >
-                        Terminer
+                        {t('liveSessionsAdmin.end')}
                       </Button>
                     )}
                     <Button
@@ -619,15 +689,15 @@ export default function AdminLiveSessionsPage() {
       <Dialog open={!!editingSession} onOpenChange={(open) => !open && setEditingSession(null)}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Modifier la session</DialogTitle>
+            <DialogTitle>{t('liveSessionsAdmin.editDialog.title')}</DialogTitle>
           </DialogHeader>
           <SessionForm formData={formData} setFormData={setFormData} users={users} courses={courses} isEditing={true} />
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingSession(null)}>
-              Annuler
+              {t('liveSessionsAdmin.editDialog.cancel')}
             </Button>
             <Button onClick={handleSubmit} disabled={updateMutation.isPending}>
-              {updateMutation.isPending ? 'Mise à jour...' : 'Enregistrer'}
+              {updateMutation.isPending ? t('liveSessionsAdmin.editDialog.saving') : t('liveSessionsAdmin.editDialog.save')}
             </Button>
           </DialogFooter>
         </DialogContent>

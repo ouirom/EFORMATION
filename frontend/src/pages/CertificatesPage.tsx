@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -28,6 +29,8 @@ interface Certificate {
 }
 
 export default function CertificatesPage() {
+  const { t } = useTranslation('certificates')
+  const { t: tCommon } = useTranslation('common')
   const { toast } = useToast()
   const [search, setSearch] = useState('')
 
@@ -58,8 +61,8 @@ export default function CertificatesPage() {
       link.remove()
     } catch (error) {
       toast({
-        title: 'Erreur',
-        description: 'Impossible de télécharger le certificat',
+        title: tCommon('status.error'),
+        description: t('downloadErrorDescription'),
         variant: 'destructive',
       })
     }
@@ -70,13 +73,13 @@ export default function CertificatesPage() {
     try {
       await navigator.clipboard.writeText(shareUrl)
       toast({
-        title: 'Lien copié',
-        description: 'Le lien de vérification a été copié dans le presse-papiers',
+        title: t('linkCopiedTitle'),
+        description: t('linkCopiedDescription'),
       })
     } catch (error) {
       toast({
-        title: 'Erreur',
-        description: 'Impossible de copier le lien',
+        title: tCommon('status.error'),
+        description: t('copyLinkErrorDescription'),
         variant: 'destructive',
       })
     }
@@ -90,9 +93,9 @@ export default function CertificatesPage() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold">Mes Certificats</h1>
+        <h1 className="text-3xl font-bold">{t('title')}</h1>
         <p className="text-muted-foreground">
-          Consultez et téléchargez vos certificats de formation
+          {t('subtitle')}
         </p>
       </div>
 
@@ -106,7 +109,7 @@ export default function CertificatesPage() {
               </div>
               <div>
                 <p className="text-2xl font-bold">{certificates.length}</p>
-                <p className="text-sm text-muted-foreground">Certificats obtenus</p>
+                <p className="text-sm text-muted-foreground">{t('stats.earned')}</p>
               </div>
             </div>
           </CardContent>
@@ -121,7 +124,7 @@ export default function CertificatesPage() {
                 <p className="text-2xl font-bold">
                   {certificates.filter((c: Certificate) => c.status === 'valid').length}
                 </p>
-                <p className="text-sm text-muted-foreground">Certificats valides</p>
+                <p className="text-sm text-muted-foreground">{t('stats.valid')}</p>
               </div>
             </div>
           </CardContent>
@@ -138,7 +141,7 @@ export default function CertificatesPage() {
                     c.expiresAt && new Date(c.expiresAt) < new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
                   ).length}
                 </p>
-                <p className="text-sm text-muted-foreground">Expirent bientôt</p>
+                <p className="text-sm text-muted-foreground">{t('stats.expiringSoon')}</p>
               </div>
             </div>
           </CardContent>
@@ -149,7 +152,7 @@ export default function CertificatesPage() {
       <div className="relative max-w-md">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
-          placeholder="Rechercher un certificat..."
+          placeholder={t('searchPlaceholder')}
           className="pl-10"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -161,11 +164,11 @@ export default function CertificatesPage() {
         <Card>
           <CardContent className="py-12 text-center">
             <Award className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium mb-2">Aucun certificat</h3>
+            <h3 className="text-lg font-medium mb-2">{t('empty.title')}</h3>
             <p className="text-muted-foreground">
               {search
-                ? 'Aucun certificat ne correspond à votre recherche'
-                : 'Terminez des formations pour obtenir des certificats'}
+                ? t('empty.noMatch')
+                : t('empty.noneYet')}
             </p>
           </CardContent>
         </Card>
@@ -183,23 +186,23 @@ export default function CertificatesPage() {
                     variant={cert.status === 'valid' ? 'default' : 'secondary'}
                     className={cert.status === 'valid' ? 'bg-green-100 text-green-800' : ''}
                   >
-                    {cert.status === 'valid' ? 'Valide' : 'Expiré'}
+                    {cert.status === 'valid' ? t('status.valid') : t('status.expired')}
                   </Badge>
                 </div>
                 <CardTitle className="mt-4">{cert.courseTitle}</CardTitle>
                 <CardDescription>
-                  N° {cert.serialNumber}
+                  {t('serialNumber', { number: cert.serialNumber })}
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Délivré le</span>
+                    <span className="text-muted-foreground">{t('issuedOn')}</span>
                     <span>{formatDate(cert.issuedAt)}</span>
                   </div>
                   {cert.expiresAt && (
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Expire le</span>
+                      <span className="text-muted-foreground">{t('expiresOn')}</span>
                       <span>{formatDate(cert.expiresAt)}</span>
                     </div>
                   )}
@@ -221,7 +224,7 @@ export default function CertificatesPage() {
                     onClick={() => handleShare(cert)}
                   >
                     <Share2 className="h-4 w-4 mr-1" />
-                    Partager
+                    {t('share')}
                   </Button>
                 </div>
               </CardContent>

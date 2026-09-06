@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/AuthContext'
 import { useSessionTimeoutContext } from '@/contexts/SessionTimeoutContext'
 import { useIdleTimeout } from '@/hooks/useIdleTimeout'
-import { refreshAccessToken } from '@/services/api'
+import { refreshAccessToken, api } from '@/services/api'
 import { SessionTimeoutDialog } from '@/components/SessionTimeoutDialog'
 import { QuickSearch } from '@/components/QuickSearch'
+import { LanguageSwitcher } from '@/components/LanguageSwitcher'
 import { ProductTour } from '@/components/ProductTour'
-import { openGlobalHelp } from '@/components/GlobalHelp'
+import { openGlobalHelp } from '@/lib/globalHelpEvent'
 import { userTourSteps, adminTourSteps } from '@/lib/tourSteps'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -20,7 +23,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Badge } from '@/components/ui/badge'
-import { cn, getInitials } from '@/lib/utils'
+import { cn, getInitials, hexToHslTriplet } from '@/lib/utils'
 import {
   LayoutDashboard,
   BookOpen,
@@ -50,37 +53,45 @@ import {
   Globe,
   UploadCloud,
   PlugZap,
+  Disc,
+  MailCheck,
+  UsersRound,
+  Library,
 } from 'lucide-react'
 
 const mainNavItems = [
-  { icon: LayoutDashboard, label: 'Tableau de bord', path: '/dashboard', tourId: 'dashboard' },
-  { icon: BookOpen, label: 'Formations', path: '/courses', tourId: 'courses' },
-  { icon: Video, label: 'Sessions live', path: '/live', tourId: 'live' },
-  { icon: MessageSquare, label: 'Chat', path: '/chat' },
-  { icon: Award, label: 'Badges', path: '/badges', tourId: 'badges' },
-  { icon: GraduationCap, label: 'Certificats', path: '/certificates' },
-  { icon: Bell, label: 'Notifications', path: '/notifications' },
-  { icon: Newspaper, label: 'Blog', path: '/blog' },
-  { icon: Bot, label: 'Assistant IA', path: '/ai-tutor' },
-  { icon: Search, label: 'Recherche', path: '/search' },
+  { icon: LayoutDashboard, labelKey: 'nav.dashboard', path: '/dashboard', tourId: 'dashboard' },
+  { icon: BookOpen, labelKey: 'nav.courses', path: '/courses', tourId: 'courses' },
+  { icon: Library, labelKey: 'nav.lessons', path: '/lessons' },
+  { icon: Video, labelKey: 'nav.live', path: '/live', tourId: 'live' },
+  { icon: MessageSquare, labelKey: 'nav.chat', path: '/chat' },
+  { icon: Award, labelKey: 'nav.badges', path: '/badges', tourId: 'badges' },
+  { icon: GraduationCap, labelKey: 'nav.certificates', path: '/certificates' },
+  { icon: Bell, labelKey: 'nav.notifications', path: '/notifications' },
+  { icon: Newspaper, labelKey: 'nav.blog', path: '/blog' },
+  { icon: Bot, labelKey: 'nav.aiTutor', path: '/ai-tutor' },
+  { icon: Search, labelKey: 'nav.search', path: '/search' },
 ]
 
 const adminNavItems = [
-  { icon: BarChart3, label: 'Analytics', path: '/admin/analytics', tourId: 'analytics' },
-  { icon: Users, label: 'Utilisateurs', path: '/admin/users', tourId: 'users' },
-  { icon: BookOpen, label: 'Cours', path: '/admin/courses', tourId: 'courses' },
-  { icon: UserPlus, label: 'Attributions', path: '/admin/assignments' },
-  { icon: Award, label: 'Badges', path: '/admin/badges' },
-  { icon: GraduationCap, label: 'Certificats', path: '/admin/certificates' },
-  { icon: Video, label: 'Sessions live', path: '/admin/live-sessions', tourId: 'live-sessions' },
-  { icon: Bell, label: 'Notifications', path: '/admin/notifications' },
-  { icon: Newspaper, label: 'Blog', path: '/admin/blog' },
-  { icon: FileText, label: 'Rapports', path: '/admin/reports' },
-  { icon: Building2, label: 'Organisation', path: '/admin/organization' },
-  { icon: UploadCloud, label: 'Import de données', path: '/admin/import' },
-  { icon: Mail, label: 'Email', path: '/admin/email-settings' },
-  { icon: PlugZap, label: 'Visioconférence', path: '/admin/livekit-settings' },
-  { icon: ScrollText, label: 'Journaux d\'audit', path: '/admin/logs', tourId: 'logs' },
+  { icon: BarChart3, labelKey: 'adminNav.analytics', path: '/admin/analytics', tourId: 'analytics' },
+  { icon: Users, labelKey: 'adminNav.users', path: '/admin/users', tourId: 'users' },
+  { icon: BookOpen, labelKey: 'adminNav.courses', path: '/admin/courses', tourId: 'courses' },
+  { icon: UserPlus, labelKey: 'adminNav.assignments', path: '/admin/assignments' },
+  { icon: UsersRound, labelKey: 'adminNav.teams', path: '/admin/teams' },
+  { icon: Award, labelKey: 'adminNav.badges', path: '/admin/badges' },
+  { icon: GraduationCap, labelKey: 'adminNav.certificates', path: '/admin/certificates' },
+  { icon: Video, labelKey: 'adminNav.liveSessions', path: '/admin/live-sessions', tourId: 'live-sessions' },
+  { icon: Bell, labelKey: 'adminNav.notifications', path: '/admin/notifications' },
+  { icon: MailCheck, labelKey: 'adminNav.emailQueue', path: '/admin/email-queue' },
+  { icon: Newspaper, labelKey: 'adminNav.blog', path: '/admin/blog' },
+  { icon: FileText, labelKey: 'adminNav.reports', path: '/admin/reports' },
+  { icon: Building2, labelKey: 'adminNav.organization', path: '/admin/organization' },
+  { icon: UploadCloud, labelKey: 'adminNav.import', path: '/admin/import' },
+  { icon: Mail, labelKey: 'adminNav.email', path: '/admin/email-settings' },
+  { icon: PlugZap, labelKey: 'adminNav.videoConferencing', path: '/admin/livekit-settings' },
+  { icon: Disc, labelKey: 'adminNav.recording', path: '/admin/recording-settings' },
+  { icon: ScrollText, labelKey: 'adminNav.logs', path: '/admin/logs', tourId: 'logs' },
 ]
 
 function tourSeenKey(section: 'main' | 'admin') {
@@ -88,6 +99,7 @@ function tourSeenKey(section: 'main' | 'admin') {
 }
 
 export default function MainLayout() {
+  const { t } = useTranslation('layout')
   const { user, logout } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
@@ -100,10 +112,10 @@ export default function MainLayout() {
   const hasTeam = ['admin', 'super_admin', 'director', 'manager', 'supervisor'].includes(user?.role || '')
   const navItems = isAdminSection
     ? user?.role === 'super_admin'
-      ? [...adminNavItems, { icon: Globe, label: 'Plateforme', path: '/admin/platform' }]
+      ? [...adminNavItems, { icon: Globe, labelKey: 'adminNav.platform', path: '/admin/platform' }]
       : adminNavItems
     : hasTeam
-      ? [mainNavItems[0], { icon: Users, label: 'Mon équipe', path: '/my-team' }, ...mainNavItems.slice(1)]
+      ? [mainNavItems[0], { icon: Users, labelKey: 'nav.myTeam', path: '/my-team' }, ...mainNavItems.slice(1)]
       : mainNavItems
   const tourSection = isAdminSection ? 'admin' : 'main'
   const tourSteps = isAdminSection ? adminTourSteps : userTourSteps
@@ -113,7 +125,6 @@ export default function MainLayout() {
       const timer = setTimeout(() => setTourOpen(true), 600)
       return () => clearTimeout(timer)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tourSection])
 
   const closeTour = () => {
@@ -125,6 +136,37 @@ export default function MainLayout() {
     logout()
     navigate('/login')
   }
+
+  const { data: unreadCount = 0 } = useQuery({
+    queryKey: ['notifications-unread-count'],
+    queryFn: async () => {
+      const response = await api.get('/notifications')
+      return response.data.meta?.unreadCount ?? 0
+    },
+    refetchInterval: 60000,
+  })
+
+  // Shares the ['organization'] cache key with AdminOrganizationPage.tsx.
+  const { data: organization } = useQuery({
+    queryKey: ['organization'],
+    queryFn: async () => {
+      const response = await api.get('/organizations/current')
+      return response.data.data as { name: string; logo: string | null; primaryColor: string } | undefined
+    },
+    staleTime: 5 * 60 * 1000,
+  })
+
+  useEffect(() => {
+    const hsl = organization?.primaryColor ? hexToHslTriplet(organization.primaryColor) : null
+    if (hsl) {
+      document.documentElement.style.setProperty('--primary', hsl)
+      document.documentElement.style.setProperty('--ring', hsl)
+    }
+    return () => {
+      document.documentElement.style.removeProperty('--primary')
+      document.documentElement.style.removeProperty('--ring')
+    }
+  }, [organization?.primaryColor])
 
   const { idleLimitOverrideMs } = useSessionTimeoutContext()
 
@@ -165,10 +207,8 @@ export default function MainLayout() {
         </Button>
         <div className="flex-1">
           <Link to="/" className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
-              <span className="text-lg font-bold text-primary-foreground">E</span>
-            </div>
-            <span className="text-xl font-bold">E-Formation</span>
+            <BrandLogo name={organization?.name} logo={organization?.logo} />
+            <span className="text-xl font-bold">{organization?.name || 'E-Formation'}</span>
           </Link>
         </div>
         <UserMenu user={user} onLogout={handleLogout} />
@@ -194,10 +234,8 @@ export default function MainLayout() {
         <div className="flex h-16 items-center justify-between px-4 border-b">
           {!sidebarCollapsed && (
             <Link to="/" className="flex items-center gap-2" data-tour="logo">
-              <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
-                <span className="text-lg font-bold text-primary-foreground">E</span>
-              </div>
-              <span className="text-xl font-bold">E-Formation</span>
+              <BrandLogo name={organization?.name} logo={organization?.logo} />
+              <span className="text-xl font-bold">{organization?.name || 'E-Formation'}</span>
             </Link>
           )}
           <Button
@@ -228,7 +266,7 @@ export default function MainLayout() {
               >
                 {isAdminSection ? <User className="h-4 w-4" /> : <Settings className="h-4 w-4" />}
                 {!sidebarCollapsed && (
-                  <span className="ml-2">{isAdminSection ? 'Espace utilisateur' : 'Administration'}</span>
+                  <span className="ml-2">{isAdminSection ? t('sectionToggle.userSpace') : t('sectionToggle.administration')}</span>
                 )}
               </Button>
             </div>
@@ -252,7 +290,7 @@ export default function MainLayout() {
                   )}
                 >
                   <item.icon className="h-5 w-5 shrink-0" />
-                  {!sidebarCollapsed && <span>{item.label}</span>}
+                  {!sidebarCollapsed && <span>{t(item.labelKey)}</span>}
                 </Button>
               </Link>
             )
@@ -301,12 +339,14 @@ export default function MainLayout() {
 
           {/* Right Section */}
           <div className="flex items-center gap-4">
+            <LanguageSwitcher />
+
             {/* Contextual help for the current page (F1 also opens it) */}
             <Button
               variant="ghost"
               size="icon"
               onClick={() => openGlobalHelp()}
-              title="Aide de cette page (F1)"
+              title={t('header.helpTooltip')}
             >
               <LifeBuoy className="h-5 w-5" />
             </Button>
@@ -316,18 +356,22 @@ export default function MainLayout() {
               variant="ghost"
               size="icon"
               onClick={() => setTourOpen(true)}
-              title="Lancer la visite guidée"
+              title={t('header.tourTooltip')}
             >
               <HelpCircle className="h-5 w-5" />
             </Button>
 
             {/* Notifications */}
-            <Button variant="ghost" size="icon" className="relative" data-tour="notifications">
-              <Bell className="h-5 w-5" />
-              <Badge className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-[10px]">
-                3
-              </Badge>
-            </Button>
+            <Link to="/notifications">
+              <Button variant="ghost" size="icon" className="relative" data-tour="notifications">
+                <Bell className="h-5 w-5" />
+                {unreadCount > 0 && (
+                  <Badge className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-[10px]">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </Badge>
+                )}
+              </Button>
+            </Link>
 
             {/* User Menu */}
             <UserMenu user={user} onLogout={handleLogout} dataTour="user-menu" />
@@ -345,7 +389,21 @@ export default function MainLayout() {
   )
 }
 
+function BrandLogo({ name, logo }: { name?: string | null; logo?: string | null }) {
+  if (logo) {
+    return <img src={logo} alt={name || 'E-Formation'} className="h-8 w-8 rounded-lg object-contain" />
+  }
+  return (
+    <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
+      <span className="text-lg font-bold text-primary-foreground">
+        {(name || 'E-Formation').charAt(0).toUpperCase()}
+      </span>
+    </div>
+  )
+}
+
 function UserMenu({ user, onLogout, dataTour }: { user: any; onLogout: () => void; dataTour?: string }) {
+  const { t } = useTranslation('layout')
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -371,19 +429,19 @@ function UserMenu({ user, onLogout, dataTour }: { user: any; onLogout: () => voi
         <DropdownMenuItem asChild>
           <Link to="/profile">
             <User className="mr-2 h-4 w-4" />
-            Mon profil
+            {t('userMenu.profile')}
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <Link to="/settings">
             <Settings className="mr-2 h-4 w-4" />
-            Paramètres
+            {t('userMenu.settings')}
           </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={onLogout} className="text-destructive">
           <LogOut className="mr-2 h-4 w-4" />
-          Déconnexion
+          {t('userMenu.logout')}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

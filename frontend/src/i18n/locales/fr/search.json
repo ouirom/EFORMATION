@@ -1,0 +1,41 @@
+{
+  "title": "Recherche",
+  "subtitle": "Trouvez des formations, articles, utilisateurs et plus encore",
+  "placeholder": "Rechercher des formations, articles, utilisateurs...",
+  "searchButton": "Rechercher",
+  "searching": "Recherche en cours...",
+  "resultsCount_one": "{{count}} résultat pour \"{{query}}\"",
+  "resultsCount_other": "{{count}} résultats pour \"{{query}}\"",
+  "tabs": {
+    "all": "Tout ({{count}})",
+    "course": "Formations ({{count}})",
+    "blog": "Articles ({{count}})",
+    "user": "Utilisateurs ({{count}})",
+    "liveSession": "Sessions ({{count}})"
+  },
+  "resultTypes": {
+    "course": "Formation",
+    "user": "Utilisateur",
+    "blog": "Article",
+    "chat": "Discussion",
+    "live_session": "Session live"
+  },
+  "bestMatch": "Meilleure correspondance",
+  "noResults": {
+    "title": "Aucun résultat trouvé",
+    "description": "Essayez d'autres mots-clés ou vérifiez l'orthographe"
+  },
+  "recentSearches": {
+    "title": "Recherches récentes",
+    "description": "Vos dernières recherches",
+    "none": "Vous n'avez pas encore effectué de recherche."
+  },
+  "browseByCategory": {
+    "title": "Parcourir par catégorie",
+    "description": "Explorez notre contenu par thématique",
+    "development": "Développement",
+    "design": "Design",
+    "management": "Management",
+    "marketing": "Marketing"
+  }
+}

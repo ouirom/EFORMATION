@@ -1,0 +1,104 @@
+{
+  "toasts": {
+    "profileUpdatedDescription": "Profile updated successfully",
+    "profileUpdateErrorDescription": "Unable to update the profile",
+    "passwordChangedDescription": "Password changed successfully",
+    "passwordChangeErrorDescription": "Unable to change the password",
+    "selectImageDescription": "Please select an image",
+    "imageTooLargeDescription": "The image must not exceed 5 MB",
+    "avatarUpdatedDescription": "Profile picture updated",
+    "avatarUpdateErrorDescription": "Unable to update the picture",
+    "fillAllFieldsDescription": "Please fill in all fields",
+    "passwordMismatchDescription": "Passwords do not match",
+    "passwordTooShortDescription": "Password must be at least 8 characters long"
+  },
+  "defaultUserName": "User",
+  "defaultRole": "Learner",
+  "defaultJobTitle": "Défaut",
+  "level": "Level {{level}}",
+  "xp": "{{xp}} XP",
+  "edit": "Edit",
+  "changePasswordButton": "Password",
+  "logout": "Log out",
+  "enterpriseNumber": "Company #{{id}}",
+  "directionNumber": "Division #{{id}}",
+  "roleLabel": "Role: {{role}}",
+  "stats": {
+    "coursesCompleted": "Courses completed",
+    "learningHours": "Learning hours",
+    "badgesEarned": "Badges earned",
+    "consecutiveDays": "Consecutive days",
+    "record": "Record: {{value}}"
+  },
+  "xpProgress": "{{xp}} / {{max}} XP",
+  "xpRemaining": "{{remaining}} XP left until level {{nextLevel}}",
+  "serialNumberShort": "No. {{number}}",
+  "tabs": {
+    "badges": "Badges",
+    "certificates": "Certificates",
+    "activity": "Activity"
+  },
+  "recentBadges": {
+    "title": "Recent badges",
+    "description": "Your latest rewards",
+    "empty": "No badges earned yet"
+  },
+  "certificatesTab": {
+    "title": "Certificates",
+    "description": "Your earned certifications",
+    "view": "View",
+    "empty": "No certificates earned yet"
+  },
+  "activityTab": {
+    "title": "Recent activity",
+    "empty": "No recent activity",
+    "timeAgo": "{{time}} ago",
+    "actions": {
+      "courseCompleted": "Course completed",
+      "badgeEarned": "Badge earned",
+      "certificateIssued": "Certificate earned",
+      "quizPassed": "Quiz passed",
+      "lessonCompleted": "Lesson completed"
+    }
+  },
+  "editDialog": {
+    "title": "Edit profile",
+    "description": "Update your personal information",
+    "fullName": "Full name",
+    "fullNamePlaceholder": "Your full name",
+    "email": "Email",
+    "emailPlaceholder": "you@email.com",
+    "cancel": "Cancel",
+    "saving": "Saving...",
+    "save": "Save"
+  },
+  "passwordDialog": {
+    "title": "Change password",
+    "description": "Enter your current password and the new password",
+    "currentPassword": "Current password",
+    "newPassword": "New password",
+    "newPasswordPlaceholder": "At least 8 characters",
+    "confirmPassword": "Confirm password",
+    "confirmPasswordPlaceholder": "Confirm the new password",
+    "cancel": "Cancel",
+    "changing": "Changing...",
+    "change": "Change"
+  },
+  "settings": {
+    "title": "Settings",
+    "subtitle": "Manage your notification preferences",
+    "savedDescription": "Preferences saved",
+    "saveErrorDescription": "Error while saving",
+    "channels": {
+      "title": "Notification channels",
+      "description": "Choose the channels through which you want to receive notifications. In-app notifications always remain visible from the bell at the top of the screen, regardless of your choice here.",
+      "email": { "label": "Email", "description": "Receive notifications by email" },
+      "sms": { "label": "SMS", "description": "Receive notifications by SMS" },
+      "whatsapp": { "label": "WhatsApp", "description": "Receive notifications by WhatsApp" },
+      "pushWeb": { "label": "Push notifications (browser)", "description": "Receive push notifications in your browser" },
+      "pushMobile": { "label": "Push notifications (mobile)", "description": "Receive push notifications on the mobile app" }
+    },
+    "saving": "Saving...",
+    "save": "Save"
+  }
+}

@@ -1,10 +1,13 @@
 import { useQuery } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { PageLoading } from '@/components/ui/loading'
+import { QueryError } from '@/components/ui/query-error'
 import { Award, Star, Lock, Trophy, Flame, Medal, Sparkles } from 'lucide-react'
 import { api } from '@/services/api'
+import { dateLocale } from '@/lib/utils'
 
 interface UserBadge {
   id: number
@@ -29,12 +32,13 @@ interface BadgeStats {
 }
 
 export default function BadgesPage() {
-  const { data: userBadgesData, isLoading: loadingUserBadges } = useQuery({
+  const { t } = useTranslation('badges')
+  const { data: userBadgesData, isLoading: loadingUserBadges, error: userBadgesError, refetch: refetchUserBadges } = useQuery({
     queryKey: ['my-badges-page'],
     queryFn: () => api.badges.getUserBadges(),
   })
 
-  const { data: allBadgesData, isLoading: loadingAllBadges } = useQuery({
+  const { data: allBadgesData, isLoading: loadingAllBadges, error: allBadgesError, refetch: refetchAllBadges } = useQuery({
     queryKey: ['all-badges'],
     queryFn: async () => {
       const response = await api.get('/badges')
@@ -44,6 +48,10 @@ export default function BadgesPage() {
 
   if (loadingUserBadges || loadingAllBadges) {
     return <PageLoading />
+  }
+
+  if (userBadgesError || allBadgesError) {
+    return <QueryError onRetry={() => { refetchUserBadges(); refetchAllBadges() }} />
   }
 
   const userBadges: UserBadge[] = userBadgesData || []
@@ -72,10 +80,10 @@ export default function BadgesPage() {
   })
 
   const categories = [
-    { id: 'all', label: 'Tous' },
-    { id: 'trophy', label: '🏆 Trophées' },
-    { id: 'quiz', label: '📝 Quiz' },
-    { id: 'course', label: '📚 Cours' },
+    { id: 'all', label: t('categories.all') },
+    { id: 'trophy', label: t('categories.trophy') },
+    { id: 'quiz', label: t('categories.quiz') },
+    { id: 'course', label: t('categories.course') },
   ]
 
   const filterByCategory = (badge: any, categoryId: string) => {
@@ -92,10 +100,10 @@ export default function BadgesPage() {
       <div>
         <h1 className="text-3xl font-bold flex items-center gap-3">
           <Trophy className="h-8 w-8 text-yellow-500" />
-          Mes Badges & Trophées
+          {t('title')}
         </h1>
         <p className="text-muted-foreground">
-          Collectionnez des récompenses en accomplissant vos objectifs
+          {t('subtitle')}
         </p>
       </div>
 
@@ -108,7 +116,7 @@ export default function BadgesPage() {
             </div>
             <div>
               <p className="text-2xl font-bold text-blue-700 dark:text-blue-300">{stats.total}</p>
-              <p className="text-sm text-blue-600/70 dark:text-blue-400/70">Total badges</p>
+              <p className="text-sm text-blue-600/70 dark:text-blue-400/70">{t('stats.total')}</p>
             </div>
           </CardContent>
         </Card>
@@ -120,7 +128,7 @@ export default function BadgesPage() {
             </div>
             <div>
               <p className="text-2xl font-bold text-yellow-700 dark:text-yellow-300">{stats.trophies}</p>
-              <p className="text-sm text-yellow-600/70 dark:text-yellow-400/70">Trophées</p>
+              <p className="text-sm text-yellow-600/70 dark:text-yellow-400/70">{t('stats.trophies')}</p>
             </div>
           </CardContent>
         </Card>
@@ -132,7 +140,7 @@ export default function BadgesPage() {
             </div>
             <div>
               <p className="text-2xl font-bold text-green-700 dark:text-green-300">{stats.quizBadges}</p>
-              <p className="text-sm text-green-600/70 dark:text-green-400/70">Badges Quiz</p>
+              <p className="text-sm text-green-600/70 dark:text-green-400/70">{t('stats.quizBadges')}</p>
             </div>
           </CardContent>
         </Card>
@@ -144,7 +152,7 @@ export default function BadgesPage() {
             </div>
             <div>
               <p className="text-2xl font-bold text-purple-700 dark:text-purple-300">{stats.courseBadges}</p>
-              <p className="text-sm text-purple-600/70 dark:text-purple-400/70">Badges Cours</p>
+              <p className="text-sm text-purple-600/70 dark:text-purple-400/70">{t('stats.courseBadges')}</p>
             </div>
           </CardContent>
         </Card>
@@ -156,7 +164,7 @@ export default function BadgesPage() {
           <CardContent className="p-6">
             <h3 className="font-semibold mb-4 flex items-center gap-2 text-yellow-800 dark:text-yellow-300">
               <Sparkles className="h-5 w-5 text-yellow-500 animate-bounce" />
-              🎉 Dernières récompenses obtenues
+              {t('recentlyEarned')}
             </h3>
             <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
               {userBadges.slice(0, 6).map((badge: UserBadge, index: number) => (
@@ -179,12 +187,12 @@ export default function BadgesPage() {
                     <div className="flex-1">
                       <p className="font-bold text-sm">{badge.name}</p>
                       <p className="text-xs text-muted-foreground mt-1">
-                        {badge.quiz_title || badge.course_title || 'Badge'}
+                        {badge.quiz_title || badge.course_title || t('defaultBadge')}
                         {badge.score && ` • ${badge.score}%`}
                       </p>
                       {badge.awarded_at && (
                         <p className="text-xs text-muted-foreground mt-1">
-                          {new Date(badge.awarded_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
+                          {new Date(badge.awarded_at).toLocaleDateString(dateLocale(), { day: 'numeric', month: 'short' })}
                         </p>
                       )}
                     </div>
@@ -218,7 +226,7 @@ export default function BadgesPage() {
             {badgesWithStatus.filter((b: any) => filterByCategory(b, cat.id)).length === 0 && (
               <div className="text-center py-12 text-muted-foreground">
                 <Lock className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>Aucun badge dans cette catégorie</p>
+                <p>{t('emptyCategory')}</p>
               </div>
             )}
           </TabsContent>
@@ -229,20 +237,21 @@ export default function BadgesPage() {
 }
 
 function BadgeCard({ badge }: { badge: any }) {
+  const { t } = useTranslation('badges')
   const getTypeInfo = (type: string) => {
     switch (type) {
       case 'trophy':
-        return { icon: '🏆', color: 'yellow', label: 'Trophée' }
+        return { icon: '🏆', color: 'yellow', label: t('types.trophy') }
       case 'perfect_score':
-        return { icon: '⭐', color: 'yellow', label: 'Score Parfait' }
+        return { icon: '⭐', color: 'yellow', label: t('types.perfectScore') }
       case 'quiz_completion':
-        return { icon: '✅', color: 'green', label: 'Quiz Réussi' }
+        return { icon: '✅', color: 'green', label: t('types.quizCompletion') }
       case 'course_start':
-        return { icon: '🚀', color: 'blue', label: 'Explorateur' }
+        return { icon: '🚀', color: 'blue', label: t('types.courseStart') }
       case 'course_completion':
-        return { icon: '🎓', color: 'purple', label: 'Diplômé' }
+        return { icon: '🎓', color: 'purple', label: t('types.courseCompletion') }
       default:
-        return { icon: '🎖️', color: 'gray', label: 'Badge' }
+        return { icon: '🎖️', color: 'gray', label: t('types.default') }
     }
   }
 
@@ -308,8 +317,8 @@ function BadgeCard({ badge }: { badge: any }) {
             {badge.earned && (
               <div className="flex items-center gap-2 text-xs">
                 <Star className={`h-4 w-4 ${badge.badge_type === 'trophy' ? 'text-yellow-500 fill-yellow-500' : 'text-gray-400'}`} />
-                {badge.quizTitle && <span>Quiz: {badge.quizTitle}</span>}
-                {badge.courseTitle && <span>Cours: {badge.courseTitle}</span>}
+                {badge.quizTitle && <span>{t('quizLabel', { title: badge.quizTitle })}</span>}
+                {badge.courseTitle && <span>{t('courseLabel', { title: badge.courseTitle })}</span>}
                 {badge.score && <span className="font-medium">{badge.score}%</span>}
               </div>
             )}
@@ -318,10 +327,12 @@ function BadgeCard({ badge }: { badge: any }) {
 
         {badge.earned && badge.earnedAt && (
           <p className="text-xs text-muted-foreground mt-4 flex items-center gap-1">
-            <span>✓</span> Obtenu le {new Date(badge.earnedAt).toLocaleDateString('fr-FR', {
-              day: 'numeric',
-              month: 'long',
-              year: 'numeric'
+            <span>✓</span> {t('earnedOn', {
+              date: new Date(badge.earnedAt).toLocaleDateString(dateLocale(), {
+                day: 'numeric',
+                month: 'long',
+                year: 'numeric'
+              })
             })}
           </p>
         )}
@@ -330,15 +341,15 @@ function BadgeCard({ badge }: { badge: any }) {
           <div className="mt-4 p-3 bg-muted/50 rounded-lg">
             <p className="text-xs text-muted-foreground flex items-center gap-2">
               <Lock className="h-3 w-3" />
-              {badge.badge_type === 'trophy' 
-                ? 'Obtenez 100% à un quiz pour débloquer ce trophée'
+              {badge.badge_type === 'trophy'
+                ? t('lockedHints.trophy')
                 : badge.badge_type === 'perfect_score'
-                ? 'Obtenez un score parfait à un quiz'
+                ? t('lockedHints.perfectScore')
                 : badge.badge_type === 'quiz_completion'
-                ? 'Réussissez un quiz pour obtenir ce badge'
+                ? t('lockedHints.quizCompletion')
                 : badge.badge_type === 'course_start'
-                ? 'Commencez un cours pour obtenir ce badge'
-                : 'Terminez un cours pour obtenir ce badge'}
+                ? t('lockedHints.courseStart')
+                : t('lockedHints.courseCompletion')}
             </p>
           </div>
         )}
