@@ -26,6 +26,28 @@ export const DEFAULT_CATEGORY_CODES = [
 // Older rows/seed data used a short code for the same category.
 const LEGACY_ALIASES: Record<string, string> = { tech: 'technology' };
 
+export type CategoryLanguage = 'fr' | 'en';
+
+// Default labels of the built-in codes. The frontend owns the on-screen translation
+// (shared.json > courseCategories); this copy serves what the server produces or
+// matches itself: search ("Technologie" -> "technology") and report exports.
+// Keep in sync with frontend/src/i18n/locales/{fr,en}/shared.json.
+const DEFAULT_LABELS: Record<string, { fr: string; en: string; aliases?: string[] }> = {
+  technology: { fr: 'Technologie', en: 'Technology' },
+  management: { fr: 'Management', en: 'Management' },
+  marketing: { fr: 'Marketing', en: 'Marketing' },
+  finance: { fr: 'Finance', en: 'Finance' },
+  hr: { fr: 'Ressources humaines', en: 'Human resources', aliases: ['RH', 'HR'] },
+  'soft-skills': { fr: 'Soft skills', en: 'Soft skills' },
+  compliance: { fr: 'Conformité', en: 'Compliance' },
+  other: { fr: 'Autre', en: 'Other' },
+};
+
+/** Case- and accent-insensitive form used to compare labels with a search term. */
+function fold(value: string): string {
+  return value.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
 const MAX_CODE_LENGTH = 50; // courses.category is VARCHAR(50)
 
 export interface CourseCategory {
@@ -57,6 +79,36 @@ export class CategoryService {
       isDefault: isDefaultCode(r.code),
       courseCount: Number(r.course_count) || 0,
     }));
+  }
+
+  /**
+   * Codes of the tenant's categories whose label contains `term` -- the admin's
+   * name if set, otherwise the built-in label in any language -- so a search for
+   * "technologie" or a renamed "Personnel" finds courses stored under their code.
+   */
+  static async codesMatching(tenantId: number, term: string): Promise<string[]> {
+    const needle = fold(term.trim());
+    if (!needle) return [];
+    return (await this.list(tenantId))
+      .filter((c) => {
+        const defaults = DEFAULT_LABELS[c.code];
+        const labels = c.name
+          ? [c.name]
+          : defaults ? [defaults.fr, defaults.en, ...(defaults.aliases ?? [])] : [c.code];
+        return labels.some((label) => fold(label).includes(needle));
+      })
+      .map((c) => c.code);
+  }
+
+  /**
+   * Code -> display label for the tenant, in `language` (admin name first, then the
+   * built-in label, then the raw code) -- for output the server renders itself, such
+   * as report exports. Mirrors the frontend's useCategoryLabel().
+   */
+  static async labels(tenantId: number, language: CategoryLanguage = 'fr'): Promise<Map<string, string>> {
+    return new Map(
+      (await this.list(tenantId)).map((c) => [c.code, c.name ?? DEFAULT_LABELS[c.code]?.[language] ?? c.code])
+    );
   }
 
   /** Inserts the built-in categories a tenant doesn't have yet (new tenants, re-runs). */

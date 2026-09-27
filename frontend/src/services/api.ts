@@ -1,4 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
+import i18n from '@/i18n';
 
 // Utilise le proxy Vite (chemin relatif) pour éviter les problèmes CORS
 // En prod, définir VITE_API_URL=https://api.example.com/api/v1
@@ -294,7 +295,7 @@ api.notifications = {
 };
 
 api.lessons = {
-  catalog: (params?: { status?: string; courseId?: number; page?: number; limit?: number }) =>
+  catalog: (params?: { status?: string; courseId?: number; mandatory?: boolean; page?: number; limit?: number }) =>
     api.get('/lessons/catalog', { params }).then(r => ({ data: r.data.data || [], meta: r.data.meta })),
 };
 
@@ -517,7 +518,8 @@ export const apiHelpers = {
   
   // Reports (Admin)
   generateReport: (reportType: string, format: string, filters?: any) =>
-    api.post('/reports/generate', { reportType, format, ...filters }, {
+    // language: category labels (and future localized cells) follow the UI language.
+    api.post('/reports/generate', { reportType, format, language: i18n.language?.startsWith('en') ? 'en' : 'fr', ...filters }, {
       responseType: format !== 'json' ? 'blob' : 'json',
     }),
 };

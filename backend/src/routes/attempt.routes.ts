@@ -7,6 +7,7 @@ import { BadRequestError, NotFoundError } from '../middleware/error.middleware';
 import { PendingNotificationService } from '../services/pending-notification.service';
 import { config } from '../config';
 import { logger } from '../utils/logger';
+import { resolveViewableUserId } from '../utils/hierarchyScope';
 
 const router = Router();
 
@@ -626,12 +627,9 @@ router.get('/:id', authenticate, async (req: AuthRequest, res, next) => {
  */
 router.get('/user/:userId', authenticate, async (req: AuthRequest, res, next) => {
   try {
-    const userId = req.params.userId === 'me' ? req.user!.id : parseInt(req.params.userId, 10);
-
-    // Check permissions
-    if (req.user!.id !== userId && req.user!.role !== 'admin' && req.user!.role !== 'manager') {
-      throw BadRequestError('Insufficient permissions');
-    }
+    // Same visibility rule as GET /users/:id (self, admins, or a subordinate in the
+    // requester's own scope) -- previously any manager could read anyone's attempts.
+    const userId = await resolveViewableUserId(req.user!, req.params.userId);
 
     const attempts = await DatabaseService.query<any>(
       // quiz_attempts is where POST /attempts actually writes; the legacy

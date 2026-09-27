@@ -121,3 +121,36 @@ describe('POST /reports/generate qualifies the date filter when multiple joined 
     });
   }
 });
+
+describe('POST /reports/generate course_completion category labels', () => {
+  function mockData() {
+    mockedQuery.mockImplementation((query: string) => {
+      if (query.includes('FROM users WHERE id = @id')) return Promise.resolve([mockAuthLookup()]);
+      if (query.includes('FROM categories c')) {
+        return Promise.resolve([
+          { id: 1, code: 'hr', name: null, course_count: 1 },
+          { id: 2, code: 'annonces', name: 'Annonces', course_count: 1 },
+        ]);
+      }
+      if (query.includes('total_enrollments')) {
+        return Promise.resolve([
+          { id: 1, title: 'RH', category: 'hr' },
+          { id: 2, title: 'Infos', category: 'annonces' },
+          { id: 3, title: 'Sans catégorie', category: null },
+        ]);
+      }
+      return Promise.resolve([]);
+    });
+  }
+
+  it('exports labels instead of codes, in the requested language (French by default)', async () => {
+    mockData();
+    const fr = await request(makeApp()).post('/reports/generate').set('Authorization', `Bearer ${adminToken}`)
+      .send({ reportType: 'course_completion', format: 'json' });
+    expect(fr.body.data.map((r: any) => r.category)).toEqual(['Ressources humaines', 'Annonces', null]);
+
+    const en = await request(makeApp()).post('/reports/generate').set('Authorization', `Bearer ${adminToken}`)
+      .send({ reportType: 'course_completion', format: 'json', language: 'en' });
+    expect(en.body.data.map((r: any) => r.category)).toEqual(['Human resources', 'Annonces', null]);
+  });
+});

@@ -85,10 +85,26 @@ export default function DashboardPage() {
     queryFn: () => api.liveSessions.list(),
   })
 
-  // Catalogue des leçons
+  // Catalogue des leçons (onglet "Toutes") -- une page de navigation, le total vient du serveur.
   const { data: lessonCatalogData, isLoading: loadingLessonCatalog } = useQuery({
     queryKey: ['lesson-catalog-dashboard'],
     queryFn: () => api.lessons.catalog({ limit: 100 }),
+    staleTime: 10 * 1000,
+  })
+
+  // Leçons en cours, triées par dernier accès côté serveur : la première est celle à reprendre,
+  // quel que soit le nombre de leçons du catalogue.
+  const { data: inProgressData, isLoading: loadingInProgress } = useQuery({
+    queryKey: ['lesson-catalog-dashboard', 'in_progress'],
+    queryFn: () => api.lessons.catalog({ status: 'in_progress', limit: 6 }),
+    staleTime: 10 * 1000,
+  })
+
+  // Toutes les leçons obligatoires (toutes les pages) : la section "Priorités" et sa jauge
+  // ne doivent pas dépendre d'un plafond de pagination.
+  const { data: mandatoryLessonsData = [], isLoading: loadingMandatoryLessons } = useQuery({
+    queryKey: ['lesson-catalog-dashboard', 'mandatory'],
+    queryFn: () => fetchAllCatalogPages({ mandatory: true }),
     staleTime: 10 * 1000,
   })
 
@@ -119,7 +135,7 @@ export default function DashboardPage() {
   )
   const completedMandatoryCourses = useMemo(() => mandatoryCourses.filter((c: any) => c.isCompleted), [mandatoryCourses])
 
-  const mandatoryLessons = useMemo(() => allLessons.filter((l: any) => l.is_mandatory === true), [allLessons])
+  const mandatoryLessons = mandatoryLessonsData
   const pendingMandatoryLessons = useMemo(() => mandatoryLessons.filter((l: any) => l.progress_status !== 'completed'), [mandatoryLessons])
   const completedMandatoryLessons = useMemo(() => mandatoryLessons.filter((l: any) => l.progress_status === 'completed'), [mandatoryLessons])
 
@@ -147,7 +163,8 @@ export default function DashboardPage() {
   )
 
   // Dernière leçon commencée : le catalogue est trié par date de dernier accès.
-  const resumeLesson = allLessons.find((l: any) => l.progress_status === 'in_progress')
+  const lessonsInProgress = inProgressData?.data || []
+  const resumeLesson = lessonsInProgress[0]
 
   if (loadingStats || loadingCourses) {
     return <PageLoading />
@@ -159,7 +176,8 @@ export default function DashboardPage() {
     .sort((a: any, b: any) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime())
     .slice(0, 3)
 
-  const lessonsInProgress = allLessons.filter((l: any) => l.progress_status === 'in_progress')
+  const inProgressTotal = inProgressData?.meta?.total ?? lessonsInProgress.length
+  const allLessonsTotal = lessonCatalogData?.meta?.total ?? allLessons.length
   const lessonCoursesForFilter = Array.from(
     new Map(allLessons.map((l: any) => [l.course_id, l.course_title])).entries()
   ) as [number, string][]
@@ -191,7 +209,7 @@ export default function DashboardPage() {
     // Même liste que les onglets ci-dessous, pour que les compteurs concordent.
     coursesEnrolled: allCourses.length,
     coursesCompleted: groupedCourses.completed.length,
-    lessonsStarted: stats?.lessonsStarted ?? lessonsInProgress.length,
+    lessonsStarted: stats?.lessonsStarted ?? inProgressTotal,
     lessonsCompleted: stats?.lessonsCompleted || 0,
     totalHours: stats?.totalHours || 0,
     totalMinutes: stats?.totalMinutes || 0,
@@ -318,8 +336,8 @@ export default function DashboardPage() {
 
       {/* SECTION PRIORITAIRE : Formations & Leçons Obligatoires (Visibilité directe sans chercher) */}
       {/* Attend le catalogue des leçons, sinon la jauge changerait une fois les leçons obligatoires chargées. */}
-      {loadingLessonCatalog && <BlockSkeleton rows={2} />}
-      {!loadingLessonCatalog && totalMandatoryCount > 0 && (
+      {loadingMandatoryLessons && <BlockSkeleton rows={2} />}
+      {!loadingMandatoryLessons && totalMandatoryCount > 0 && (
         <Card className={`border-2 transition-all ${
           hasPendingMandatory
             ? 'border-amber-400/90 bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-transparent dark:from-amber-950/25 dark:via-orange-950/10 dark:border-amber-600/70 shadow-sm'
@@ -521,10 +539,10 @@ export default function DashboardPage() {
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <TabsList>
                   <TabsTrigger value="inProgress">
-                    {t('lessonCatalog.inProgress')} ({lessonsInProgress.length})
+                    {t('lessonCatalog.inProgress')} ({inProgressTotal})
                   </TabsTrigger>
                   <TabsTrigger value="all">
-                    {t('lessonCatalog.all')} ({allLessons.length})
+                    {t('lessonCatalog.all')} ({allLessonsTotal})
                   </TabsTrigger>
                   <TabsTrigger value="favorites">
                     {t('lessonCatalog.favorites')} ({favoriteLessons.length})
@@ -546,7 +564,7 @@ export default function DashboardPage() {
               </div>
 
               <TabsContent value="inProgress" className="space-y-2 mt-4">
-                {loadingLessonCatalog ? <BlockSkeleton rows={3} /> : lessonsInProgress.length > 0 ? (
+                {loadingInProgress ? <BlockSkeleton rows={3} /> : lessonsInProgress.length > 0 ? (
                   <div className="grid gap-2">
                     {lessonsInProgress.slice(0, 6).map((lesson: any) => (
                       <LessonRow key={lesson.id} lesson={lesson} />
@@ -733,6 +751,18 @@ export default function DashboardPage() {
       </div>
     </div>
   )
+}
+
+const CATALOG_PAGE_SIZE = 100 // maxLimit de GET /lessons/catalog
+
+/** Toutes les pages du catalogue pour un filtre donné (le serveur plafonne une page à 100). */
+async function fetchAllCatalogPages(params: { mandatory?: boolean; status?: string }) {
+  const lessons: any[] = []
+  for (let page = 1; ; page++) {
+    const { data, meta } = await api.lessons.catalog({ ...params, page, limit: CATALOG_PAGE_SIZE })
+    lessons.push(...data)
+    if (data.length < CATALOG_PAGE_SIZE || lessons.length >= (meta?.total ?? 0)) return lessons
+  }
 }
 
 // Une session commencée depuis moins d'une heure reste affichée (elle est peut-être en cours).

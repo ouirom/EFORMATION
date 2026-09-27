@@ -1,4 +1,5 @@
 import { computeCurrentStreak, computeLongestStreak } from './analytics.routes';
+import { dayKey } from '../utils/tenantTime';
 
 function daysAgo(n: number): string {
   const d = new Date();
@@ -49,5 +50,27 @@ describe('computeLongestStreak', () => {
   it('counts every day once for a single unbroken run', () => {
     const days = new Set([daysAgo(0), daysAgo(1), daysAgo(2), daysAgo(3), daysAgo(4)]);
     expect(computeLongestStreak(days)).toBe(5);
+  });
+});
+
+describe('computeCurrentStreak in the tenant time zone', () => {
+  // 00:30 on 28 Sept in Paris (UTC+2) is still 27 Sept in UTC.
+  const now = new Date('2026-09-27T22:30:00Z');
+  const activity = [
+    new Date('2026-09-27T22:10:00Z'), // 28 Sept 00:10 in Paris
+    new Date('2026-09-26T10:00:00Z'),
+    new Date('2026-09-25T10:00:00Z'),
+  ];
+  const daysIn = (tz: string) => new Set(activity.map((d) => dayKey(d, tz)));
+
+  it('counts activity just after local midnight on the local day, not the UTC one', () => {
+    // Paris: active on the 28th, 26th, 25th -> nothing on the 27th, so the run is just today.
+    expect(computeCurrentStreak(daysIn('Europe/Paris'), 'Europe/Paris', now)).toBe(1);
+    // UTC saw 27th, 26th, 25th and reported a 3-day streak that the learner never had.
+    expect(computeCurrentStreak(daysIn('UTC'), 'UTC', now)).toBe(3);
+  });
+
+  it('falls back to UTC for an invalid time zone instead of throwing', () => {
+    expect(dayKey(new Date('2026-09-27T22:30:00Z'), 'Not/AZone')).toBe('2026-09-27');
   });
 });

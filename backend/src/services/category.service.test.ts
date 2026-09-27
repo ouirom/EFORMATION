@@ -125,3 +125,26 @@ describe('CategoryService.seedDefaults', () => {
     expect(inserted).not.toContain('technology');
   });
 });
+
+describe('CategoryService.codesMatching', () => {
+  beforeEach(() => mockCategories([
+    { id: 1, code: 'technology', name: null, course_count: 0 },
+    { id: 2, code: 'hr', name: 'Personnel', course_count: 0 },
+    { id: 3, code: 'compliance', name: null, course_count: 0 },
+  ]));
+
+  it('matches built-in labels in any language, ignoring case and accents', async () => {
+    expect(await CategoryService.codesMatching(10, 'technologie')).toEqual(['technology']);
+    expect(await CategoryService.codesMatching(10, 'TECHNOLOGY')).toEqual(['technology']);
+    expect(await CategoryService.codesMatching(10, 'conformite')).toEqual(['compliance']);
+  });
+
+  it('uses the admin name instead of the default label once a category is renamed', async () => {
+    expect(await CategoryService.codesMatching(10, 'perso')).toEqual(['hr']);
+    expect(await CategoryService.codesMatching(10, 'ressources')).toEqual([]);
+  });
+
+  it('matches nothing for a blank term', async () => {
+    expect(await CategoryService.codesMatching(10, '  ')).toEqual([]);
+  });
+});

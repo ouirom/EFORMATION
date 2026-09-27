@@ -36,6 +36,7 @@ describe('GET /search', () => {
   it('returns course results with a public_id URL and real instructor/duration/level metadata', async () => {
     mockedQuery.mockImplementation((query: string) => {
       if (query.includes('FROM users WHERE id = @id')) return Promise.resolve([mockAuthLookup()]);
+      if (query.includes('FROM categories c')) return Promise.resolve([]);
       if (query.includes('FROM courses c')) {
         return Promise.resolve([{
           id: 8, public_id: 'f5ceca9d-9b99-41a0-8e81-7fc24298fa69', title: 'Sécurité', description: 'Cours de sécu',
@@ -55,6 +56,26 @@ describe('GET /search', () => {
       url: '/courses/f5ceca9d-9b99-41a0-8e81-7fc24298fa69',
       metadata: { category: 'technology', instructor: 'Director Demo', duration: 8, level: 'advanced' },
     });
+  });
+
+  it('finds courses by category label, including a renamed built-in category', async () => {
+    mockedQuery.mockImplementation((query: string) => {
+      if (query.includes('FROM users WHERE id = @id')) return Promise.resolve([mockAuthLookup()]);
+      if (query.includes('FROM categories c')) {
+        return Promise.resolve([
+          { id: 1, code: 'hr', name: 'Personnel', course_count: 1 },
+          { id: 2, code: 'technology', name: null, course_count: 5 },
+        ]);
+      }
+      return Promise.resolve([]);
+    });
+
+    await request(makeApp()).get('/search?q=personnel&types=course').set('Authorization', `Bearer ${agentToken}`);
+
+    const [query, params] = mockedQuery.mock.calls.find(([q]: [string]) => q.includes('FROM courses c') && q.includes('LIKE @like'));
+    expect(query).toContain('c.category IN (@cat0)');
+    expect(query).not.toContain('c.category LIKE');
+    expect(params.cat0).toBe('hr');
   });
 
   it('returns lesson results with a public_id-based course/lesson URL', async () => {

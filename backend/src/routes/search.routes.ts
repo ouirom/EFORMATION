@@ -5,6 +5,7 @@ import { DatabaseService } from '../services/database.service';
 import { BadRequestError } from '../middleware/error.middleware';
 import { db, IS_PG } from '../database/db-helpers';
 import { parsePagination, buildPaginationMeta } from '../utils/pagination';
+import { CategoryService } from '../services/category.service';
 
 const router = Router();
 
@@ -46,6 +47,13 @@ router.get(
 
       // Search courses
       if (types.includes('course')) {
+        // courses.category holds a code; match the term against category labels
+        // (custom names and built-in labels) and search those codes too.
+        const categoryCodes = await CategoryService.codesMatching(tenantId, searchQuery);
+        const categoryParams = Object.fromEntries(categoryCodes.map((code, i) => [`cat${i}`, code]));
+        const categoryClause = categoryCodes.length > 0
+          ? ` OR c.category IN (${categoryCodes.map((_, i) => `@cat${i}`).join(', ')})`
+          : '';
         const courses = await DatabaseService.query<any>(
           IS_PG
             ? `SELECT c.id, c.public_id, c.title, c.description, c.category, c.level, c.duration,
@@ -53,7 +61,7 @@ router.get(
                FROM courses c
                LEFT JOIN users u ON u.id = c.created_by
                WHERE c.tenant_id = @tenantId AND c.is_published = ${db.bool(true)}
-                 AND (c.title LIKE @like OR c.description LIKE @like OR c.category LIKE @like)
+                 AND (c.title LIKE @like OR c.description LIKE @like${categoryClause})
                ORDER BY CASE WHEN c.title LIKE @exact THEN 0 ELSE 1 END, c.title
                LIMIT @limit`
             : `SELECT TOP (@limit) c.id, c.public_id, c.title, c.description, c.category, c.level, c.duration,
@@ -61,16 +69,16 @@ router.get(
                FROM courses c
                LEFT JOIN users u ON u.id = c.created_by
                WHERE c.tenant_id = @tenantId AND c.is_published = ${db.bool(true)}
-                 AND (c.title LIKE @like OR c.description LIKE @like OR c.category LIKE @like)
+                 AND (c.title LIKE @like OR c.description LIKE @like${categoryClause})
                ORDER BY CASE WHEN c.title LIKE @exact THEN 0 ELSE 1 END, c.title`,
-          { tenantId, like, exact, limit }
+          { tenantId, like, exact, limit, ...categoryParams }
         );
         results.push(
           ...courses.map((c) => ({
             id: c.id,
             type: 'course',
             title: c.title,
-            description: c.description || c.category || '',
+            description: c.description || '',
             url: `/courses/${c.public_id}`,
             metadata: { category: c.category, instructor: c.instructor_name, duration: c.duration, level: c.level },
             score: startsWithQuery(c.title) ? 1 : 0.75,

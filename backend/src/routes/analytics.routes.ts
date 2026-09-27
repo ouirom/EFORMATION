@@ -8,26 +8,26 @@ import { BadRequestError } from '../middleware/error.middleware';
 import { db, IS_PG } from '../database/db-helpers';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { teamAssignmentClause } from '../utils/teamAssignment';
+import { dayKey, getTenantTimezone, shiftDayKey } from '../utils/tenantTime';
 
 const router = Router();
 
-// Both take the distinct UTC calendar days (as 'YYYY-MM-DD' strings) a user was
+// Both take the distinct calendar days (as 'YYYY-MM-DD' strings) a user was
 // active on -- lesson access and quiz attempts stand in for "activity" since
-// there's no dedicated login/activity log.
+// there's no dedicated login/activity log. Days are taken in the tenant's time
+// zone (Organization settings): counted in UTC, activity just after local
+// midnight in any zone ahead of UTC (Paris, Lagos...) landed on the previous day.
 
-/** Consecutive run of active days ending today or yesterday -- a day's grace so
- * the streak doesn't reset the instant the clock rolls past midnight before the
- * user has had a chance to be active "today". */
-export function computeCurrentStreak(activeDays: Set<string>): number {
-  const cursor = new Date();
-  cursor.setUTCHours(0, 0, 0, 0);
-  if (!activeDays.has(cursor.toISOString().slice(0, 10))) {
-    cursor.setUTCDate(cursor.getUTCDate() - 1);
-  }
+/** Consecutive run of active days ending today or yesterday (in `timeZone`) -- a
+ * day's grace so the streak doesn't reset the instant the clock rolls past
+ * midnight before the user has had a chance to be active "today". */
+export function computeCurrentStreak(activeDays: Set<string>, timeZone = 'UTC', now = new Date()): number {
+  let cursor = dayKey(now, timeZone);
+  if (!activeDays.has(cursor)) cursor = shiftDayKey(cursor, -1);
   let streak = 0;
-  while (activeDays.has(cursor.toISOString().slice(0, 10))) {
+  while (activeDays.has(cursor)) {
     streak++;
-    cursor.setUTCDate(cursor.getUTCDate() - 1);
+    cursor = shiftDayKey(cursor, -1);
   }
   return streak;
 }
@@ -77,6 +77,7 @@ router.get('/my-stats', authenticate, asyncHandler(async (req: AuthRequest, res)
     quizStats,
     badgeStats,
     activityDates,
+    timeZone,
   ] = await Promise.all([
     // Course enrollment stats
     DatabaseService.query<any>(
@@ -131,6 +132,7 @@ router.get('/my-stats', authenticate, asyncHandler(async (req: AuthRequest, res)
        WHERE tenant_id = @tenantId AND user_id = @userId`,
       { tenantId, userId }
     ),
+    getTenantTimezone(tenantId),
   ]);
 
   const enrollment = enrollmentStats[0] || {};
@@ -143,8 +145,8 @@ router.get('/my-stats', authenticate, asyncHandler(async (req: AuthRequest, res)
   const totalMinutes = Math.round(totalSeconds / 60);
   const totalHours = Math.floor(totalSeconds / 3600);
 
-  const activeDays = new Set(activityDates.map((r) => new Date(r.activity_at).toISOString().slice(0, 10)));
-  const streak = computeCurrentStreak(activeDays);
+  const activeDays = new Set(activityDates.map((r) => dayKey(new Date(r.activity_at), timeZone)));
+  const streak = computeCurrentStreak(activeDays, timeZone);
   const longestStreak = computeLongestStreak(activeDays);
   const xp = (enrollment.completed || 0) * 100 + (quiz.passed || 0) * 50 + (lesson.completed || 0) * 10;
 

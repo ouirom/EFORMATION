@@ -7,6 +7,14 @@ import { BadRequestError, ForbiddenError, NotFoundError } from '../middleware/er
 
 const router = Router();
 
+// Every handler here parseInt()s these params without checking; a non-numeric
+// value used to reach Postgres as NaN and come back as a 500. Unknown => 404.
+for (const name of ['id', 'userId']) {
+  router.param(name, (_req, _res, next, value: string) => {
+    next(/^\d+$/.test(value) ? undefined : NotFoundError(name === 'id' ? 'Badge' : 'User'));
+  });
+}
+
 const validate = (req: any) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {

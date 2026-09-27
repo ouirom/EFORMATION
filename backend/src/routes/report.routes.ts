@@ -4,6 +4,7 @@ import PDFDocument from 'pdfkit';
 import ExcelJS from 'exceljs';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.middleware';
 import { DatabaseService } from '../services/database.service';
+import { CategoryService, CategoryLanguage } from '../services/category.service';
 import { BadRequestError } from '../middleware/error.middleware';
 import { db, IS_PG } from '../database/db-helpers';
 import { config } from '../config';
@@ -56,15 +57,16 @@ router.post(
     body('startDate').optional().isISO8601(),
     body('endDate').optional().isISO8601(),
     body('filters').optional().isObject(),
+    body('language').optional().isIn(['fr', 'en']),
   ],
   async (req: AuthRequest, res, next) => {
     try {
       validate(req);
-      const { reportType, format, startDate, endDate, filters } = req.body;
+      const { reportType, format, startDate, endDate, filters, language } = req.body;
       const tenantId = req.user!.tenantId;
 
       // Generate report data
-      const reportData = await generateReportData(reportType, tenantId, { startDate, endDate, ...filters });
+      const reportData = await generateReportData(reportType, tenantId, { startDate, endDate, ...filters }, language);
 
       // Return in requested format
       switch (format) {
@@ -186,7 +188,8 @@ router.delete('/scheduled/:id', authenticate, authorize('admin'), async (req: Au
 async function generateReportData(
   reportType: string,
   tenantId: number,
-  filters: any
+  filters: any,
+  language: CategoryLanguage = 'fr'
 ): Promise<any> {
   const { startDate, endDate, courseId, userId, organizationId } = filters || {};
   
@@ -213,8 +216,8 @@ async function generateReportData(
         { tenantId, startDate, endDate }
       );
 
-    case 'course_completion':
-      return DatabaseService.query<any>(
+    case 'course_completion': {
+      const [rows, categoryLabels] = await Promise.all([DatabaseService.query<any>(
         `SELECT c.id, c.title, c.category,
                 COUNT(e.id) as total_enrollments,
                 SUM(CASE WHEN e.progress_percent >= 100 THEN 1 ELSE 0 END) as completions,
@@ -226,7 +229,10 @@ async function generateReportData(
          GROUP BY c.id, c.title, c.category
          ORDER BY completions DESC`,
         { tenantId, courseId, startDate, endDate }
-      );
+      ), CategoryService.labels(tenantId, language)]);
+      // Exports show the category label, not the stored code ("hr" -> "Ressources humaines").
+      return rows.map((r: any) => ({ ...r, category: r.category ? categoryLabels.get(r.category) ?? r.category : null }));
+    }
 
     case 'quiz_performance':
       return DatabaseService.query<any>(

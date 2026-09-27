@@ -250,3 +250,41 @@ describe('GET /attempts/user/me', () => {
     expect(params.userId).toBe(5);
   });
 });
+
+describe('GET /attempts/user/:userId scoping', () => {
+  const managerToken = tokenFor({ id: 7, tenantId: 10, email: 'manager@test.com', role: 'manager', serviceId: 3 });
+
+  function mockTarget(target: Record<string, any>) {
+    mockedQuery.mockImplementation((query: string) => {
+      if (query.includes('FROM users WHERE id = @id')) {
+        return Promise.resolve([mockAuthLookup({ id: 7, role: 'manager', service_id: 3, email: 'manager@test.com' })]);
+      }
+      if (query.includes('SELECT role, direction_id, service_id, supervisor_id FROM users')) return Promise.resolve([target]);
+      return Promise.resolve([]);
+    });
+  }
+
+  it("blocks a manager from reading the attempts of someone outside their service", async () => {
+    mockTarget({ role: 'agent', direction_id: 1, service_id: 99, supervisor_id: null });
+    const response = await request(makeApp()).get('/attempts/user/42').set('Authorization', `Bearer ${managerToken}`);
+    expect(response.status).toBe(403);
+  });
+
+  it('lets a manager read the attempts of an agent in their own service', async () => {
+    mockTarget({ role: 'agent', direction_id: 1, service_id: 3, supervisor_id: null });
+    const response = await request(makeApp()).get('/attempts/user/42').set('Authorization', `Bearer ${managerToken}`);
+    expect(response.status).toBe(200);
+  });
+
+  it('blocks an agent from reading another user\'s attempts', async () => {
+    mockedQuery.mockImplementation((query: string) => {
+      if (query.includes('FROM users WHERE id = @id')) return Promise.resolve([mockAuthLookup()]);
+      if (query.includes('SELECT role, direction_id, service_id, supervisor_id FROM users')) {
+        return Promise.resolve([{ role: 'agent', direction_id: null, service_id: null, supervisor_id: null }]);
+      }
+      return Promise.resolve([]);
+    });
+    const response = await request(makeApp()).get('/attempts/user/42').set('Authorization', `Bearer ${agentToken}`);
+    expect(response.status).toBe(403);
+  });
+});

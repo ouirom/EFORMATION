@@ -137,3 +137,17 @@ describe('POST /badges/award-quiz trusts the stored attempt, not the request bod
     expect(response.status).toBe(403);
   });
 });
+
+describe('non-numeric badge ids', () => {
+  it('returns 404 instead of letting NaN reach the database', async () => {
+    mockedQuery.mockImplementation((query: string) => {
+      if (query.includes('FROM users WHERE id = @id')) return Promise.resolve([mockAuthLookup()]);
+      return Promise.resolve([]);
+    });
+
+    const response = await request(makeApp()).get('/badges/my').set('Authorization', `Bearer ${agentToken}`);
+
+    expect(response.status).toBe(404);
+    expect(mockedQuery.mock.calls.some(([q]: [string]) => q.includes('FROM badges b'))).toBe(false);
+  });
+});

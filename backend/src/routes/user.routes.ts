@@ -15,6 +15,7 @@ import { config } from '../config';
 import { parseSpreadsheet } from '../utils/xlsx';
 import { logger } from '../utils/logger';
 import { parsePagination, buildPaginationMeta } from '../utils/pagination';
+import { isInHierarchicalScope, resolveViewableUserId } from '../utils/hierarchyScope';
 
 const router = Router();
 const csvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -54,66 +55,6 @@ async function resolveSupervisorId(
   }
 
   return supervisorId;
-}
-
-interface HierarchyRequester {
-  id: number;
-  role: string;
-  directionId?: number;
-  serviceId?: number;
-}
-
-interface HierarchyTarget {
-  role: string;
-  direction_id: number | null;
-  service_id: number | null;
-  supervisor_id: number | null;
-}
-
-/**
- * Whether `requester` may view/manage `target` per the org hierarchy: target's
- * role level must be strictly below requester's, AND target must fall within
- * requester's own scope — a director's whole direction, a manager's whole
- * service, or a supervisor's explicitly assigned direct reports (supervisor_id).
- * Does not special-case admin/super_admin — callers check that separately since
- * not every caller wants the "admins see everyone" bypass.
- */
-function isInHierarchicalScope(requester: HierarchyRequester, target: HierarchyTarget): boolean {
-  const requesterLevel = ROLE_HIERARCHY[requester.role] || 0;
-  const targetLevel = ROLE_HIERARCHY[target.role] || 0;
-  if (targetLevel >= requesterLevel) return false;
-
-  if (requester.role === 'director' && requester.directionId && target.direction_id === requester.directionId) return true;
-  if (requester.role === 'manager' && requester.serviceId && target.service_id === requester.serviceId) return true;
-  if (requester.role === 'supervisor' && target.supervisor_id === requester.id) return true;
-  return false;
-}
-
-/**
- * Resolves `:id` ('me' or a numeric id) for the per-user sub-resources
- * (badges, certificates, progress) and applies the same visibility rule as
- * GET /users/:id: self, admins/super_admins, or a strict subordinate in scope.
- */
-async function resolveViewableUserId(req: AuthRequest): Promise<number> {
-  const requester = req.user!;
-  if (req.params.id === 'me') return requester.id;
-
-  const userId = parseInt(req.params.id, 10);
-  if (Number.isNaN(userId)) throw NotFoundError('User');
-  if (userId === requester.id || requester.role === 'admin' || requester.role === 'super_admin') {
-    return userId;
-  }
-
-  const targets = await DatabaseService.query<HierarchyTarget>(
-    `SELECT role, direction_id, service_id, supervisor_id FROM users
-     WHERE id = @userId AND tenant_id = @tenantId AND deleted_at IS NULL`,
-    { userId, tenantId: requester.tenantId }
-  );
-  if (targets.length === 0) throw NotFoundError('User');
-  if (!isInHierarchicalScope(requester, targets[0])) {
-    throw ForbiddenError('Insufficient permissions to view this user');
-  }
-  return userId;
 }
 
 /**
@@ -905,7 +846,7 @@ router.delete('/:id', authenticate, authorize('admin'), asyncHandler(async (req:
  * @desc Get user's badges
  */
 router.get('/:id/badges', authenticate, asyncHandler(async (req: AuthRequest, res) => {
-  const userId = await resolveViewableUserId(req);
+  const userId = await resolveViewableUserId(req.user!, req.params.id);
 
   const badges = await DatabaseService.query<any>(
     `SELECT b.id, b.code, b.name, b.description, b.badge_type, ub.awarded_at,
@@ -929,7 +870,7 @@ router.get('/:id/badges', authenticate, asyncHandler(async (req: AuthRequest, re
  * @desc Get user's certificates
  */
 router.get('/:id/certificates', authenticate, asyncHandler(async (req: AuthRequest, res) => {
-  const userId = await resolveViewableUserId(req);
+  const userId = await resolveViewableUserId(req.user!, req.params.id);
 
   const certificates = await DatabaseService.query<any>(
     `SELECT c.id, c.serial, c.issued_at, co.title as course_title,
@@ -953,7 +894,7 @@ router.get('/:id/certificates', authenticate, asyncHandler(async (req: AuthReque
  * @desc Get user's learning progress
  */
 router.get('/:id/progress', authenticate, asyncHandler(async (req: AuthRequest, res) => {
-  const userId = await resolveViewableUserId(req);
+  const userId = await resolveViewableUserId(req.user!, req.params.id);
 
   // Get course progress
   const progress = await DatabaseService.query<any>(
