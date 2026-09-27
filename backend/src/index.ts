@@ -21,6 +21,7 @@ import { initSentry } from './utils/sentry';
 
 initSentry();
 import { DatabaseService } from './services/database.service';
+import { warnAboutMissingMigrations } from './database/schemaCheck';
 import { setupSocketIO } from './socket';
 import { startScheduledJobs } from './jobs';
 
@@ -226,6 +227,7 @@ class App {
       // Initialize database connection
       await DatabaseService.initialize();
       logger.info('Database connected successfully');
+      await warnAboutMissingMigrations();
 
       // Start server
       this.server.listen(config.port, () => {

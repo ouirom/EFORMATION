@@ -67,8 +67,23 @@ export async function up(knex: Knex): Promise<void> {
   }
 }
 
+/**
+ * `up` is a no-op on a database that already had these tables, but Knex still
+ * records the migration as applied -- so an unconditional drop here would let a
+ * routine `migrate:rollback` wipe every enrollment, lesson progress and course
+ * assignment. Only tables that are still empty (i.e. that this migration really
+ * created and nothing used yet) are dropped; anything else aborts the rollback.
+ */
 export async function down(knex: Knex): Promise<void> {
-  await knex.schema.dropTableIfExists('lesson_progress');
-  await knex.schema.dropTableIfExists('enrollments');
-  await knex.schema.dropTableIfExists('course_assignments');
+  const tables = ['lesson_progress', 'enrollments', 'course_assignments'];
+  for (const table of tables) {
+    if (!(await knex.schema.hasTable(table))) continue;
+    const [{ count }] = await knex(table).count<{ count: string | number }[]>({ count: '*' });
+    if (Number(count) > 0) {
+      throw new Error(`Refusing to roll back 003: table "${table}" contains data (${count} rows)`);
+    }
+  }
+  for (const table of tables) {
+    await knex.schema.dropTableIfExists(table);
+  }
 }

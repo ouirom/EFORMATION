@@ -95,8 +95,15 @@ Contrôlé par `DB_CLIENT` dans `.env` (`pg` ou `mssql`, défaut `mssql` si abse
   mais si un nouveau bug de type "addition qui concatène au lieu d'additionner" apparaît, c'est
   le premier suspect.
 - **Un seul exécuteur de migration Knex existe** (`npm run migrate:latest` dans `backend/`,
-  config `backend/knexfile.ts`), et il ne couvre qu'**une seule migration de preuve**
-  (`backend/src/database/003_core_missing_tables.ts`) — **il ne recrée pas les 71 tables**. Pour
+  config `backend/knexfile.ts`, fichiers dans `db/knex_migrations/`). Il couvre la migration de
+  preuve `003_core_missing_tables.ts` et **`034_tenant_course_categories.ts`** (catégories de
+  cours par entreprise — elle exécute `db/migrations/034_tenant_course_categories.sql`, idempotent).
+  **À lancer avant chaque déploiement** : sans 034, `GET /courses/categories` renvoie 500, et le
+  backend le signale au démarrage (« Database schema is behind the code — missing migration(s) »,
+  voir `backend/src/database/schemaCheck.ts`). Le `down` de 003 refuse désormais de supprimer une
+  table non vide (avant, un `migrate:rollback` aurait effacé inscriptions, progression et
+  affectations) ; celui de 034 ne fait rien volontairement. Déjà appliqué sur la base locale de
+  dev (2026-09-27). **Il ne recrée pas les 71 tables**. Pour
   provisionner une base Postgres fraîche, il faut appliquer `db/bci_lms_schema_postgres.sql`
   directement (`psql`), pas compter sur `npm run migrate:latest`. Par ailleurs le script racine
   `npm run db:migrate` (dans `package.json` à la racine) appelle `cd backend && npm run migrate`
