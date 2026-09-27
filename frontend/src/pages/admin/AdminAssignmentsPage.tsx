@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/services/api'
+import { useCategoryLabel } from '@/lib/categories'
 import { dateLocale } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -39,6 +40,7 @@ function PageLoading() {
 export default function AdminAssignmentsPage() {
   const { t } = useTranslation('admin')
   const { t: tCommon } = useTranslation('common')
+  const categoryLabel = useCategoryLabel()
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const [selectedCourse, setSelectedCourse] = useState<any>(null)
@@ -266,7 +268,7 @@ export default function AdminAssignmentsPage() {
                       <p className="font-medium">{course.title}</p>
                       <div className="flex gap-2 mt-1">
                         {course.category && (
-                          <Badge variant="outline" className="text-xs">{course.category}</Badge>
+                          <Badge variant="outline" className="text-xs">{categoryLabel(course.category)}</Badge>
                         )}
                         {course.isPublished ? (
                           <Badge className="bg-green-100 text-green-800 text-xs">{t('assignments.courses.published')}</Badge>

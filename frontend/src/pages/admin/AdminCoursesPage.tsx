@@ -50,9 +50,11 @@ import {
 import { Link } from 'react-router-dom'
 import { api } from '@/services/api'
 import { getRoleLabel } from '@/lib/utils'
+import { COURSE_CATEGORIES, useCategoryLabel } from '@/lib/categories'
 
 export default function AdminCoursesPage() {
   const { t } = useTranslation('admin')
+  const categoryLabel = useCategoryLabel()
   const { t: tCommon } = useTranslation('common')
   const { toast } = useToast()
   const queryClient = useQueryClient()
@@ -82,10 +84,11 @@ export default function AdminCoursesPage() {
   })
 
   const { data, isLoading } = useQuery({
-    queryKey: ['admin-courses', { search, status: statusFilter }],
+    queryKey: ['admin-courses', { search, status: statusFilter, category: categoryFilter }],
     queryFn: () => api.courses.list({
       search,
       status: statusFilter !== 'all' ? statusFilter : undefined,
+      category: categoryFilter !== 'all' ? categoryFilter : undefined,
     }),
   })
 
@@ -254,16 +257,6 @@ export default function AdminCoursesPage() {
     expert: t('courses.levels.expert'),
   }
 
-  const categoryLabels: Record<string, string> = {
-    technology: t('courses.categories.technology'),
-    management: t('courses.categories.management'),
-    marketing: t('courses.categories.marketing'),
-    finance: t('courses.categories.finance'),
-    hr: t('courses.categories.hr'),
-    'soft-skills': t('courses.categories.soft-skills'),
-    compliance: t('courses.categories.compliance'),
-    other: t('courses.categories.other'),
-  }
 
   return (
     <div className="space-y-6">
@@ -371,9 +364,9 @@ export default function AdminCoursesPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">{t('courses.filters.allCategories')}</SelectItem>
-            <SelectItem value="tech">{t('courses.categories.technology')}</SelectItem>
-            <SelectItem value="management">{t('courses.categories.management')}</SelectItem>
-            <SelectItem value="soft-skills">{t('courses.categories.soft-skills')}</SelectItem>
+            {COURSE_CATEGORIES.map((code) => (
+              <SelectItem key={code} value={code}>{categoryLabel(code)}</SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>
@@ -419,7 +412,7 @@ export default function AdminCoursesPage() {
                       </td>
                       <td className="p-4">
                         <Badge variant="outline">
-                          {categoryLabels[course.category] || course.category || t('courses.categories.undefined')}
+                          {course.category ? categoryLabel(course.category) : t('courses.categories.undefined')}
                         </Badge>
                       </td>
                       <td className="p-4">
@@ -556,14 +549,9 @@ export default function AdminCoursesPage() {
                     <SelectValue placeholder={t('courses.addDialog.categoryPlaceholder')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="technology">{t('courses.categories.technology')}</SelectItem>
-                    <SelectItem value="management">{t('courses.categories.management')}</SelectItem>
-                    <SelectItem value="marketing">{t('courses.categories.marketing')}</SelectItem>
-                    <SelectItem value="finance">{t('courses.categories.finance')}</SelectItem>
-                    <SelectItem value="hr">{t('courses.categories.hr')}</SelectItem>
-                    <SelectItem value="soft-skills">{t('courses.categories.soft-skills')}</SelectItem>
-                    <SelectItem value="compliance">{t('courses.categories.compliance')}</SelectItem>
-                    <SelectItem value="other">{t('courses.categories.other')}</SelectItem>
+                    {COURSE_CATEGORIES.map((code) => (
+                      <SelectItem key={code} value={code}>{categoryLabel(code)}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -649,14 +637,9 @@ export default function AdminCoursesPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">{t('courses.categories.undefined')}</SelectItem>
-                    <SelectItem value="technology">{t('courses.categories.technology')}</SelectItem>
-                    <SelectItem value="management">{t('courses.categories.management')}</SelectItem>
-                    <SelectItem value="marketing">{t('courses.categories.marketing')}</SelectItem>
-                    <SelectItem value="finance">{t('courses.categories.finance')}</SelectItem>
-                    <SelectItem value="hr">{t('courses.categories.hr')}</SelectItem>
-                    <SelectItem value="soft-skills">{t('courses.categories.soft-skills')}</SelectItem>
-                    <SelectItem value="compliance">{t('courses.categories.compliance')}</SelectItem>
-                    <SelectItem value="other">{t('courses.categories.other')}</SelectItem>
+                    {COURSE_CATEGORIES.map((code) => (
+                      <SelectItem key={code} value={code}>{categoryLabel(code)}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

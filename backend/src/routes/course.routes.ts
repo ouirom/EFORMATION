@@ -30,11 +30,12 @@ router.get('/', authenticate, async (req: AuthRequest, res, next) => {
     const sortOrder = req.query.sortOrder as 'asc' | 'desc';
     const search = req.query.search as string;
     const status = req.query.status as string;
+    const category = req.query.category as string;
 
     const result = await CourseService.findAll(
       req.user!.tenantId,
       { page, limit, sortBy, sortOrder },
-      { search, status },
+      { search, status, category },
       req.user!.id,
       req.user!.role,
       req.user!.enterpriseId,

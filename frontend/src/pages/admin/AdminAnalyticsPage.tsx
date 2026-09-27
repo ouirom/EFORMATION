@@ -26,6 +26,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { api } from '@/services/api'
+import { useCategoryLabel } from '@/lib/categories'
 import { buildAnalyticsWorkbook, downloadBlob, ExcelSection } from '@/lib/excelExport'
 import { renderBarChartPNG, renderLineChartPNG, renderPieChartPNG } from '@/lib/charts'
 
@@ -71,6 +72,7 @@ function buildActivityBuckets(dailyCounts: DailyCount[], days: number, maxBucket
 export default function AdminAnalyticsPage() {
   const { t, i18n } = useTranslation('admin')
   const { t: tCommon } = useTranslation('common')
+  const categoryLabel = useCategoryLabel()
   const [period, setPeriod] = useState('30')
 
   const { data, isLoading } = useQuery({
@@ -160,7 +162,7 @@ export default function AdminAnalyticsPage() {
   const handleExport = async () => {
     setIsExporting(true)
     try {
-      const categoryLabels = categories.map((c) => c.category || t('analytics.distribution.uncategorized'))
+      const categoryLabels = categories.map((c) => c.category ? categoryLabel(c.category) : t('analytics.distribution.uncategorized'))
       const categoryValues = categories.map((c) => Number(c.count))
 
       const topCourses = (courseAnalytics?.ranking ?? [])
@@ -212,7 +214,7 @@ export default function AdminAnalyticsPage() {
             { key: 'percent', label: t('analytics.csv.columns.percent'), width: 14 },
           ],
           rows: categories.map((item) => ({
-            category: item.category || t('analytics.distribution.uncategorized'),
+            category: item.category ? categoryLabel(item.category) : t('analytics.distribution.uncategorized'),
             count: item.count,
             percent: Math.round((Number(item.count) / totalCategorized) * 100),
           })),
@@ -513,7 +515,7 @@ export default function AdminAnalyticsPage() {
           <CardContent>
             <div className="space-y-4">
               {categories.map((item) => {
-                const label = item.category || t('analytics.distribution.uncategorized')
+                const label = item.category ? categoryLabel(item.category) : t('analytics.distribution.uncategorized')
                 const percent = Math.round((Number(item.count) / totalCategorized) * 100)
                 return (
                   <div key={label} className="space-y-2">

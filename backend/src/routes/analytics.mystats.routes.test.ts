@@ -71,3 +71,22 @@ describe('GET /analytics/my-stats', () => {
     });
   });
 });
+
+describe('GET /analytics/my-stats published-course rule', () => {
+  it('counts lessons and quizzes on published courses only, but keeps the full learning time', async () => {
+    mockedQuery.mockImplementation((query: string) => {
+      if (query.includes('FROM users WHERE id = @id')) return Promise.resolve([mockAuthLookup()]);
+      return Promise.resolve([]);
+    });
+
+    await request(makeApp()).get('/analytics/my-stats').set('Authorization', `Bearer ${agentToken}`);
+
+    const lessonQuery = mockedQuery.mock.calls.find(([q]: [string]) => q.includes('total_started'))[0] as string;
+    expect(lessonQuery).toContain('vc.is_published');
+    expect(lessonQuery).toContain('SUM(COALESCE(lp.time_spent_seconds, 0)) as total_time_seconds');
+    expect(lessonQuery).toContain('LEFT JOIN courses vc'); // time must not be filtered out by the join
+
+    const quizQuery = mockedQuery.mock.calls.find(([q]: [string]) => q.includes('total_attempts'))[0] as string;
+    expect(quizQuery).toContain('vc.is_published');
+  });
+});

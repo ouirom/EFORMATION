@@ -326,14 +326,6 @@
   },
   "courses": {
     "categories": {
-      "technology": "Technology",
-      "management": "Management",
-      "marketing": "Marketing",
-      "finance": "Finance",
-      "hr": "Human Resources",
-      "soft-skills": "Soft Skills",
-      "compliance": "Compliance",
-      "other": "Other",
       "undefined": "Undefined"
     },
     "levels": {

@@ -178,3 +178,43 @@ describe('CourseService.canAccessCourse', () => {
     expect(query).not.toContain("tm.member_type = 'service'");
   });
 });
+
+describe('CourseService.getLessonCatalog published filter', () => {
+  const options = { page: 1, limit: 20 };
+
+  function catalogQuery() {
+    return mockedQuery.mock.calls.find(([q]: [string]) => q.includes('FROM lessons l') && q.includes('OFFSET'))[0] as string;
+  }
+
+  beforeEach(() => {
+    mockedQuery.mockImplementation((query: string) =>
+      Promise.resolve(query.includes('SELECT COUNT(*) as total') ? [{ total: 0 }] : []));
+  });
+
+  it.each(['agent', 'supervisor'])('only lists lessons of published courses for a learner (%s)', async (role) => {
+    await CourseService.getLessonCatalog(10, { id: 5, role }, options);
+    expect(catalogQuery()).toContain('c.is_published');
+  });
+
+  it.each(['manager', 'director', 'admin', 'super_admin'])('keeps unpublished drafts visible for a course management role (%s)', async (role) => {
+    await CourseService.getLessonCatalog(10, { id: 1, role }, options);
+    expect(catalogQuery()).not.toContain('c.is_published');
+  });
+});
+
+describe('CourseService.findAll category filter', () => {
+  it('filters on the category code, matching the legacy "tech" code for technology', async () => {
+    mockListResponses();
+    await CourseService.findAll(10, { page: 1, limit: 20 }, { category: 'technology' }, 1, 'admin');
+    const [query, params] = mockedQuery.mock.calls.find(([q]: [string]) => q.includes('SELECT COUNT(*) as total'));
+    expect(query).toContain('c.category IN (@category0, @category1)');
+    expect(params).toMatchObject({ category0: 'technology', category1: 'tech' });
+  });
+
+  it('does not filter on category when none is given', async () => {
+    mockListResponses();
+    await CourseService.findAll(10, { page: 1, limit: 20 }, {}, 1, 'admin');
+    const [query] = mockedQuery.mock.calls.find(([q]: [string]) => q.includes('SELECT COUNT(*) as total'));
+    expect(query).not.toContain('c.category IN');
+  });
+});

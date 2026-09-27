@@ -27,11 +27,13 @@ import {
   ArrowLeft,
 } from 'lucide-react'
 import { api } from '@/services/api'
+import { useCategoryLabel } from '@/lib/categories'
 import { FavoriteButton } from '@/components/FavoriteButton'
 
 export default function CourseDetailPage() {
   const { t } = useTranslation('courses')
   const { t: tCommon } = useTranslation('common')
+  const categoryLabel = useCategoryLabel()
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { toast } = useToast()
@@ -112,7 +114,7 @@ export default function CourseDetailPage() {
       name: course.creatorName || t('detail.defaultInstructor'),
       title: t('detail.defaultInstructorTitle'),
     },
-    category: course.category || t('detail.defaultCategory'),
+    category: categoryLabel(course.category),
     level: course.level || 'intermediate',
     duration: course.duration ? `${course.duration}h` : '-',
     enrolledCount: course.enrolledCount || 0,

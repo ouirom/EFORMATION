@@ -31,6 +31,7 @@ interface ExtendedAPI extends AxiosInstance {
     getDashboard: () => Promise<any>;
     getAdminDashboard: (timeRange?: string) => Promise<any>;
     getLeaderboard: (limit?: number) => Promise<any[]>;
+    getMyCourses: () => Promise<any[]>;
   };
   notifications: {
     list: (params?: any) => Promise<any[]>;
@@ -282,6 +283,7 @@ api.analytics = {
   getDashboard: () => api.get('/analytics/my-stats').then(r => r.data.data),
   getAdminDashboard: (timeRange?: string) => api.get('/analytics/dashboard', { params: { timeRange } }).then(r => r.data.data),
   getLeaderboard: (limit?: number) => api.get('/analytics/leaderboard', { params: { limit } }).then(r => r.data.data || []),
+  getMyCourses: () => api.get('/analytics/my-courses').then(r => r.data.data || []),
 };
 
 api.notifications = {

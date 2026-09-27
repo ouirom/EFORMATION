@@ -2,7 +2,8 @@
   "greeting": "Bonjour, {{name}}! 👋",
   "defaultUser": "Utilisateur",
   "subtitle": "Bienvenue sur votre espace d'apprentissage",
-  "streakDays": "{{count}} jours",
+  "streakDays_one": "{{count}} jour",
+  "streakDays_other": "{{count}} jours",
   "stats": {
     "courses": "Cours",
     "coursesCompleted_one": "{{count}} terminé",
@@ -12,22 +13,41 @@
     "lessonsStarted_other": "sur {{count}} commencées",
     "learningTime": "Temps d'apprentissage",
     "badgesEarned_one": "{{count}} badge obtenu",
-    "badgesEarned_other": "{{count}} badges obtenus"
+    "badgesEarned_other": "{{count}} badges obtenus",
+    "quizzes": "Quiz & Tests",
+    "quizzesScore": "{{score}}% de réussite",
+    "quizzesPassed_one": "{{count}} quiz réussi",
+    "quizzesPassed_other": "{{count}} quiz réussis"
+  },
+  "mandatorySection": {
+    "title": "Priorités & Formations Obligatoires",
+    "subtitle": "Formations et leçons indispensables à valider dans votre parcours",
+    "allCompletedTitle": "Formations obligatoires à jour !",
+    "allCompletedDesc": "Félicitations, vous avez validé l'ensemble de vos formations obligatoires.",
+    "pendingCourses_one": "{{count}} formation obligatoire en cours",
+    "pendingCourses_other": "{{count}} formations obligatoires en cours",
+    "pendingLessons_one": "{{count}} leçon obligatoire en attente",
+    "pendingLessons_other": "{{count}} leçons obligatoires en attente",
+    "badge": "Obligatoire",
+    "progressLabel": "Progression obligatoire",
+    "continue": "Continuer",
+    "start": "Démarrer",
+    "exploreMore": "Explorer le catalogue",
+    "allValidated": "100 % validé",
+    "validatedCount": "{{completed}} / {{total}} validés"
   },
   "catalog": {
     "title": "Catalogue des Formations",
     "viewAll": "Voir tout",
-    "general": "Général",
     "required": "Obligatoire",
     "recommended": "Recommandé",
     "completed": "Terminée",
-    "noGeneral": "Aucun cours général disponible",
-    "noRequired": "Aucun cours obligatoire",
     "noRecommended": "Aucun cours recommandé",
     "noCompleted": "Aucun cours terminé pour l'instant",
     "noCompletedHint": "Complétez des formations pour les voir ici",
     "favorites": "Favoris",
-    "noFavorites": "Aucun cours favori pour l'instant"
+    "noFavorites": "Aucun cours favori pour l'instant",
+    "enrolled": "Mes inscriptions"
   },
   "lessonCatalog": {
     "title": "Catalogue des leçons",
@@ -38,7 +58,6 @@
     "filterByCourse": "Filtrer par cours",
     "allCourses": "Tous les cours",
     "noInProgress": "Aucune leçon en cours — commencez une formation pour la retrouver ici",
-    "noMandatory": "Aucune leçon obligatoire pour l'instant",
     "noLessons": "Aucune leçon disponible pour l'instant",
     "noFavorites": "Aucune leçon favorite pour l'instant",
     "durationMin": "{{count}} min",
@@ -55,7 +74,6 @@
   },
   "quizzes": {
     "title": "Quiz Effectués",
-    "viewHistory": "Voir l'historique",
     "none": "Aucun quiz effectué pour l'instant",
     "noneHint": "Commencez vos formations et passez les quiz",
     "passed": "✓ Réussi",
@@ -67,12 +85,14 @@
   "course": {
     "defaultCategory": "Formation",
     "completed": "Terminé",
-    "defaultInstructor": "Formateur",
     "progress": "Progression",
     "completedNotice": "✓ Formation complétée",
     "lessonsCount": "{{completed}}/{{total}} leçons",
     "review": "Revoir",
-    "continue": "Continuer"
+    "continue": "Continuer",
+    "dueOn": "Échéance : {{date}}",
+    "dueSoon": "Échéance proche : {{date}}",
+    "overdue": "En retard (échéance {{date}})"
   },
   "upcomingSessions": {
     "title": "Sessions à venir",
@@ -90,5 +110,11 @@
     "title": "Classement",
     "you": "(vous)",
     "none": "Pas encore de classement. Terminez des cours et des quiz pour y apparaître !"
+  },
+  "level": "Niveau {{level}}",
+  "resume": {
+    "title": "Reprendre là où vous vous êtes arrêté",
+    "lastAccessed": "dernier accès le {{date}}",
+    "cta": "Reprendre"
   }
 }

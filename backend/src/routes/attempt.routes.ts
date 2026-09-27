@@ -634,14 +634,19 @@ router.get('/user/:userId', authenticate, async (req: AuthRequest, res, next) =>
     }
 
     const attempts = await DatabaseService.query<any>(
-      `SELECT a.*, q.title as quiz_title, l.title as lesson_title, c.title as course_title
-       FROM attempts a
+      // quiz_attempts is where POST /attempts actually writes; the legacy
+      // `attempts` table is never populated. Only finished attempts carry a score,
+      // and only on published courses -- same rule as the /analytics/my-stats counters.
+      `SELECT a.id, a.quiz_id, a.score, a.passed, a.started_at, a.completed_at as submitted_at,
+              q.title as quiz_title, q.passing_score, l.title as lesson_title, c.title as course_title
+       FROM quiz_attempts a
        JOIN quizzes q ON a.quiz_id = q.id
        JOIN lessons l ON q.lesson_id = l.id
        JOIN modules m ON l.module_id = m.id
        JOIN courses c ON m.course_id = c.id
-       WHERE a.user_id = @userId AND a.tenant_id = @tenantId
-       ORDER BY a.started_at DESC`,
+       WHERE a.user_id = @userId AND a.tenant_id = @tenantId AND a.completed_at IS NOT NULL
+         AND c.is_published = ${db.bool(true)} AND c.deleted_at IS NULL AND l.deleted_at IS NULL
+       ORDER BY a.completed_at DESC`,
       { userId, tenantId: req.user!.tenantId }
     );
 

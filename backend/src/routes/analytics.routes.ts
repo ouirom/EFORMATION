@@ -7,6 +7,7 @@ import { TeamReportService } from '../services/team-report.service';
 import { BadRequestError } from '../middleware/error.middleware';
 import { db, IS_PG } from '../database/db-helpers';
 import { asyncHandler } from '../middleware/asyncHandler';
+import { teamAssignmentClause } from '../utils/teamAssignment';
 
 const router = Router();
 
@@ -46,6 +47,21 @@ export function computeLongestStreak(activeDays: Set<string>): number {
   return longest;
 }
 
+// Dashboard counters (lessons, quizzes, XP, leaderboard) only count activity on
+// published, non-deleted courses -- the same rule as the course list and lesson
+// catalog, so an unpublished course disappears from every counter at once (and
+// comes back, progress intact, if it's republished). Learning time is the one
+// exception: it's time actually spent, so it keeps the whole history.
+const lessonCourseJoin = (lpAlias: string) =>
+  `LEFT JOIN lessons vl ON vl.id = ${lpAlias}.lesson_id AND vl.deleted_at IS NULL
+   LEFT JOIN modules vm ON vm.id = vl.module_id
+   LEFT JOIN courses vc ON vc.id = vm.course_id AND vc.is_published = ${db.bool(true)} AND vc.deleted_at IS NULL`;
+const quizCourseJoin = (qaAlias: string) =>
+  `JOIN quizzes vq ON vq.id = ${qaAlias}.quiz_id
+   JOIN lessons vl ON vl.id = vq.lesson_id AND vl.deleted_at IS NULL
+   JOIN modules vm ON vm.id = vl.module_id
+   JOIN courses vc ON vc.id = vm.course_id AND vc.is_published = ${db.bool(true)} AND vc.deleted_at IS NULL`;
+
 /**
  * @route GET /api/v1/analytics/my-stats
  * @desc Get user's personal dashboard statistics
@@ -64,32 +80,38 @@ router.get('/my-stats', authenticate, asyncHandler(async (req: AuthRequest, res)
   ] = await Promise.all([
     // Course enrollment stats
     DatabaseService.query<any>(
+      // Unpublished/deleted courses are left out so these counts match what
+      // GET /my-courses (and the dashboard's course list) can actually show.
       `SELECT
          COUNT(*) as total_enrolled,
-         SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) as completed,
-         AVG(COALESCE(progress_percent, 0)) as avg_progress
-       FROM enrollments
-       WHERE tenant_id = @tenantId AND user_id = @userId`,
+         SUM(CASE WHEN e.completed_at IS NOT NULL THEN 1 ELSE 0 END) as completed,
+         AVG(COALESCE(e.progress_percent, 0)) as avg_progress
+       FROM enrollments e
+       JOIN courses c ON c.id = e.course_id
+       WHERE e.tenant_id = @tenantId AND e.user_id = @userId
+         AND c.is_published = ${db.bool(true)} AND c.deleted_at IS NULL`,
       { tenantId, userId }
     ),
     // Lesson progress stats
     DatabaseService.query<any>(
       `SELECT
-         COUNT(*) as total_started,
-         SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
-         SUM(COALESCE(time_spent_seconds, 0)) as total_time_seconds
-       FROM lesson_progress
-       WHERE tenant_id = @tenantId AND user_id = @userId`,
+         SUM(CASE WHEN vc.id IS NOT NULL THEN 1 ELSE 0 END) as total_started,
+         SUM(CASE WHEN vc.id IS NOT NULL AND lp.status = 'completed' THEN 1 ELSE 0 END) as completed,
+         SUM(COALESCE(lp.time_spent_seconds, 0)) as total_time_seconds
+       FROM lesson_progress lp
+       ${lessonCourseJoin('lp')}
+       WHERE lp.tenant_id = @tenantId AND lp.user_id = @userId`,
       { tenantId, userId }
     ),
     // Quiz stats
     DatabaseService.query<any>(
       `SELECT
          COUNT(*) as total_attempts,
-         SUM(CASE WHEN passed = ${db.bool(true)} THEN 1 ELSE 0 END) as passed,
-         AVG(score) as avg_score
-       FROM quiz_attempts
-       WHERE tenant_id = @tenantId AND user_id = @userId`,
+         SUM(CASE WHEN qa.passed = ${db.bool(true)} THEN 1 ELSE 0 END) as passed,
+         AVG(qa.score) as avg_score
+       FROM quiz_attempts qa
+       ${quizCourseJoin('qa')}
+       WHERE qa.tenant_id = @tenantId AND qa.user_id = @userId`,
       { tenantId, userId }
     ),
     // Badge stats
@@ -149,9 +171,87 @@ router.get('/my-stats', authenticate, asyncHandler(async (req: AuthRequest, res)
 }));
 
 /**
+ * @route GET /api/v1/analytics/my-courses
+ * @desc The learner's dashboard course list in one shot: every published course
+ * that is either assigned to them (directly or via org/role/team) or that they
+ * are enrolled in, with enrollment progress, lesson counts, mandatory flag and
+ * the earliest due date across the matching assignments.
+ */
+router.get('/my-courses', authenticate, asyncHandler(async (req: AuthRequest, res) => {
+  const { tenantId, id: userId, enterpriseId, directionId, serviceId, role: userRole } = req.user!;
+
+  const rows = await DatabaseService.query<any>(
+    `SELECT c.id, c.public_id, c.title, c.category, c.duration, c.level,
+            e.progress_percent, e.completed_at, e.enrolled_at,
+            a.is_mandatory, a.due_date,
+            CASE WHEN a.course_id IS NOT NULL THEN 1 ELSE 0 END as is_assigned,
+            (SELECT COUNT(*) FROM lessons l JOIN modules m ON l.module_id = m.id
+             WHERE m.course_id = c.id AND l.deleted_at IS NULL) as total_lessons,
+            (SELECT COUNT(*) FROM lesson_progress lp
+             JOIN lessons l ON lp.lesson_id = l.id JOIN modules m ON l.module_id = m.id
+             WHERE m.course_id = c.id AND l.deleted_at IS NULL
+               AND lp.user_id = @userId AND lp.tenant_id = @tenantId AND lp.status = 'completed') as completed_lessons
+     FROM courses c
+     LEFT JOIN enrollments e ON e.course_id = c.id AND e.user_id = @userId AND e.tenant_id = @tenantId
+     LEFT JOIN (
+       SELECT ca.course_id,
+              MAX(CASE WHEN ca.is_mandatory = ${db.bool(true)} THEN 1 ELSE 0 END) as is_mandatory,
+              MIN(ca.due_date) as due_date
+       FROM course_assignments ca
+       WHERE ca.tenant_id = @tenantId
+         AND (
+           (ca.assignment_type = 'user' AND ca.target_id = @userId)
+           OR (ca.assignment_type = 'enterprise' AND ca.target_id = @enterpriseId)
+           OR (ca.assignment_type = 'direction' AND ca.target_id = @directionId)
+           OR (ca.assignment_type = 'service' AND ca.target_id = @serviceId)
+           OR (ca.assignment_type = 'role' AND ca.target_role = @userRole)
+           OR ${teamAssignmentClause('ca', 'userId', 'enterpriseId', 'directionId', 'serviceId')}
+         )
+       GROUP BY ca.course_id
+     ) a ON a.course_id = c.id
+     WHERE c.tenant_id = @tenantId AND c.is_published = ${db.bool(true)} AND c.deleted_at IS NULL
+       AND (e.id IS NOT NULL OR a.course_id IS NOT NULL)
+     ORDER BY is_mandatory DESC, due_date ASC, c.title`,
+    {
+      tenantId,
+      userId,
+      enterpriseId: enterpriseId || 0,
+      directionId: directionId || 0,
+      serviceId: serviceId || 0,
+      userRole,
+    }
+  );
+
+  res.json({
+    success: true,
+    data: rows.map((c: any) => {
+      const progress = Math.round(Number(c.progress_percent) || 0);
+      return {
+        id: Number(c.id),
+        publicId: c.public_id,
+        title: c.title,
+        category: c.category,
+        duration: c.duration,
+        level: c.level,
+        isAssigned: Number(c.is_assigned) === 1,
+        isMandatory: Number(c.is_mandatory) === 1,
+        dueDate: c.due_date,
+        isEnrolled: c.enrolled_at != null,
+        progress,
+        isCompleted: c.completed_at != null || progress >= 100,
+        completedAt: c.completed_at,
+        totalLessons: Number(c.total_lessons) || 0,
+        completedLessons: Number(c.completed_lessons) || 0,
+      };
+    }),
+  });
+}));
+
+/**
  * @route GET /api/v1/analytics/leaderboard
  * @desc Top learners in the tenant by the same XP formula as /my-stats
- * (completed courses * 100 + passed quizzes * 50 + completed lessons * 10),
+ * (completed courses * 100 + passed quizzes * 50 + completed lessons * 10,
+ * counting only published, non-deleted courses -- same filter as /my-stats),
  * so the dashboard's leaderboard reflects genuine activity instead of
  * placeholder names.
  */
@@ -165,16 +265,20 @@ router.get('/leaderboard', authenticate, asyncHandler(async (req: AuthRequest, r
                 (COALESCE(e.completed, 0) * 100 + COALESCE(q.passed, 0) * 50 + COALESCE(l.completed, 0) * 10) as xp
          FROM users u
          LEFT JOIN (
-           SELECT user_id, SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) as completed
-           FROM enrollments WHERE tenant_id = @tenantId GROUP BY user_id
+           SELECT en.user_id, SUM(CASE WHEN en.completed_at IS NOT NULL THEN 1 ELSE 0 END) as completed
+           FROM enrollments en JOIN courses co ON co.id = en.course_id
+           WHERE en.tenant_id = @tenantId AND co.is_published = ${db.bool(true)} AND co.deleted_at IS NULL
+           GROUP BY en.user_id
          ) e ON e.user_id = u.id
          LEFT JOIN (
-           SELECT user_id, SUM(CASE WHEN passed = ${db.bool(true)} THEN 1 ELSE 0 END) as passed
-           FROM quiz_attempts WHERE tenant_id = @tenantId GROUP BY user_id
+           SELECT qa.user_id, SUM(CASE WHEN qa.passed = ${db.bool(true)} THEN 1 ELSE 0 END) as passed
+           FROM quiz_attempts qa ${quizCourseJoin('qa')}
+           WHERE qa.tenant_id = @tenantId GROUP BY qa.user_id
          ) q ON q.user_id = u.id
          LEFT JOIN (
-           SELECT user_id, SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed
-           FROM lesson_progress WHERE tenant_id = @tenantId GROUP BY user_id
+           SELECT lp.user_id, SUM(CASE WHEN vc.id IS NOT NULL AND lp.status = 'completed' THEN 1 ELSE 0 END) as completed
+           FROM lesson_progress lp ${lessonCourseJoin('lp')}
+           WHERE lp.tenant_id = @tenantId GROUP BY lp.user_id
          ) l ON l.user_id = u.id
          WHERE u.tenant_id = @tenantId AND u.deleted_at IS NULL
          ORDER BY xp DESC
@@ -183,16 +287,20 @@ router.get('/leaderboard', authenticate, asyncHandler(async (req: AuthRequest, r
                 (COALESCE(e.completed, 0) * 100 + COALESCE(q.passed, 0) * 50 + COALESCE(l.completed, 0) * 10) as xp
          FROM users u
          LEFT JOIN (
-           SELECT user_id, SUM(CASE WHEN completed_at IS NOT NULL THEN 1 ELSE 0 END) as completed
-           FROM enrollments WHERE tenant_id = @tenantId GROUP BY user_id
+           SELECT en.user_id, SUM(CASE WHEN en.completed_at IS NOT NULL THEN 1 ELSE 0 END) as completed
+           FROM enrollments en JOIN courses co ON co.id = en.course_id
+           WHERE en.tenant_id = @tenantId AND co.is_published = ${db.bool(true)} AND co.deleted_at IS NULL
+           GROUP BY en.user_id
          ) e ON e.user_id = u.id
          LEFT JOIN (
-           SELECT user_id, SUM(CASE WHEN passed = ${db.bool(true)} THEN 1 ELSE 0 END) as passed
-           FROM quiz_attempts WHERE tenant_id = @tenantId GROUP BY user_id
+           SELECT qa.user_id, SUM(CASE WHEN qa.passed = ${db.bool(true)} THEN 1 ELSE 0 END) as passed
+           FROM quiz_attempts qa ${quizCourseJoin('qa')}
+           WHERE qa.tenant_id = @tenantId GROUP BY qa.user_id
          ) q ON q.user_id = u.id
          LEFT JOIN (
-           SELECT user_id, SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed
-           FROM lesson_progress WHERE tenant_id = @tenantId GROUP BY user_id
+           SELECT lp.user_id, SUM(CASE WHEN vc.id IS NOT NULL AND lp.status = 'completed' THEN 1 ELSE 0 END) as completed
+           FROM lesson_progress lp ${lessonCourseJoin('lp')}
+           WHERE lp.tenant_id = @tenantId GROUP BY lp.user_id
          ) l ON l.user_id = u.id
          WHERE u.tenant_id = @tenantId AND u.deleted_at IS NULL
          ORDER BY xp DESC`,

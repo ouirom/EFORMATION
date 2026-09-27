@@ -128,6 +128,13 @@ export class CourseService {
       params.search = `%${filters.search}%`;
     }
 
+    if (filters.category) {
+      // 'tech' is the legacy code for 'technology' (see frontend lib/categories.ts).
+      const codes = filters.category === 'technology' ? ['technology', 'tech'] : [filters.category];
+      whereClause += ` AND c.category IN (${codes.map((_, i) => `@category${i}`).join(', ')})`;
+      codes.forEach((code, i) => { params[`category${i}`] = code; });
+    }
+
     if (filters.status === 'published') {
       whereClause += ` AND c.is_published = ${db.bool(true)}`;
     } else if (filters.status === 'draft') {
@@ -323,6 +330,15 @@ export class CourseService {
     let whereClause = `WHERE l.tenant_id = @tenantId AND l.deleted_at IS NULL AND c.deleted_at IS NULL AND ${clause}`;
     const params: Record<string, any> = { tenantId, userId: user.id, limit, offset, ...accessParams };
 
+    // Learners only get lessons of published courses, matching the dashboard's course
+    // list (GET /analytics/my-courses). An enrolled learner can still open an unpublished
+    // course by direct link (canAccessCourse is unchanged) -- it just isn't surfaced here.
+    // Course management roles (manager and above, same threshold as audienceScopeCondition)
+    // keep seeing their drafts.
+    if ((ROLE_HIERARCHY[user.role] || 0) < ROLE_HIERARCHY.manager) {
+      whereClause += ` AND c.is_published = ${db.bool(true)}`;
+    }
+
     if (options.courseId) {
       whereClause += ' AND c.id = @courseId';
       params.courseId = options.courseId;
@@ -349,7 +365,7 @@ export class CourseService {
       `SELECT l.id, l.public_id, l.title, l.type, l.duration_min, l.position, l.is_mandatory,
               m.id as module_id, m.title as module_title,
               c.id as course_id, c.public_id as course_public_id, c.title as course_title,
-              lp.status as progress_status, lp.progress_percent, lp.time_spent_seconds
+              lp.status as progress_status, lp.progress_percent, lp.time_spent_seconds, lp.last_accessed_at
        FROM lessons l
        JOIN modules m ON l.module_id = m.id
        JOIN courses c ON m.course_id = c.id

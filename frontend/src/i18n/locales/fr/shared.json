@@ -38,5 +38,16 @@
     "sentToast": "Email envoyé",
     "rejectedToast": "Envoi annulé",
     "errorToast": "Une erreur est survenue"
+  },
+  "courseCategories": {
+    "technology": "Technologie",
+    "management": "Management",
+    "marketing": "Marketing",
+    "finance": "Finance",
+    "hr": "Ressources humaines",
+    "soft-skills": "Soft skills",
+    "compliance": "Conformité",
+    "other": "Autre",
+    "none": "Formation"
   }
 }

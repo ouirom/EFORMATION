@@ -2,7 +2,8 @@
   "greeting": "Hello, {{name}}! 👋",
   "defaultUser": "User",
   "subtitle": "Welcome to your learning space",
-  "streakDays": "{{count}} days",
+  "streakDays_one": "{{count}} day",
+  "streakDays_other": "{{count}} days",
   "stats": {
     "courses": "Courses",
     "coursesCompleted_one": "{{count}} completed",
@@ -12,22 +13,41 @@
     "lessonsStarted_other": "of {{count}} started",
     "learningTime": "Learning time",
     "badgesEarned_one": "{{count}} badge earned",
-    "badgesEarned_other": "{{count}} badges earned"
+    "badgesEarned_other": "{{count}} badges earned",
+    "quizzes": "Quizzes & Tests",
+    "quizzesScore": "{{score}}% success rate",
+    "quizzesPassed_one": "{{count}} quiz passed",
+    "quizzesPassed_other": "{{count}} quizzes passed"
+  },
+  "mandatorySection": {
+    "title": "Priorities & Mandatory Trainings",
+    "subtitle": "Essential courses and lessons to complete in your path",
+    "allCompletedTitle": "Mandatory trainings up to date!",
+    "allCompletedDesc": "Congratulations, you have validated all your required trainings.",
+    "pendingCourses_one": "{{count}} mandatory course in progress",
+    "pendingCourses_other": "{{count}} mandatory courses in progress",
+    "pendingLessons_one": "{{count}} mandatory lesson pending",
+    "pendingLessons_other": "{{count}} mandatory lessons pending",
+    "badge": "Mandatory",
+    "progressLabel": "Mandatory progress",
+    "continue": "Continue",
+    "start": "Start",
+    "exploreMore": "Explore catalog",
+    "allValidated": "100% complete",
+    "validatedCount": "{{completed}} / {{total}} completed"
   },
   "catalog": {
     "title": "Course Catalog",
     "viewAll": "View all",
-    "general": "General",
     "required": "Mandatory",
     "recommended": "Recommended",
     "completed": "Completed",
-    "noGeneral": "No general courses available",
-    "noRequired": "No mandatory courses",
     "noRecommended": "No recommended courses",
     "noCompleted": "No completed courses yet",
     "noCompletedHint": "Complete courses to see them here",
     "favorites": "Favorites",
-    "noFavorites": "No favorite courses yet"
+    "noFavorites": "No favorite courses yet",
+    "enrolled": "My enrollments"
   },
   "lessonCatalog": {
     "title": "Lesson Catalog",
@@ -38,7 +58,6 @@
     "filterByCourse": "Filter by course",
     "allCourses": "All courses",
     "noInProgress": "No lessons in progress — start a course to see it here",
-    "noMandatory": "No mandatory lessons yet",
     "noLessons": "No lessons available yet",
     "noFavorites": "No favorite lessons yet",
     "durationMin": "{{count}} min",
@@ -55,7 +74,6 @@
   },
   "quizzes": {
     "title": "Quizzes Taken",
-    "viewHistory": "View history",
     "none": "No quizzes taken yet",
     "noneHint": "Start your courses and take quizzes",
     "passed": "✓ Passed",
@@ -67,12 +85,14 @@
   "course": {
     "defaultCategory": "Course",
     "completed": "Completed",
-    "defaultInstructor": "Instructor",
     "progress": "Progress",
     "completedNotice": "✓ Course completed",
     "lessonsCount": "{{completed}}/{{total}} lessons",
     "review": "Review",
-    "continue": "Continue"
+    "continue": "Continue",
+    "dueOn": "Due {{date}}",
+    "dueSoon": "Due soon: {{date}}",
+    "overdue": "Overdue (due {{date}})"
   },
   "upcomingSessions": {
     "title": "Upcoming sessions",
@@ -90,5 +110,11 @@
     "title": "Leaderboard",
     "you": "(you)",
     "none": "No leaderboard yet. Complete courses and quizzes to appear here!"
+  },
+  "level": "Level {{level}}",
+  "resume": {
+    "title": "Pick up where you left off",
+    "lastAccessed": "last opened {{date}}",
+    "cta": "Resume"
   }
 }

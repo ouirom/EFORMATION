@@ -496,3 +496,48 @@ describe('PUT /users/:id/status', () => {
     expect(response.status).toBe(403);
   });
 });
+
+describe('GET /users/:id/{badges,certificates,progress} scoping', () => {
+  const agentToken = tokenFor({ id: 9, tenantId: 10, email: 'agent@test.com', role: 'agent' });
+
+  function mockTarget(target: Record<string, any> | null, requester = mockAuthLookup()) {
+    mockedQuery.mockImplementation((query: string) => {
+      if (query.includes('FROM users WHERE id = @id')) return Promise.resolve([requester]);
+      if (query.includes('SELECT role, direction_id, service_id, supervisor_id FROM users')) {
+        return Promise.resolve(target ? [target] : []);
+      }
+      return Promise.resolve([]);
+    });
+  }
+
+  it.each(['badges', 'certificates', 'progress'])('blocks an agent from reading another user\'s %s', async (resource) => {
+    mockTarget({ role: 'agent', direction_id: null, service_id: null, supervisor_id: null },
+      mockAuthLookup({ id: 9, role: 'agent', direction_id: null }));
+
+    const response = await request(makeApp()).get(`/users/42/${resource}`).set('Authorization', `Bearer ${agentToken}`);
+    expect(response.status).toBe(403);
+  });
+
+  it('lets a user read their own badges via "me" without a target lookup', async () => {
+    mockTarget(null, mockAuthLookup({ id: 9, role: 'agent', direction_id: null }));
+
+    const response = await request(makeApp()).get('/users/me/badges').set('Authorization', `Bearer ${agentToken}`);
+    expect(response.status).toBe(200);
+    const [, params] = mockedQuery.mock.calls.find(([q]: [string]) => q.includes('FROM user_badges'));
+    expect(params.userId).toBe(9);
+  });
+
+  it('lets a director read the progress of a subordinate in their direction', async () => {
+    mockTarget({ role: 'agent', direction_id: 5, service_id: 7, supervisor_id: null });
+
+    const response = await request(makeApp()).get('/users/42/progress').set('Authorization', `Bearer ${directorToken}`);
+    expect(response.status).toBe(200);
+  });
+
+  it('returns 404 for an unknown or non-numeric user id', async () => {
+    mockTarget(null);
+
+    expect((await request(makeApp()).get('/users/999/badges').set('Authorization', `Bearer ${directorToken}`)).status).toBe(404);
+    expect((await request(makeApp()).get('/users/abc/badges').set('Authorization', `Bearer ${directorToken}`)).status).toBe(404);
+  });
+});

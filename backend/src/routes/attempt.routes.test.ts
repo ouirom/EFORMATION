@@ -230,3 +230,23 @@ describe('POST /attempts (submit)', () => {
     expect(response.body.error.code).toBe('TIME_LIMIT_EXCEEDED');
   });
 });
+
+describe('GET /attempts/user/me', () => {
+  it('reads finished attempts from quiz_attempts (not the unused legacy attempts table)', async () => {
+    mockedQuery.mockImplementation((query: string) => {
+      if (query.includes('FROM users WHERE id = @id')) return Promise.resolve([mockAuthLookup()]);
+      if (query.includes('FROM quiz_attempts a')) {
+        return Promise.resolve([{ id: 1, score: 80, passed: true, quiz_title: 'Q', passing_score: 70 }]);
+      }
+      return Promise.resolve([]);
+    });
+
+    const response = await request(makeApp()).get('/attempts/user/me').set('Authorization', `Bearer ${agentToken}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toHaveLength(1);
+    const [query, params] = mockedQuery.mock.calls.find(([q]: [string]) => q.includes('FROM quiz_attempts a'));
+    expect(query).toContain('a.completed_at IS NOT NULL');
+    expect(params.userId).toBe(5);
+  });
+});

@@ -90,6 +90,33 @@ function isInHierarchicalScope(requester: HierarchyRequester, target: HierarchyT
 }
 
 /**
+ * Resolves `:id` ('me' or a numeric id) for the per-user sub-resources
+ * (badges, certificates, progress) and applies the same visibility rule as
+ * GET /users/:id: self, admins/super_admins, or a strict subordinate in scope.
+ */
+async function resolveViewableUserId(req: AuthRequest): Promise<number> {
+  const requester = req.user!;
+  if (req.params.id === 'me') return requester.id;
+
+  const userId = parseInt(req.params.id, 10);
+  if (Number.isNaN(userId)) throw NotFoundError('User');
+  if (userId === requester.id || requester.role === 'admin' || requester.role === 'super_admin') {
+    return userId;
+  }
+
+  const targets = await DatabaseService.query<HierarchyTarget>(
+    `SELECT role, direction_id, service_id, supervisor_id FROM users
+     WHERE id = @userId AND tenant_id = @tenantId AND deleted_at IS NULL`,
+    { userId, tenantId: requester.tenantId }
+  );
+  if (targets.length === 0) throw NotFoundError('User');
+  if (!isInHierarchicalScope(requester, targets[0])) {
+    throw ForbiddenError('Insufficient permissions to view this user');
+  }
+  return userId;
+}
+
+/**
  * @route POST /api/v1/users
  * @desc Create a new user (admin only)
  */
@@ -878,10 +905,10 @@ router.delete('/:id', authenticate, authorize('admin'), asyncHandler(async (req:
  * @desc Get user's badges
  */
 router.get('/:id/badges', authenticate, asyncHandler(async (req: AuthRequest, res) => {
-  const userId = req.params.id === 'me' ? req.user!.id : parseInt(req.params.id, 10);
+  const userId = await resolveViewableUserId(req);
 
   const badges = await DatabaseService.query<any>(
-    `SELECT b.id, b.code, b.name, b.description, ub.awarded_at,
+    `SELECT b.id, b.code, b.name, b.description, b.badge_type, ub.awarded_at,
             f.storage_key as icon_url
      FROM user_badges ub
      JOIN badges b ON ub.badge_id = b.id
@@ -902,7 +929,7 @@ router.get('/:id/badges', authenticate, asyncHandler(async (req: AuthRequest, re
  * @desc Get user's certificates
  */
 router.get('/:id/certificates', authenticate, asyncHandler(async (req: AuthRequest, res) => {
-  const userId = req.params.id === 'me' ? req.user!.id : parseInt(req.params.id, 10);
+  const userId = await resolveViewableUserId(req);
 
   const certificates = await DatabaseService.query<any>(
     `SELECT c.id, c.serial, c.issued_at, co.title as course_title,
@@ -926,7 +953,7 @@ router.get('/:id/certificates', authenticate, asyncHandler(async (req: AuthReque
  * @desc Get user's learning progress
  */
 router.get('/:id/progress', authenticate, asyncHandler(async (req: AuthRequest, res) => {
-  const userId = req.params.id === 'me' ? req.user!.id : parseInt(req.params.id, 10);
+  const userId = await resolveViewableUserId(req);
 
   // Get course progress
   const progress = await DatabaseService.query<any>(
@@ -943,7 +970,7 @@ router.get('/:id/progress', authenticate, asyncHandler(async (req: AuthRequest, 
      LEFT JOIN modules m ON m.course_id = c.id
      LEFT JOIN lessons l ON l.module_id = m.id
      LEFT JOIN quizzes q ON q.lesson_id = l.id
-     LEFT JOIN attempts a ON a.quiz_id = q.id AND a.user_id = @userId
+     LEFT JOIN quiz_attempts a ON a.quiz_id = q.id AND a.user_id = @userId
      LEFT JOIN certificates cert ON cert.course_id = c.id AND cert.user_id = @userId
      WHERE c.tenant_id = @tenantId AND c.is_published = ${db.bool(true)}
      GROUP BY c.id, c.title, cert.id
