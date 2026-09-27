@@ -5,16 +5,10 @@ import { DatabaseService } from '../services/database.service';
 import { IS_PG } from '../database/db-helpers';
 import { AuditService } from '../services/audit.service';
 import { BadRequestError, ConflictError } from '../middleware/error.middleware';
+import { CategoryService } from '../services/category.service';
+import { slugify } from '../utils/slugify';
 
 const router = Router();
-
-function slugify(value: string): string {
-  return value
-    .toLowerCase()
-    .normalize('NFD').replace(/[̀-ͯ]/g, '') // strip accents
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-}
 
 const validate = (req: any) => {
   const errors = validationResult(req);
@@ -83,6 +77,7 @@ router.post(
         { name, slug }
       );
 
+      await CategoryService.seedDefaults(result[0].id);
       await AuditService.log(result[0].id, req.user!.id, 'TENANT_CREATED', 'tenants', result[0].id, { name, slug });
 
       res.status(201).json({

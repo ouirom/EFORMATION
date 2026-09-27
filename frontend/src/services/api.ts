@@ -9,7 +9,10 @@ interface ExtendedAPI extends AxiosInstance {
   courses: {
     list: (params?: any) => Promise<any>;
     get: (id: number) => Promise<any>;
-    getCategories: () => Promise<any>;
+    getCategories: () => Promise<any[]>;
+    createCategory: (name: string) => Promise<any>;
+    updateCategory: (code: string, name: string | null) => Promise<any>;
+    deleteCategory: (code: string) => Promise<any>;
     enroll: (courseId: number) => Promise<any>;
     getMyEnrollments: () => Promise<any[]>;
     create: (data: any) => Promise<any>;
@@ -127,10 +130,6 @@ interface ExtendedAPI extends AxiosInstance {
     list: (courseId?: number) => Promise<any[]>;
     create: (data: any) => Promise<any>;
     delete: (id: number) => Promise<any>;
-    getCategories: () => Promise<any[]>;
-    createCategory: (name: string) => Promise<any>;
-    updateCategory: (id: number, name: string) => Promise<any>;
-    deleteCategory: (id: number) => Promise<any>;
     getUsers: (search?: string) => Promise<any[]>;
     getMyCourses: () => Promise<any[]>;
   };
@@ -255,7 +254,10 @@ export function clearAuthToken() {
 api.courses = {
   list: (params?: any) => api.get('/courses', { params }).then(r => r.data.data),
   get: (id: number) => api.get(`/courses/${id}`).then(r => r.data.data),
-  getCategories: () => api.get('/courses/categories').then(r => r.data.data),
+  getCategories: () => api.get('/courses/categories').then(r => r.data.data || []),
+  createCategory: (name: string) => api.post('/courses/categories', { name }).then(r => r.data.data),
+  updateCategory: (code: string, name: string | null) => api.put(`/courses/categories/${encodeURIComponent(code)}`, { name }).then(r => r.data.data),
+  deleteCategory: (code: string) => api.delete(`/courses/categories/${encodeURIComponent(code)}`).then(r => r.data),
   enroll: (courseId: number) => api.post('/enrollments', { courseId }).then(r => r.data.data),
   getMyEnrollments: () => api.get('/enrollments/my').then(r => r.data.data || []),
   create: (data: any) => api.post('/courses', data).then(r => r.data.data),
@@ -399,10 +401,6 @@ api.assignments = {
   list: (courseId?: number) => api.get('/assignments', { params: courseId ? { courseId } : {} }).then(r => r.data.data || []),
   create: (data: any) => api.post('/assignments', data).then(r => r.data),
   delete: (id: number) => api.delete(`/assignments/${id}`).then(r => r.data),
-  getCategories: () => api.get('/assignments/categories').then(r => r.data.data || []),
-  createCategory: (name: string) => api.post('/assignments/categories', { name }).then(r => r.data.data),
-  updateCategory: (id: number, name: string) => api.put(`/assignments/categories/${id}`, { name }).then(r => r.data.data),
-  deleteCategory: (id: number) => api.delete(`/assignments/categories/${id}`).then(r => r.data),
   getUsers: (search?: string) => api.get('/assignments/users', { params: search ? { search } : {} }).then(r => r.data.data || []),
   getMyCourses: () => api.get('/assignments/my-courses').then(r => r.data.data || []),
 };

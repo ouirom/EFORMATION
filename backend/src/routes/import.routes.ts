@@ -4,6 +4,7 @@ import { authenticate, authorize, AuthRequest } from '../middleware/auth.middlew
 import { DatabaseService } from '../services/database.service';
 import { AuditService } from '../services/audit.service';
 import { CourseService, ModuleService, LessonService } from '../services/course.service';
+import { CategoryService } from '../services/category.service';
 import { BadRequestError } from '../middleware/error.middleware';
 import { parseSpreadsheet, buildXlsxTemplate } from '../utils/xlsx';
 import { db, IS_PG } from '../database/db-helpers';
@@ -253,11 +254,12 @@ router.get('/courses/template', authenticate, authorize('admin', 'director', 'ma
         { header: 'isPublished' },
       ],
       [
-        ['Sécurité informatique', 'Sensibilisation aux risques numériques', 'Sécurité', 'beginner', 45, 'non'],
-        ['Onboarding managers', 'Parcours pour les nouveaux managers', 'RH', 'intermediate', 90, 'oui'],
+        ['Sécurité informatique', 'Sensibilisation aux risques numériques', 'compliance', 'beginner', 45, 'non'],
+        ['Onboarding managers', 'Parcours pour les nouveaux managers', 'hr', 'intermediate', 90, 'oui'],
       ],
       [
         'title est obligatoire.',
+        "category : code ou nom d'une catégorie existante (Administration > Affectations > Catégories), vide = aucune.",
         'level doit être : beginner, intermediate, advanced ou expert (par défaut beginner).',
         'isPublished : oui/non (par défaut non — le cours reste en brouillon).',
         'Un cours déjà existant avec le même titre est ignoré (import rejouable).',
@@ -303,12 +305,20 @@ router.post('/courses', authenticate, authorize('admin', 'director', 'manager'),
         continue;
       }
 
+      let category: string | null;
+      try {
+        category = await CategoryService.resolveForCourse(tenantId, row.category);
+      } catch {
+        results.push({ line, label: title, status: 'error', message: `Catégorie inconnue "${row.category}"` });
+        continue;
+      }
+
       try {
         const course = await CourseService.create({
           tenantId,
           title,
           description: row.description || undefined,
-          category: row.category || undefined,
+          category: category ?? undefined,
           level,
           duration: row.durationMin ? parseInt(row.durationMin, 10) : undefined,
           createdBy: req.user!.id,

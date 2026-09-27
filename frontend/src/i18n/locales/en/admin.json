@@ -604,7 +604,11 @@
       "categoryCreateErrorDescription": "Unable to create the category",
       "categoryDeletedDescription": "Category deleted",
       "categoryDeleteErrorDescription": "Unable to delete the category",
-      "selectTargetDescription": "Select at least one target"
+      "selectTargetDescription": "Select at least one target",
+      "categoryRenamedDescription": "Category renamed",
+      "categoryRenameErrorDescription": "Error renaming the category",
+      "categoryExistsDescription": "A category with this name already exists",
+      "categoryInUseDescription": "This category is still used by courses"
     },
     "title": "Course assignments",
     "subtitle": "Manage course assignments to users and groups",
@@ -641,7 +645,13 @@
       "title": "Course categories",
       "newCategory": "New category",
       "none": "No categories",
-      "confirmDelete": "Delete category \"{{name}}\"?"
+      "confirmDelete": "Delete category \"{{name}}\"?",
+      "default": "Default",
+      "rename": "Rename",
+      "courseCount_one": "{{count}} course",
+      "courseCount_other": "{{count}} courses",
+      "inUse_one": "Used by {{count}} course: cannot be deleted",
+      "inUse_other": "Used by {{count}} courses: cannot be deleted"
     },
     "assignDialog": {
       "title": "Assign the course",
@@ -670,12 +680,17 @@
     },
     "categoryDialog": {
       "title": "New category",
-      "description": "Create a new category to organize your courses",
+      "description": "Create a category to organise your courses. It will be offered in the course form.",
       "nameLabel": "Category name",
       "namePlaceholder": "e.g. Management, Technology, Soft Skills...",
       "cancel": "Cancel",
       "creating": "Creating...",
-      "create": "Create"
+      "create": "Create",
+      "renameTitle": "Rename category",
+      "renameDescription": "Courses in this category stay attached to it.",
+      "defaultLabelHint": "Leave empty to keep the default label (translated into each user's language).",
+      "save": "Save",
+      "saving": "Saving..."
     }
   },
   "teamsAdmin": {

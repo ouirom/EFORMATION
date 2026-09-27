@@ -151,6 +151,7 @@ describe('POST /import/courses', () => {
     mockedQuery.mockImplementation((query: string) => {
       if (query.includes('FROM users WHERE id = @id')) return Promise.resolve([mockAuthLookup()]);
       if (query.includes('SELECT title FROM courses')) return Promise.resolve([{ title: 'Existing Course' }]);
+      if (query.includes('FROM categories')) return Promise.resolve([{ code: 'other' }]);
       if (query.startsWith('INSERT INTO courses')) return Promise.resolve([{ id: 55 }]);
       if (query.includes('FROM courses c') && query.includes('WHERE c.id = @courseId')) {
         return Promise.resolve([{
@@ -180,6 +181,30 @@ describe('POST /import/courses', () => {
     expect(response.body.data.results[0].status).toBe('created');
     expect(response.body.data.results[1].status).toBe('skipped');
   });
+  it('reports a row whose category does not exist instead of creating the course', async () => {
+    mockedQuery.mockImplementation((query: string) => {
+      if (query.includes('FROM users WHERE id = @id')) return Promise.resolve([mockAuthLookup()]);
+      if (query.includes('SELECT title FROM courses')) return Promise.resolve([]);
+      if (query.includes('FROM categories')) return Promise.resolve([]);
+      return Promise.resolve([]);
+    });
+
+    const buffer = await makeXlsxBuffer(
+      ['title', 'description', 'category', 'level', 'durationMin', 'isPublished'],
+      [['New Course', 'desc', 'Astrologie', 'beginner', 30, 'non']]
+    );
+
+    const response = await request(makeApp())
+      .post('/import/courses')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .attach('file', buffer, 'courses.xlsx');
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.created).toBe(0);
+    expect(response.body.data.results[0]).toMatchObject({ status: 'error', message: 'Catégorie inconnue "Astrologie"' });
+    expect(mockedQuery.mock.calls.some(([q]: [string]) => q.startsWith('INSERT INTO courses'))).toBe(false);
+  });
+
 });
 
 describe('POST /import/lessons', () => {

@@ -85,6 +85,11 @@ describe('POST /platform/tenants', () => {
 
     expect(response.status).toBe(201);
     expect(response.body.data.id).toBe(42);
+
+    // The new tenant gets the 8 built-in course categories.
+    const categoryInserts = (DatabaseService.execute as jest.Mock).mock.calls
+      .filter(([q, p]: [string, any]) => q.includes('INSERT INTO categories') && p.tenantId === 42);
+    expect(categoryInserts).toHaveLength(8);
   });
 
   it('rejects a duplicate name', async () => {

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/services/api'
-import { useCategoryLabel } from '@/lib/categories'
+import { CourseCategory, useCategoryLabel, useCourseCategories } from '@/lib/categories'
 import { dateLocale } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -24,6 +24,7 @@ import {
   Search,
   UserPlus,
   Tag,
+  Pencil,
   Calendar,
   CheckCircle,
   UsersRound
@@ -47,10 +48,11 @@ export default function AdminAssignmentsPage() {
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false)
   const [pendingNotification, setPendingNotification] = useState<PendingNotification | null>(null)
   const [assignmentPendingDelete, setAssignmentPendingDelete] = useState<any>(null)
-  const [categoryPendingDelete, setCategoryPendingDelete] = useState<any>(null)
-  const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false)
+  const [categoryPendingDelete, setCategoryPendingDelete] = useState<CourseCategory | null>(null)
+  // null = closed; no `category` = creating, otherwise renaming that category.
+  const [categoryDialog, setCategoryDialog] = useState<{ category?: CourseCategory } | null>(null)
   const [searchUsers, setSearchUsers] = useState('')
-  const [newCategory, setNewCategory] = useState('')
+  const [categoryName, setCategoryName] = useState('')
   const [assignmentData, setAssignmentData] = useState({
     lessonId: null as number | null,
     assignmentType: 'user',
@@ -71,10 +73,7 @@ export default function AdminAssignmentsPage() {
     enabled: !!selectedCourse,
   })
 
-  const { data: categories = [], isLoading: categoriesLoading } = useQuery({
-    queryKey: ['admin-categories'],
-    queryFn: () => api.assignments.getCategories(),
-  })
+  const { data: categories = [], isLoading: categoriesLoading } = useCourseCategories()
 
   const { data: users = [] } = useQuery({
     queryKey: ['admin-users-for-assignment', searchUsers],
@@ -144,33 +143,50 @@ export default function AdminAssignmentsPage() {
     },
   })
 
-  const createCategoryMutation = useMutation({
-    mutationFn: (name: string) => api.assignments.createCategory(name),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-categories'] })
-      toast({ title: tCommon('status.success'), description: t('assignments.toasts.categoryCreatedDescription') })
-      setNewCategory('')
-      setIsCategoryDialogOpen(false)
+  const categoryErrorMessage = (error: any, fallbackKey: string) => {
+    const code = error.response?.data?.error?.code
+    if (code === 'CATEGORY_EXISTS') return t('assignments.toasts.categoryExistsDescription')
+    if (code === 'CATEGORY_IN_USE') return t('assignments.toasts.categoryInUseDescription')
+    return t(fallbackKey)
+  }
+
+  const saveCategoryMutation = useMutation({
+    mutationFn: ({ category, name }: { category?: CourseCategory; name: string }) =>
+      category ? api.courses.updateCategory(category.code, name.trim() || null) : api.courses.createCategory(name),
+    onSuccess: (_data, { category }) => {
+      queryClient.invalidateQueries({ queryKey: ['course-categories'] })
+      toast({
+        title: tCommon('status.success'),
+        description: t(category ? 'assignments.toasts.categoryRenamedDescription' : 'assignments.toasts.categoryCreatedDescription'),
+      })
+      setCategoryDialog(null)
     },
-    onError: (error: any) => {
+    onError: (error: any, { category }) => {
       toast({
         title: tCommon('status.error'),
-        description: error.response?.data?.error?.message || t('assignments.toasts.categoryCreateErrorDescription'),
-        variant: 'destructive'
+        description: categoryErrorMessage(error, category ? 'assignments.toasts.categoryRenameErrorDescription' : 'assignments.toasts.categoryCreateErrorDescription'),
+        variant: 'destructive',
       })
     },
   })
 
   const deleteCategoryMutation = useMutation({
-    mutationFn: (id: number) => api.assignments.deleteCategory(id),
+    mutationFn: (code: string) => api.courses.deleteCategory(code),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin-categories'] })
+      queryClient.invalidateQueries({ queryKey: ['course-categories'] })
       toast({ title: tCommon('status.success'), description: t('assignments.toasts.categoryDeletedDescription') })
     },
-    onError: () => {
-      toast({ title: tCommon('status.error'), description: t('assignments.toasts.categoryDeleteErrorDescription'), variant: 'destructive' })
+    onError: (error: any) => {
+      toast({ title: tCommon('status.error'), description: categoryErrorMessage(error, 'assignments.toasts.categoryDeleteErrorDescription'), variant: 'destructive' })
     },
   })
+
+  const openCategoryDialog = (category?: CourseCategory) => {
+    // Renaming a built-in category that still has its default label starts empty
+    // (the default label shows as placeholder); leaving it empty keeps the default.
+    setCategoryName(category?.name ?? '')
+    setCategoryDialog({ category })
+  }
 
   const handleCreateAssignment = () => {
     if (!selectedCourse || assignmentData.targetIds.length === 0) {
@@ -385,7 +401,7 @@ export default function AdminAssignmentsPage() {
                 <Tag className="h-5 w-5" />
                 {t('assignments.categoriesPanel.title')}
               </CardTitle>
-              <Button onClick={() => setIsCategoryDialogOpen(true)}>
+              <Button onClick={() => openCategoryDialog()}>
                 <Plus className="h-4 w-4 mr-2" />
                 {t('assignments.categoriesPanel.newCategory')}
               </Button>
@@ -400,19 +416,45 @@ export default function AdminAssignmentsPage() {
                 </div>
               ) : (
                 <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
-                  {categories.map((category: any) => (
+                  {categories.map((category) => (
                     <div
-                      key={category.id}
-                      className="flex items-center justify-between p-3 rounded-lg border"
+                      key={category.code}
+                      className="flex items-center justify-between gap-2 p-3 rounded-lg border"
                     >
-                      <span className="font-medium">{category.name}</span>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setCategoryPendingDelete(category)}
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium truncate">{categoryLabel(category.code)}</span>
+                          {category.isDefault && (
+                            <Badge variant="secondary" className="text-[10px] shrink-0">{t('assignments.categoriesPanel.default')}</Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {t('assignments.categoriesPanel.courseCount', { count: category.courseCount })}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title={t('assignments.categoriesPanel.rename')}
+                          aria-label={t('assignments.categoriesPanel.rename')}
+                          onClick={() => openCategoryDialog(category)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          disabled={category.courseCount > 0}
+                          title={category.courseCount > 0
+                            ? t('assignments.categoriesPanel.inUse', { count: category.courseCount })
+                            : tCommon('actions.delete')}
+                          aria-label={tCommon('actions.delete')}
+                          onClick={() => setCategoryPendingDelete(category)}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -567,12 +609,16 @@ export default function AdminAssignmentsPage() {
       </Dialog>
 
       {/* Category Dialog */}
-      <Dialog open={isCategoryDialogOpen} onOpenChange={setIsCategoryDialogOpen}>
+      <Dialog open={!!categoryDialog} onOpenChange={(open) => !open && setCategoryDialog(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t('assignments.categoryDialog.title')}</DialogTitle>
+            <DialogTitle>
+              {categoryDialog?.category ? t('assignments.categoryDialog.renameTitle') : t('assignments.categoryDialog.title')}
+            </DialogTitle>
             <DialogDescription>
-              {t('assignments.categoryDialog.description')}
+              {categoryDialog?.category
+                ? t('assignments.categoryDialog.renameDescription')
+                : t('assignments.categoryDialog.description')}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
@@ -580,21 +626,33 @@ export default function AdminAssignmentsPage() {
               <Label htmlFor="category-name">{t('assignments.categoryDialog.nameLabel')}</Label>
               <Input
                 id="category-name"
-                placeholder={t('assignments.categoryDialog.namePlaceholder')}
-                value={newCategory}
-                onChange={(e) => setNewCategory(e.target.value)}
+                placeholder={categoryDialog?.category?.isDefault
+                  ? categoryLabel(categoryDialog.category.code)
+                  : t('assignments.categoryDialog.namePlaceholder')}
+                value={categoryName}
+                onChange={(e) => setCategoryName(e.target.value)}
+                maxLength={255}
               />
+              {categoryDialog?.category?.isDefault && (
+                <p className="text-xs text-muted-foreground">{t('assignments.categoryDialog.defaultLabelHint')}</p>
+              )}
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsCategoryDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setCategoryDialog(null)}>
               {t('assignments.categoryDialog.cancel')}
             </Button>
             <Button
-              onClick={() => createCategoryMutation.mutate(newCategory)}
-              disabled={createCategoryMutation.isPending || !newCategory.trim()}
+              onClick={() => saveCategoryMutation.mutate({ category: categoryDialog?.category, name: categoryName })}
+              disabled={
+                saveCategoryMutation.isPending
+                // Only a built-in category may be saved with an empty name (= back to its default label).
+                || (!categoryName.trim() && !categoryDialog?.category?.isDefault)
+              }
             >
-              {createCategoryMutation.isPending ? t('assignments.categoryDialog.creating') : t('assignments.categoryDialog.create')}
+              {categoryDialog?.category
+                ? (saveCategoryMutation.isPending ? t('assignments.categoryDialog.saving') : t('assignments.categoryDialog.save'))
+                : (saveCategoryMutation.isPending ? t('assignments.categoryDialog.creating') : t('assignments.categoryDialog.create'))}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -622,10 +680,10 @@ export default function AdminAssignmentsPage() {
         open={!!categoryPendingDelete}
         onOpenChange={(open) => !open && setCategoryPendingDelete(null)}
         title={tCommon('actions.delete')}
-        description={t('assignments.categoriesPanel.confirmDelete', { name: categoryPendingDelete?.name })}
+        description={t('assignments.categoriesPanel.confirmDelete', { name: categoryLabel(categoryPendingDelete?.code) })}
         onConfirm={() => {
           if (categoryPendingDelete) {
-            deleteCategoryMutation.mutate(categoryPendingDelete.id)
+            deleteCategoryMutation.mutate(categoryPendingDelete.code)
           }
           setCategoryPendingDelete(null)
         }}

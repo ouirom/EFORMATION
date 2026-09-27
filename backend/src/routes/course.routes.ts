@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
 import { CourseService, ModuleService, LessonService, ContentService } from '../services/course.service';
+import { CategoryService } from '../services/category.service';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.middleware';
 import { BadRequestError, ForbiddenError } from '../middleware/error.middleware';
 import { AuditService } from '../services/audit.service';
@@ -78,7 +79,7 @@ router.post(
         tenantId: req.user!.tenantId,
         title: req.body.title,
         description: req.body.description,
-        category: req.body.category,
+        category: (await CategoryService.resolveForCourse(req.user!.tenantId, req.body.category)) ?? undefined,
         level: req.body.level,
         duration: req.body.duration ? parseInt(req.body.duration, 10) : undefined,
         audienceScope: req.body.audienceScope,
@@ -100,22 +101,88 @@ router.post(
   }
 );
 
+// ==================== COURSE CATEGORIES ====================
+// Per-tenant list, identified by an immutable code (see CategoryService).
+
 /**
  * @route GET /api/v1/courses/categories
- * @desc Get all course categories
+ * @desc The tenant's course categories, with how many courses use each.
+ * `id` repeats `code` so existing `{ id, name }` consumers (filters) keep working.
  */
 router.get('/categories', authenticate, async (req: AuthRequest, res, next) => {
   try {
-    const categories = await CourseService.getCategories(req.user!.tenantId);
-
-    res.json({
-      success: true,
-      data: categories,
-    });
+    const categories = await CategoryService.list(req.user!.tenantId);
+    res.json({ success: true, data: categories.map((c) => ({ id: c.code, ...c })) });
   } catch (error) {
     next(error);
   }
 });
+
+/**
+ * @route POST /api/v1/courses/categories
+ * @desc Create a category (its code is derived from the name)
+ */
+router.post(
+  '/categories',
+  authenticate,
+  authorize('admin', 'director', 'manager'),
+  [body('name').trim().notEmpty().isLength({ max: 255 })],
+  async (req: AuthRequest, res, next) => {
+    try {
+      validate(req);
+      const category = await CategoryService.create(req.user!.tenantId, req.body.name);
+      await AuditService.log(req.user!.tenantId, req.user!.id, 'CATEGORY_CREATED', 'categories', null, category);
+      res.status(201).json({ success: true, data: { id: category.code, ...category } });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * @route PUT /api/v1/courses/categories/:code
+ * @desc Rename a category; an empty name restores a built-in category's default label
+ */
+router.put(
+  '/categories/:code',
+  authenticate,
+  authorize('admin', 'director', 'manager'),
+  [body('name').optional({ nullable: true }).isString().trim().isLength({ max: 255 })],
+  async (req: AuthRequest, res, next) => {
+    try {
+      validate(req);
+      const category = await CategoryService.rename(req.user!.tenantId, req.params.code, req.body.name ?? null);
+      await AuditService.log(req.user!.tenantId, req.user!.id, 'CATEGORY_RENAMED', 'categories', null, {
+        code: category.code,
+        name: category.name,
+      });
+      res.json({ success: true, data: { id: category.code, ...category } });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * @route DELETE /api/v1/courses/categories/:code
+ * @desc Delete a category no course uses (409 CATEGORY_IN_USE otherwise)
+ */
+router.delete(
+  '/categories/:code',
+  authenticate,
+  authorize('admin', 'director', 'manager'),
+  async (req: AuthRequest, res, next) => {
+    try {
+      await CategoryService.remove(req.user!.tenantId, req.params.code);
+      await AuditService.log(req.user!.tenantId, req.user!.id, 'CATEGORY_DELETED', 'categories', null, {
+        code: req.params.code,
+      });
+      res.json({ success: true, message: 'Category deleted' });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 /**
  * @route GET /api/v1/courses/:id
@@ -222,10 +289,15 @@ router.put(
       validate(req);
 
       const courseId = parseInt(req.params.id, 10);
+      const data = { ...req.body };
+      if (data.category !== undefined) {
+        // '' clears the category (stored as NULL); anything else must be a known code.
+        data.category = await CategoryService.resolveForCourse(req.user!.tenantId, data.category);
+      }
       const course = await CourseService.update(
         req.user!.tenantId,
         courseId,
-        req.body,
+        data,
         req.user!.id,
         req.user!.role
       );

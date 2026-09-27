@@ -604,7 +604,11 @@
       "categoryCreateErrorDescription": "Impossible de créer la catégorie",
       "categoryDeletedDescription": "Catégorie supprimée",
       "categoryDeleteErrorDescription": "Impossible de supprimer la catégorie",
-      "selectTargetDescription": "Sélectionnez au moins une cible"
+      "selectTargetDescription": "Sélectionnez au moins une cible",
+      "categoryRenamedDescription": "Catégorie renommée",
+      "categoryRenameErrorDescription": "Erreur lors du renommage de la catégorie",
+      "categoryExistsDescription": "Une catégorie porte déjà ce nom",
+      "categoryInUseDescription": "Cette catégorie est encore utilisée par des cours"
     },
     "title": "Attributions des formations",
     "subtitle": "Gérez les attributions de formations aux utilisateurs et groupes",
@@ -641,7 +645,13 @@
       "title": "Catégories de formations",
       "newCategory": "Nouvelle catégorie",
       "none": "Aucune catégorie",
-      "confirmDelete": "Supprimer la catégorie \"{{name}}\" ?"
+      "confirmDelete": "Supprimer la catégorie \"{{name}}\" ?",
+      "default": "Par défaut",
+      "rename": "Renommer",
+      "courseCount_one": "{{count}} cours",
+      "courseCount_other": "{{count}} cours",
+      "inUse_one": "Utilisée par {{count}} cours : impossible de la supprimer",
+      "inUse_other": "Utilisée par {{count}} cours : impossible de la supprimer"
     },
     "assignDialog": {
       "title": "Attribuer la formation",
@@ -670,12 +680,17 @@
     },
     "categoryDialog": {
       "title": "Nouvelle catégorie",
-      "description": "Créez une nouvelle catégorie pour organiser vos formations",
+      "description": "Créez une catégorie pour classer vos formations. Elle sera proposée dans le formulaire des cours.",
       "nameLabel": "Nom de la catégorie",
       "namePlaceholder": "Ex: Management, Technologie, Soft Skills...",
       "cancel": "Annuler",
       "creating": "Création...",
-      "create": "Créer"
+      "create": "Créer",
+      "renameTitle": "Renommer la catégorie",
+      "renameDescription": "Les cours de cette catégorie restent rattachés.",
+      "defaultLabelHint": "Laissez vide pour garder le libellé par défaut (traduit selon la langue de chacun).",
+      "save": "Enregistrer",
+      "saving": "Enregistrement..."
     }
   },
   "teamsAdmin": {

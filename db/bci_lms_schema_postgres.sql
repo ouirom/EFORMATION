@@ -175,7 +175,9 @@ CREATE TABLE IF NOT EXISTS breakout_rooms (
 CREATE TABLE IF NOT EXISTS categories (
   id                   BIGSERIAL PRIMARY KEY,
   tenant_id            BIGINT NOT NULL,
-  name                 VARCHAR(255) NOT NULL
+  code                 VARCHAR(50) NOT NULL,
+  name                 VARCHAR(255),
+  created_at           TIMESTAMP NOT NULL DEFAULT (now() at time zone 'utc')
 );
 
 CREATE TABLE IF NOT EXISTS certificate_templates (
@@ -945,6 +947,7 @@ ALTER TABLE badges ADD CONSTRAINT UQ__badges__357D4CF96D52398F UNIQUE (code);
 ALTER TABLE blog_categories ADD CONSTRAINT uq_blog_categories_tenant_slug UNIQUE (tenant_id, slug);
 ALTER TABLE blog_tags ADD CONSTRAINT uq_blog_tags_tenant_slug UNIQUE (tenant_id, slug);
 ALTER TABLE categories ADD CONSTRAINT uq_category_name UNIQUE (tenant_id, name);
+ALTER TABLE categories ADD CONSTRAINT uq_categories_tenant_code UNIQUE (tenant_id, code);
 ALTER TABLE certificates ADD CONSTRAINT UQ__certific__61787229C0EA02EE UNIQUE (serial);
 ALTER TABLE course_evaluations ADD CONSTRAINT uq_course_eval UNIQUE (tenant_id, course_id, user_id);
 ALTER TABLE email_settings ADD CONSTRAINT UQ__email_se__D6F29F3F469BE66D UNIQUE (tenant_id);

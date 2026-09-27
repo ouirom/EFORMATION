@@ -380,41 +380,6 @@ export class CourseService {
   }
 
   /**
-   * Get all course categories
-   */
-  static async getCategories(tenantId: number): Promise<{ id: string; name: string; count: number }[]> {
-    const results = await DatabaseService.query<{ category: string; count: number }>(
-      `SELECT category, COUNT(*) as count
-       FROM courses
-       WHERE tenant_id = @tenantId AND deleted_at IS NULL AND category IS NOT NULL AND category != ''
-       GROUP BY category
-       ORDER BY count DESC`,
-      { tenantId }
-    );
-
-    // Map categories to a more user-friendly format
-    const categoryNames: Record<string, string> = {
-      'tech': 'Technologie',
-      'technology': 'Technologie',
-      'management': 'Management',
-      'soft-skills': 'Soft Skills',
-      'compliance': 'Conformité',
-      'marketing': 'Marketing',
-      'finance': 'Finance',
-      'sales': 'Ventes',
-      'hr': 'Ressources Humaines',
-      'leadership': 'Leadership',
-      'communication': 'Communication',
-    };
-
-    return results.map((r) => ({
-      id: r.category,
-      name: categoryNames[r.category.toLowerCase()] || r.category,
-      count: r.count,
-    }));
-  }
-
-  /**
    * Update course
    */
   static async update(

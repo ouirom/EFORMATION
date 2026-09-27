@@ -50,11 +50,12 @@ import {
 import { Link } from 'react-router-dom'
 import { api } from '@/services/api'
 import { getRoleLabel } from '@/lib/utils'
-import { COURSE_CATEGORIES, useCategoryLabel } from '@/lib/categories'
+import { useCategoryLabel, useCourseCategories } from '@/lib/categories'
 
 export default function AdminCoursesPage() {
   const { t } = useTranslation('admin')
   const categoryLabel = useCategoryLabel()
+  const { data: courseCategories = [] } = useCourseCategories()
   const { t: tCommon } = useTranslation('common')
   const { toast } = useToast()
   const queryClient = useQueryClient()
@@ -364,7 +365,7 @@ export default function AdminCoursesPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">{t('courses.filters.allCategories')}</SelectItem>
-            {COURSE_CATEGORIES.map((code) => (
+            {courseCategories.map(({ code }) => (
               <SelectItem key={code} value={code}>{categoryLabel(code)}</SelectItem>
             ))}
           </SelectContent>
@@ -549,7 +550,7 @@ export default function AdminCoursesPage() {
                     <SelectValue placeholder={t('courses.addDialog.categoryPlaceholder')} />
                   </SelectTrigger>
                   <SelectContent>
-                    {COURSE_CATEGORIES.map((code) => (
+                    {courseCategories.map(({ code }) => (
                       <SelectItem key={code} value={code}>{categoryLabel(code)}</SelectItem>
                     ))}
                   </SelectContent>
@@ -637,7 +638,7 @@ export default function AdminCoursesPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">{t('courses.categories.undefined')}</SelectItem>
-                    {COURSE_CATEGORIES.map((code) => (
+                    {courseCategories.map(({ code }) => (
                       <SelectItem key={code} value={code}>{categoryLabel(code)}</SelectItem>
                     ))}
                   </SelectContent>
