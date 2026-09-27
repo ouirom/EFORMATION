@@ -115,9 +115,10 @@ describe('POST /reports/generate qualifies the date filter when multiple joined 
         .send({ reportType, format: 'json', startDate: '2026-01-01', endDate: '2026-12-31' });
 
       expect(response.status).toBe(200);
-      const dataQuery = mockedQuery.mock.calls.find(([q]: [string]) => !q.includes('FROM users WHERE id = @id'))?.[0] || '';
-      expect(dataQuery).toContain(`${qualifiedColumn} BETWEEN`);
-      expect(dataQuery).not.toMatch(/[^.]\bcreated_at BETWEEN/);
+      const dataQuery = mockedQuery.mock.calls.find(([q]: [string]) => q.includes('@startDate'))?.[0] || '';
+      expect(dataQuery).toContain(`${qualifiedColumn} >= @startDate`);
+      expect(dataQuery).toContain(`${qualifiedColumn} < @endDate`);
+      expect(dataQuery).not.toMatch(/[^.]\bcreated_at [<>]/);
     });
   }
 });
@@ -152,5 +153,72 @@ describe('POST /reports/generate course_completion category labels', () => {
     const en = await request(makeApp()).post('/reports/generate').set('Authorization', `Bearer ${adminToken}`)
       .send({ reportType: 'course_completion', format: 'json', language: 'en' });
     expect(en.body.data.map((r: any) => r.category)).toEqual(['Human resources', 'Annonces', null]);
+  });
+});
+
+describe('POST /reports/generate presentation', () => {
+  function mockRows() {
+    mockedQuery.mockImplementation((query: string) => {
+      if (query.includes('FROM users WHERE id = @id')) return Promise.resolve([mockAuthLookup()]);
+      if (query.includes('FROM tenant_settings')) return Promise.resolve([{ timezone: 'Europe/Paris' }]);
+      if (query.includes('enrolled_courses')) {
+        return Promise.resolve([
+          { id: 1, display_name: 'Dupont, "Jean"', email: 'j@x.fr', role: 'agent', enterprise: null, enrolled_courses: 2, avg_progress: '66.6666666667', completed_courses: 1 },
+        ]);
+      }
+      return Promise.resolve([]);
+    });
+  }
+
+  it('returns localized columns and clean values in the JSON preview', async () => {
+    mockRows();
+    const response = await request(makeApp()).post('/reports/generate').set('Authorization', `Bearer ${adminToken}`)
+      .send({ reportType: 'user_progress', format: 'json', language: 'en' });
+
+    expect(response.body.data[0]).toMatchObject({ role: 'Agent', avg_progress: 66.7 });
+    expect(response.body.meta).toMatchObject({ title: 'User progress', rowCount: 1, language: 'en', period: 'all time' });
+    expect(response.body.meta.columns.map((c: any) => c.label)).toContain('Average progress');
+  });
+
+  it('writes a BOM-prefixed CSV with translated headers and RFC 4180 quoting', async () => {
+    mockRows();
+    const response = await request(makeApp()).post('/reports/generate').set('Authorization', `Bearer ${adminToken}`)
+      .send({ reportType: 'user_progress', format: 'csv' });
+
+    expect(response.text.charCodeAt(0)).toBe(0xfeff);
+    const [header, line] = response.text.slice(1).split('\r\n');
+    expect(header).toBe('ID,Nom,E-mail,Rôle,Entreprise,Cours suivis,Progression moyenne,Cours terminés');
+    expect(line).toBe('1,"Dupont, ""Jean""",j@x.fr,Agent,,2,"66,7 %",1');
+  });
+
+  it('leaves deleted users out of the progress report', async () => {
+    mockRows();
+    await request(makeApp()).post('/reports/generate').set('Authorization', `Bearer ${adminToken}`)
+      .send({ reportType: 'user_progress', format: 'json' });
+    const [query] = mockedQuery.mock.calls.find(([q]: [string]) => q.includes('enrolled_courses'));
+    expect(query).toContain('u.deleted_at IS NULL');
+  });
+});
+
+describe('POST /reports/generate period filter', () => {
+  it('includes the whole end day and supports an end date alone', async () => {
+    mockedQuery.mockImplementation((query: string) => {
+      if (query.includes('FROM users WHERE id = @id')) return Promise.resolve([mockAuthLookup()]);
+      return Promise.resolve([]);
+    });
+
+    await request(makeApp()).post('/reports/generate').set('Authorization', `Bearer ${adminToken}`)
+      .send({ reportType: 'enrollment_summary', format: 'json', startDate: '2026-07-01', endDate: '2026-07-23' });
+    let [query, params] = mockedQuery.mock.calls.find(([q]: [string]) => q.includes('unique_users'));
+    expect(query).toContain('e.enrolled_at >= @startDate');
+    expect(query).toContain('e.enrolled_at < @endDate');
+    expect(params.endDate).toBe('2026-07-24');
+
+    mockedQuery.mockClear();
+    await request(makeApp()).post('/reports/generate').set('Authorization', `Bearer ${adminToken}`)
+      .send({ reportType: 'activity_log', format: 'json', endDate: '2026-07-23' });
+    [query] = mockedQuery.mock.calls.find(([q]: [string]) => q.includes('FROM audit_logs al'));
+    expect(query).toContain('al.created_at < @endDate');
+    expect(query).not.toContain('@startDate');
   });
 });

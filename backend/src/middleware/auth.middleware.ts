@@ -28,6 +28,14 @@ const authenticateHandler = async (
   next: NextFunction
 ): Promise<void> => {
   try {
+    // Already authenticated earlier in this same request (e.g. a router-level
+    // authenticate + feature gate, then the per-route authenticate): don't repeat
+    // the token check and user lookup.
+    if (req.user) {
+      next();
+      return;
+    }
+
     const authHeader = req.headers.authorization;
     const token = authHeader?.startsWith('Bearer ')
       ? authHeader.slice(7)

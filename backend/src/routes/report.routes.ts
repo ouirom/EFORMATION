@@ -5,6 +5,17 @@ import ExcelJS from 'exceljs';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.middleware';
 import { DatabaseService } from '../services/database.service';
 import { CategoryService, CategoryLanguage } from '../services/category.service';
+import { getTenantTimezone, shiftDayKey } from '../utils/tenantTime';
+import {
+  ReportColumn,
+  ReportLanguage,
+  formatCell,
+  periodLabel,
+  presentRows,
+  reportColumns,
+  reportTitle,
+  text,
+} from '../utils/reportFormatting';
 import { BadRequestError } from '../middleware/error.middleware';
 import { db, IS_PG } from '../database/db-helpers';
 import { config } from '../config';
@@ -65,35 +76,55 @@ router.post(
       const { reportType, format, startDate, endDate, filters, language } = req.body;
       const tenantId = req.user!.tenantId;
 
-      // Generate report data
-      const reportData = await generateReportData(reportType, tenantId, { startDate, endDate, ...filters }, language);
+      const lang: ReportLanguage = language === 'en' ? 'en' : 'fr';
+      const [rawRows, timeZone] = await Promise.all([
+        generateReportData(reportType, tenantId, { startDate, endDate, ...filters }, lang),
+        getTenantTimezone(tenantId),
+      ]);
+      const report: PresentedReport = {
+        reportType,
+        language: lang,
+        timeZone,
+        title: reportTitle(reportType, lang),
+        period: periodLabel(lang, startDate, endDate),
+        generatedAt: new Date(),
+        columns: reportColumns(rawRows, lang),
+        rows: presentRows(rawRows, lang),
+      };
+      const fileBase = `${reportType}_${new Date().toISOString().slice(0, 10)}`;
 
-      // Return in requested format
       switch (format) {
         case 'json':
-          res.json({ success: true, data: reportData });
+          // `data` stays the row array; `meta` carries what the on-screen preview needs.
+          res.json({
+            success: true,
+            data: report.rows,
+            meta: {
+              title: report.title,
+              period: report.period,
+              generatedAt: report.generatedAt,
+              timeZone,
+              language: lang,
+              columns: report.columns,
+              rowCount: report.rows.length,
+            },
+          });
           break;
-        case 'csv': {
-          const csv = convertToCSV(reportData);
-          res.setHeader('Content-Type', 'text/csv');
-          res.setHeader('Content-Disposition', `attachment; filename="${reportType}_${Date.now()}.csv"`);
-          res.send(csv);
+        case 'csv':
+          res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+          res.setHeader('Content-Disposition', `attachment; filename="${fileBase}.csv"`);
+          res.send(toCSV(report));
           break;
-        }
-        case 'excel': {
-          const excelBuffer = await generateExcel(reportType, reportData);
+        case 'excel':
           res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-          res.setHeader('Content-Disposition', `attachment; filename="${reportType}_${Date.now()}.xlsx"`);
-          res.send(excelBuffer);
+          res.setHeader('Content-Disposition', `attachment; filename="${fileBase}.xlsx"`);
+          res.send(await toExcel(report));
           break;
-        }
-        case 'pdf': {
-          const pdfBuffer = await generatePDF(reportType, reportData);
+        case 'pdf':
           res.setHeader('Content-Type', 'application/pdf');
-          res.setHeader('Content-Disposition', `attachment; filename="${reportType}_${Date.now()}.pdf"`);
-          res.send(pdfBuffer);
+          res.setHeader('Content-Disposition', `attachment; filename="${fileBase}.pdf"`);
+          res.send(await toPDF(report));
           break;
-        }
       }
     } catch (error) {
       next(error);
@@ -191,13 +222,12 @@ async function generateReportData(
   filters: any,
   language: CategoryLanguage = 'fr'
 ): Promise<any> {
-  const { startDate, endDate, courseId, userId, organizationId } = filters || {};
-  
-  const dateFilter = startDate && endDate
-    ? 'AND created_at BETWEEN @startDate AND @endDate'
-    : startDate
-    ? 'AND created_at >= @startDate'
-    : '';
+  const { startDate, endDate: lastDay, courseId, userId, organizationId } = filters || {};
+  // The end date is inclusive: a timestamp on that day must match, so compare with
+  // "< the next day" instead of BETWEEN (which stopped at midnight and dropped the day).
+  const endDate = lastDay ? shiftDayKey(String(lastDay).slice(0, 10), 1) : undefined;
+  const dateFilter = (column: string) =>
+    [startDate ? `AND ${column} >= @startDate` : '', endDate ? `AND ${column} < @endDate` : ''].join(' ');
 
   switch (reportType) {
     case 'user_progress':
@@ -210,9 +240,9 @@ async function generateReportData(
          FROM users u
          LEFT JOIN enterprises e ON u.enterprise_id = e.id
          LEFT JOIN enrollments en ON u.id = en.user_id
-         WHERE u.tenant_id = @tenantId ${dateFilter.replace('created_at', 'u.created_at')}
+         WHERE u.tenant_id = @tenantId AND u.deleted_at IS NULL ${dateFilter('u.created_at')}
          GROUP BY u.id, u.display_name, u.email, u.role, e.name
-         ORDER BY avg_progress DESC`,
+         ORDER BY CASE WHEN AVG(en.progress_percent) IS NULL THEN 1 ELSE 0 END, avg_progress DESC`,
         { tenantId, startDate, endDate }
       );
 
@@ -225,7 +255,7 @@ async function generateReportData(
                 AVG(${db.diffDays('e.enrolled_at', 'e.completed_at')}) as avg_days_to_complete
          FROM courses c
          LEFT JOIN enrollments e ON c.id = e.course_id
-         WHERE c.tenant_id = @tenantId ${courseId ? 'AND c.id = @courseId' : ''} ${dateFilter}
+         WHERE c.tenant_id = @tenantId ${courseId ? 'AND c.id = @courseId' : ''} ${dateFilter('c.created_at')}
          GROUP BY c.id, c.title, c.category
          ORDER BY completions DESC`,
         { tenantId, courseId, startDate, endDate }
@@ -247,7 +277,7 @@ async function generateReportData(
          LEFT JOIN modules m ON l.module_id = m.id
          LEFT JOIN courses c ON m.course_id = c.id
          LEFT JOIN quiz_attempts qa ON q.id = qa.quiz_id
-         WHERE q.tenant_id = @tenantId ${dateFilter.replace('created_at', 'q.created_at')}
+         WHERE q.tenant_id = @tenantId ${dateFilter('q.created_at')}
          GROUP BY q.id, q.title, c.title
          ORDER BY total_attempts DESC`,
         { tenantId, startDate, endDate }
@@ -261,7 +291,7 @@ async function generateReportData(
                 COUNT(DISTINCT e.course_id) as courses
          FROM enrollments e
          JOIN courses c ON e.course_id = c.id
-         WHERE c.tenant_id = @tenantId ${dateFilter.replace('created_at', 'e.enrolled_at')}
+         WHERE c.tenant_id = @tenantId ${dateFilter('e.enrolled_at')}
          GROUP BY CAST(e.enrolled_at AS DATE)
          ORDER BY date`,
         { tenantId, startDate, endDate }
@@ -274,7 +304,7 @@ async function generateReportData(
                 COUNT(DISTINCT ab.user_id) as unique_recipients
          FROM badges b
          LEFT JOIN user_badges ab ON b.id = ab.badge_id
-         WHERE b.tenant_id = @tenantId ${dateFilter.replace('created_at', 'ab.awarded_at')}
+         WHERE b.tenant_id = @tenantId ${dateFilter('ab.awarded_at')}
          GROUP BY b.id, b.name, b.badge_type
          ORDER BY times_awarded DESC`,
         { tenantId, startDate, endDate }
@@ -287,7 +317,7 @@ async function generateReportData(
          FROM certificates c
          JOIN users u ON c.user_id = u.id
          JOIN courses co ON c.course_id = co.id
-         WHERE c.tenant_id = @tenantId ${dateFilter.replace('created_at', 'c.issued_at')}
+         WHERE c.tenant_id = @tenantId ${dateFilter('c.issued_at')}
          ORDER BY c.issued_at DESC`,
         { tenantId, startDate, endDate }
       );
@@ -299,14 +329,14 @@ async function generateReportData(
                     u.display_name as user_name, al.created_at
              FROM audit_logs al
              LEFT JOIN users u ON al.user_id = u.id
-             WHERE al.tenant_id = @tenantId ${dateFilter.replace('created_at', 'al.created_at')}
+             WHERE al.tenant_id = @tenantId ${dateFilter('al.created_at')}
              ORDER BY al.created_at DESC
              LIMIT 1000`
           : `SELECT TOP 1000 al.action, al.entity, al.entity_id,
                     u.display_name as user_name, al.created_at
              FROM audit_logs al
              LEFT JOIN users u ON al.user_id = u.id
-             WHERE al.tenant_id = @tenantId ${dateFilter.replace('created_at', 'al.created_at')}
+             WHERE al.tenant_id = @tenantId ${dateFilter('al.created_at')}
              ORDER BY al.created_at DESC`,
         { tenantId, startDate, endDate }
       );
@@ -333,125 +363,162 @@ async function generateReportData(
   }
 }
 
-// Convert data to CSV
-function convertToCSV(data: any[]): string {
-  if (data.length === 0) return '';
-  
-  const headers = Object.keys(data[0]);
-  const rows = data.map(row => 
-    headers.map(header => {
-      const value = row[header];
-      if (value === null || value === undefined) return '';
-      if (typeof value === 'string' && value.includes(',')) return `"${value}"`;
-      return value;
-    }).join(',')
-  );
-  
-  return [headers.join(','), ...rows].join('\n');
+interface PresentedReport {
+  reportType: string;
+  language: ReportLanguage;
+  timeZone: string;
+  title: string;
+  period: string;
+  generatedAt: Date;
+  columns: ReportColumn[];
+  rows: any[];
 }
 
-// Generate Excel file
-async function generateExcel(reportType: string, data: any[]): Promise<Buffer> {
+function generatedLine(report: PresentedReport): string {
+  return `${text('generatedOn', report.language)} ${formatCell(report.generatedAt, 'datetime', report.language, report.timeZone)}`;
+}
+
+/** RFC 4180 CSV with a UTF-8 BOM, so Excel opens accented text correctly. */
+function toCSV(report: PresentedReport): string {
+  const escape = (value: string) => (/[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value);
+  const lines = [
+    report.columns.map((c) => escape(c.label)).join(','),
+    ...report.rows.map((row) =>
+      report.columns.map((c) => escape(formatCell(row[c.key], c.kind, report.language, report.timeZone))).join(',')
+    ),
+  ];
+  return '﻿' + lines.join('\r\n');
+}
+
+async function toExcel(report: PresentedReport): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
-  const worksheet = workbook.addWorksheet(reportType);
+  // Sheet names are limited to 31 characters and a few forbidden symbols.
+  const worksheet = workbook.addWorksheet(report.title.replace(/[\\/?*[\]:]/g, ' ').slice(0, 31));
 
-  if (data.length > 0) {
-    // Add headers
-    const headers = Object.keys(data[0]);
-    worksheet.addRow(headers);
-    
-    // Style headers
-    worksheet.getRow(1).font = { bold: true };
-    worksheet.getRow(1).fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FF1A365D' },
-    };
-    worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  worksheet.addRow([report.title]).font = { bold: true, size: 14 };
+  worksheet.addRow([`${text('period', report.language)} : ${report.period} — ${generatedLine(report)}`]).font = { italic: true, color: { argb: 'FF666666' } };
+  worksheet.addRow([]);
 
-    // Add data rows
-    data.forEach(row => {
-      worksheet.addRow(headers.map(h => row[h]));
-    });
-
-    // Auto-fit columns
-    worksheet.columns.forEach(column => {
-      column.width = 15;
-    });
+  if (report.rows.length === 0) {
+    worksheet.addRow([text('noData', report.language)]);
+    return Buffer.from(await workbook.xlsx.writeBuffer());
   }
+
+  const header = worksheet.addRow(report.columns.map((c) => c.label));
+  header.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  header.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1A365D' } };
+
+  for (const row of report.rows) {
+    worksheet.addRow(report.columns.map((c) => {
+      const value = row[c.key];
+      if (value === null || value === undefined) return null;
+      if (c.kind === 'date' || c.kind === 'datetime') {
+        const date = value instanceof Date ? value : new Date(value);
+        return Number.isNaN(date.getTime()) ? String(value) : date;
+      }
+      return value;
+    }));
+  }
+
+  report.columns.forEach((c, index) => {
+    const column = worksheet.getColumn(index + 1);
+    if (c.kind === 'percent') column.numFmt = report.language === 'fr' ? '0.0" %"' : '0.0"%"';
+    // Both languages use day-first dates (fr-FR and en-GB).
+    if (c.kind === 'date') column.numFmt = 'dd/mm/yyyy';
+    if (c.kind === 'datetime') column.numFmt = 'dd/mm/yyyy hh:mm';
+    const longest = Math.max(
+      c.label.length,
+      ...report.rows.slice(0, 200).map((r) => formatCell(r[c.key], c.kind, report.language, report.timeZone).length)
+    );
+    column.width = Math.min(Math.max(longest + 2, 10), 50);
+  });
+  worksheet.views = [{ state: 'frozen', ySplit: 4 }];
 
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 
-// Generate PDF report
-async function generatePDF(reportType: string, data: any[]): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    const doc = new PDFDocument({ margin: 50 });
+const PDF_MAX_ROWS = 500;
 
-    doc.on('data', chunk => chunks.push(chunk));
+/** Table layout with every column, landscape when there are many, repeated header on each page. */
+async function toPDF(report: PresentedReport): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const landscape = report.columns.length > 5;
+    const doc = new PDFDocument({ margin: 40, size: 'A4', layout: landscape ? 'landscape' : 'portrait' });
+    const chunks: Buffer[] = [];
+    doc.on('data', (chunk) => chunks.push(chunk));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    // Title
-    doc.fontSize(20).font('Helvetica-Bold').text(formatReportTitle(reportType), { align: 'center' });
-    doc.moveDown();
-    doc.fontSize(10).font('Helvetica').text(`Generated: ${new Date().toLocaleString()}`, { align: 'center' });
-    doc.moveDown(2);
+    const left = doc.page.margins.left;
+    const tableWidth = doc.page.width - left - doc.page.margins.right;
+    const bottom = doc.page.height - doc.page.margins.bottom;
 
-    if (data.length === 0) {
-      doc.text('No data available for this report.');
-    } else {
-      const headers = Object.keys(data[0]);
-      const colWidth = (doc.page.width - 100) / Math.min(headers.length, 5);
+    doc.fontSize(18).font('Helvetica-Bold').text(report.title, { align: 'center' });
+    doc.moveDown(0.3);
+    doc.fontSize(9).font('Helvetica').fillColor('#555555')
+      .text(`${text('period', report.language)} : ${report.period}  ·  ${generatedLine(report)}  ·  ${report.rows.length} ${text('rows', report.language)}`, { align: 'center' });
+    doc.fillColor('black').moveDown(1.2);
 
-      // Table headers
-      doc.font('Helvetica-Bold').fontSize(10);
-      let x = 50;
-      headers.slice(0, 5).forEach(header => {
-        doc.text(formatHeader(header), x, doc.y, { width: colWidth, continued: headers.indexOf(header) < 4 });
-        x += colWidth;
-      });
-      doc.moveDown();
+    if (report.rows.length === 0) {
+      doc.fontSize(11).text(text('noData', report.language), { align: 'center' });
+      doc.end();
+      return;
+    }
 
-      // Separator
-      doc.moveTo(50, doc.y).lineTo(doc.page.width - 50, doc.y).stroke();
-      doc.moveDown(0.5);
+    // Column widths proportional to content length (capped), numbers kept narrow.
+    const weights = report.columns.map((c) => {
+      const sample = report.rows.slice(0, 100).map((r) => formatCell(r[c.key], c.kind, report.language, report.timeZone).length);
+      return Math.min(Math.max(c.label.length, ...sample, 4), 40);
+    });
+    const totalWeight = weights.reduce((a, b) => a + b, 0);
+    const widths = weights.map((w) => (w / totalWeight) * tableWidth);
+    const rowHeight = 16;
+    const padding = 3;
 
-      // Data rows
-      doc.font('Helvetica').fontSize(9);
-      data.slice(0, 50).forEach(row => {
-        x = 50;
-        headers.slice(0, 5).forEach((header, index) => {
-          const value = row[header as keyof typeof row];
-          const displayValue = (value === null || value === undefined ? '-' : 
-            typeof value === 'number' ? Math.round(value * 100) / 100 : String(value).substring(0, 20)).toString();
-          doc.text(displayValue, x, doc.y, { width: colWidth, continued: index < 4 });
-          x += colWidth;
+    const drawRow = (cells: string[], y: number, bold: boolean, shaded: boolean) => {
+      if (shaded) doc.rect(left, y, tableWidth, rowHeight).fill(bold ? '#1A365D' : '#F3F5F9');
+      doc.fillColor(bold ? 'white' : 'black').font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(8);
+      let x = left;
+      cells.forEach((cell, index) => {
+        const alignRight = ['number', 'percent'].includes(report.columns[index].kind);
+        doc.text(cell, x + padding, y + 4, {
+          width: widths[index] - padding * 2,
+          height: rowHeight - 4,
+          lineBreak: false,
+          ellipsis: true,
+          align: alignRight ? 'right' : 'left',
         });
-        doc.moveDown(0.5);
-
-        if (doc.y > doc.page.height - 100) {
-          doc.addPage();
-        }
+        x += widths[index];
       });
+      doc.fillColor('black');
+    };
 
-      if (data.length > 50) {
-        doc.moveDown();
-        doc.text(`... and ${data.length - 50} more rows`);
+    let y = doc.y;
+    const drawHeader = () => {
+      drawRow(report.columns.map((c) => c.label), y, true, true);
+      y += rowHeight;
+    };
+    drawHeader();
+
+    report.rows.slice(0, PDF_MAX_ROWS).forEach((row, index) => {
+      if (y + rowHeight > bottom) {
+        doc.addPage();
+        y = doc.page.margins.top;
+        drawHeader();
       }
+      drawRow(report.columns.map((c) => formatCell(row[c.key], c.kind, report.language, report.timeZone)), y, false, index % 2 === 1);
+      y += rowHeight;
+    });
+
+    if (report.rows.length > PDF_MAX_ROWS) {
+      doc.font('Helvetica-Oblique').fontSize(9).text(
+        `${report.rows.length - PDF_MAX_ROWS} ${text('truncated', report.language)}`,
+        left, Math.min(y + 8, bottom - 12), { width: tableWidth }
+      );
     }
 
     doc.end();
   });
-}
-
-function formatReportTitle(type: string): string {
-  return type.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') + ' Report';
-}
-
-function formatHeader(header: string): string {
-  return header.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 
 export default router;

@@ -47,6 +47,10 @@ import helpEn from './locales/en/help.json';
 export const SUPPORTED_LANGUAGES = ['fr', 'en'] as const;
 export type AppLanguage = (typeof SUPPORTED_LANGUAGES)[number];
 export const LANGUAGE_STORAGE_KEY = 'app-language';
+// Set only when the user picks a language with the switcher. The detector also
+// caches its fallback ('fr') under LANGUAGE_STORAGE_KEY on first load, so that key
+// alone can't tell an explicit choice from a default (see useTenantDefaultLanguage).
+export const LANGUAGE_CHOSEN_KEY = 'app-language-chosen';
 
 i18n
   .use(LanguageDetector)

@@ -1,5 +1,6 @@
 import { DatabaseService } from './database.service';
 import { PendingNotificationService } from './pending-notification.service';
+import { TenantSettingsService } from './tenant-settings.service';
 import { db } from '../database/db-helpers';
 import { config } from '../config';
 import { logger } from '../utils/logger';
@@ -49,6 +50,9 @@ export class LiveSessionReminderService {
     let notificationsQueued = 0;
 
     for (const row of recipients) {
+      // Nothing is queued for an organization that turned live sessions or notifications off.
+      const settings = await TenantSettingsService.get(row.tenant_id);
+      if (!settings.enableLiveSessions || !settings.enableNotifications) continue;
       const timeLabel = new Date(row.scheduled_at).toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' });
       try {
         await PendingNotificationService.queue({

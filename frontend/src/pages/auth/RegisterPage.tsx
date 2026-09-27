@@ -6,8 +6,11 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Loader2, Eye, EyeOff, Check, X, MailCheck } from 'lucide-react'
+import { Loader2, Eye, EyeOff, Check, X, MailCheck, Lock } from 'lucide-react'
 import { useToast } from '@/components/ui/use-toast'
+import { useQuery } from '@tanstack/react-query'
+import { api } from '@/services/api'
+import { useTenantDefaultLanguage } from '@/lib/tenantSettings'
 
 export default function RegisterPage() {
   const { t } = useTranslation('auth')
@@ -16,6 +19,16 @@ export default function RegisterPage() {
   const { toast } = useToast()
   const [showPassword, setShowPassword] = useState(false)
   const [pendingMessage, setPendingMessage] = useState<string | null>(null)
+  const [registrationClosed, setRegistrationClosed] = useState(false)
+
+  // Whether this organization accepts sign-ups (Administration > Organisation), and
+  // its default language for visitors who never picked one.
+  const { data: registrationSettings, isLoading: loadingRegistrationSettings } = useQuery<{ allowSelfRegistration: boolean; defaultLanguage: string }>({
+    queryKey: ['registration-settings'],
+    queryFn: async () => (await api.get('/auth/registration-settings')).data.data,
+    staleTime: 60 * 1000,
+  })
+  useTenantDefaultLanguage(registrationSettings?.defaultLanguage)
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -73,12 +86,45 @@ export default function RegisterPage() {
       })
       setPendingMessage(result.message || t('register.defaultPendingMessage'))
     } catch (error: any) {
+      // Closed between page load and submit: switch to the closed notice.
+      if (error.response?.data?.error?.code === 'REGISTRATION_CLOSED') {
+        setRegistrationClosed(true)
+        return
+      }
       toast({
         title: tCommon('status.error'),
         description: error.response?.data?.error?.message || error.message || t('register.errors.registrationFailed'),
         variant: 'destructive',
       })
     }
+  }
+
+  // Don't flash the form before knowing whether sign-ups are open.
+  if (loadingRegistrationSettings) {
+    return (
+      <Card className="shadow-lg">
+        <CardContent className="flex justify-center py-12">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (registrationClosed || registrationSettings?.allowSelfRegistration === false) {
+    return (
+      <Card className="shadow-lg">
+        <CardHeader className="space-y-1 items-center text-center">
+          <Lock className="h-10 w-10 text-muted-foreground mb-2" />
+          <CardTitle className="text-2xl text-center">{t('register.closedTitle')}</CardTitle>
+          <CardDescription className="text-center">{t('register.closedDescription')}</CardDescription>
+        </CardHeader>
+        <CardFooter className="flex flex-col gap-4">
+          <Link to="/login" className="w-full">
+            <Button className="w-full">{t('register.backToLogin')}</Button>
+          </Link>
+        </CardFooter>
+      </Card>
+    )
   }
 
   if (pendingMessage) {

@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { getInitials, formatDateTime, dateLocale } from '@/lib/utils'
 import { LessonRow } from '@/components/LessonRow'
 import { categoryGradient, useCategoryLabel } from '@/lib/categories'
+import { useTenantFeatures } from '@/lib/tenantSettings'
 import {
   BookOpen,
   Clock,
@@ -79,10 +80,12 @@ export default function DashboardPage() {
     refetchOnWindowFocus: true,
   })
 
-  // Sessions Live à venir
+  // Sessions Live à venir (seulement si l'organisation n'a pas désactivé le module)
+  const { liveSessions: liveSessionsEnabled } = useTenantFeatures()
   const { data: liveSessions = [], isLoading: loadingLiveSessions } = useQuery({
     queryKey: ['live-sessions'],
     queryFn: () => api.liveSessions.list(),
+    enabled: liveSessionsEnabled,
   })
 
   // Catalogue des leçons (onglet "Toutes") -- une page de navigation, le total vient du serveur.
@@ -638,6 +641,7 @@ export default function DashboardPage() {
         {/* Colonne Latérale / Sidebar (1/3) */}
         <div className="space-y-6">
           {/* Sessions Live programmées */}
+          {liveSessionsEnabled && (
           <Card className="border-border/80">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
@@ -670,6 +674,7 @@ export default function DashboardPage() {
               )}
             </CardContent>
           </Card>
+          )}
 
           {/* Badges obtenus (Design soigné & épuré) */}
           <Card className="border-border/80 bg-gradient-to-br from-card to-muted/20">

@@ -12,6 +12,8 @@ import { LanguageSwitcher } from '@/components/LanguageSwitcher'
 import { ProductTour } from '@/components/ProductTour'
 import { openGlobalHelp } from '@/lib/globalHelpEvent'
 import { userTourSteps, adminTourSteps } from '@/lib/tourSteps'
+import { adminSectionNavItems, canAccessAdmin, userSpaceNavItems } from '@/lib/navigation'
+import { useOrganization, useTenantDefaultLanguage, useTenantFeatures } from '@/lib/tenantSettings'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import {
@@ -25,74 +27,16 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { cn, getInitials, hexToHslTriplet } from '@/lib/utils'
 import {
-  LayoutDashboard,
-  BookOpen,
-  MessageSquare,
-  Video,
   Bell,
-  Award,
-  BarChart3,
-  FileText,
   Settings,
-  Users,
-  Building2,
   LogOut,
   ChevronLeft,
   ChevronRight,
-  Search,
   Menu,
-  Bot,
-  GraduationCap,
   User,
-  Newspaper,
-  UserPlus,
-  Mail,
-  ScrollText,
   HelpCircle,
   LifeBuoy,
-  Globe,
-  UploadCloud,
-  PlugZap,
-  Disc,
-  MailCheck,
-  UsersRound,
-  Library,
 } from 'lucide-react'
-
-const mainNavItems = [
-  { icon: LayoutDashboard, labelKey: 'nav.dashboard', path: '/dashboard', tourId: 'dashboard' },
-  { icon: BookOpen, labelKey: 'nav.courses', path: '/courses', tourId: 'courses' },
-  { icon: Library, labelKey: 'nav.lessons', path: '/lessons' },
-  { icon: Video, labelKey: 'nav.live', path: '/live', tourId: 'live' },
-  { icon: MessageSquare, labelKey: 'nav.chat', path: '/chat' },
-  { icon: Award, labelKey: 'nav.badges', path: '/badges', tourId: 'badges' },
-  { icon: GraduationCap, labelKey: 'nav.certificates', path: '/certificates' },
-  { icon: Bell, labelKey: 'nav.notifications', path: '/notifications' },
-  { icon: Newspaper, labelKey: 'nav.blog', path: '/blog' },
-  { icon: Bot, labelKey: 'nav.aiTutor', path: '/ai-tutor' },
-  { icon: Search, labelKey: 'nav.search', path: '/search' },
-]
-
-const adminNavItems = [
-  { icon: BarChart3, labelKey: 'adminNav.analytics', path: '/admin/analytics', tourId: 'analytics' },
-  { icon: Users, labelKey: 'adminNav.users', path: '/admin/users', tourId: 'users' },
-  { icon: BookOpen, labelKey: 'adminNav.courses', path: '/admin/courses', tourId: 'courses' },
-  { icon: UserPlus, labelKey: 'adminNav.assignments', path: '/admin/assignments' },
-  { icon: UsersRound, labelKey: 'adminNav.teams', path: '/admin/teams' },
-  { icon: Award, labelKey: 'adminNav.badges', path: '/admin/badges' },
-  { icon: GraduationCap, labelKey: 'adminNav.certificates', path: '/admin/certificates' },
-  { icon: Video, labelKey: 'adminNav.liveSessions', path: '/admin/live-sessions', tourId: 'live-sessions' },
-  { icon: Bell, labelKey: 'adminNav.notifications', path: '/admin/notifications' },
-  { icon: MailCheck, labelKey: 'adminNav.emailQueue', path: '/admin/email-queue' },
-  { icon: Newspaper, labelKey: 'adminNav.blog', path: '/admin/blog' },
-  { icon: FileText, labelKey: 'adminNav.reports', path: '/admin/reports' },
-  { icon: Building2, labelKey: 'adminNav.organization', path: '/admin/organization' },
-  { icon: UploadCloud, labelKey: 'adminNav.import', path: '/admin/import' },
-  { icon: Mail, labelKey: 'adminNav.email', path: '/admin/email-settings' },
-  { icon: PlugZap, labelKey: 'adminNav.videoConferencing', path: '/admin/livekit-settings' },
-  { icon: Disc, labelKey: 'adminNav.recording', path: '/admin/recording-settings' },
-  { icon: ScrollText, labelKey: 'adminNav.logs', path: '/admin/logs', tourId: 'logs' },
-]
 
 function tourSeenKey(section: 'main' | 'admin') {
   return `eformation_tour_seen_${section}`
@@ -107,16 +51,10 @@ export default function MainLayout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [tourOpen, setTourOpen] = useState(false)
 
-  const isAdmin = user?.role === 'super_admin' || user?.role === 'admin' || user?.role === 'director' || user?.role === 'manager'
+  const isAdmin = canAccessAdmin(user?.role)
   const isAdminSection = location.pathname.startsWith('/admin')
-  const hasTeam = ['admin', 'super_admin', 'director', 'manager', 'supervisor'].includes(user?.role || '')
-  const navItems = isAdminSection
-    ? user?.role === 'super_admin'
-      ? [...adminNavItems, { icon: Globe, labelKey: 'adminNav.platform', path: '/admin/platform' }]
-      : adminNavItems
-    : hasTeam
-      ? [mainNavItems[0], { icon: Users, labelKey: 'nav.myTeam', path: '/my-team' }, ...mainNavItems.slice(1)]
-      : mainNavItems
+  const modules = useTenantFeatures()
+  const navItems = isAdminSection ? adminSectionNavItems(user?.role, modules) : userSpaceNavItems(user?.role, modules)
   const tourSection = isAdminSection ? 'admin' : 'main'
   const tourSteps = isAdminSection ? adminTourSteps : userTourSteps
 
@@ -147,14 +85,8 @@ export default function MainLayout() {
   })
 
   // Shares the ['organization'] cache key with AdminOrganizationPage.tsx.
-  const { data: organization } = useQuery({
-    queryKey: ['organization'],
-    queryFn: async () => {
-      const response = await api.get('/organizations/current')
-      return response.data.data as { name: string; logo: string | null; primaryColor: string } | undefined
-    },
-    staleTime: 5 * 60 * 1000,
-  })
+  const { data: organization } = useOrganization()
+  useTenantDefaultLanguage(organization?.settings?.defaultLanguage)
 
   useEffect(() => {
     const hsl = organization?.primaryColor ? hexToHslTriplet(organization.primaryColor) : null

@@ -33,6 +33,9 @@ interface Reviewer {
 
 const REVIEWER_ROLES = ['admin', 'director', 'super_admin'];
 
+/** Sent even when the organization disabled notifications (see NotificationService.send). */
+const ESSENTIAL_EVENT_TYPES = new Set<string>(['account_created', 'password_changed', 'account_suspended']);
+
 interface PendingNotificationRow {
   id: number;
   tenant_id: number;
@@ -128,6 +131,7 @@ export class PendingNotificationService {
         body: row.body,
         actionUrl: row.action_url || undefined,
         metadata: db.parseJsonColumn(row.metadata) || undefined,
+        essential: ESSENTIAL_EVENT_TYPES.has(row.event_type),
       });
     } catch (error) {
       logger.error('Failed to send approved pending notification', { id, error });

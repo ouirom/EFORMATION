@@ -27,6 +27,8 @@ import {
 } from 'lucide-react'
 import { api } from '@/services/api'
 import { formatDate } from '@/lib/utils'
+import { useOrganization } from '@/lib/tenantSettings'
+import { Link } from 'react-router-dom'
 
 // Matches the real notifications table (backend/src/routes/notification.routes.ts) --
 // not a {type,title,isRead,data} shape invented independently of the schema.
@@ -197,6 +199,9 @@ export default function AdminNotificationsPage() {
   const channels = channelValues.map((c) => ({ ...c, label: t(`notificationsAdmin.channels.${c.value}`) }))
   const roles = roleValues.map((value) => ({ value, label: t(`notificationsAdmin.roles.${value}`) }))
   const queryClient = useQueryClient()
+  const { data: organization } = useOrganization()
+  // Sending is refused by the API while the organization has notifications turned off.
+  const notificationsDisabled = organization?.settings?.enableNotifications === false
   const [searchTerm, setSearchTerm] = useState('')
   const [channelFilter, setChannelFilter] = useState<string>('all')
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
@@ -235,8 +240,13 @@ export default function AdminNotificationsPage() {
       resetForm()
       toast({ title: tCommon('status.success'), description: t('notificationsAdmin.toasts.sentDescription') })
     },
-    onError: () => {
-      toast({ title: tCommon('status.error'), description: t('notificationsAdmin.toasts.sendErrorDescription'), variant: 'destructive' })
+    onError: (error: any) => {
+      const disabled = error.response?.data?.error?.code === 'FEATURE_DISABLED'
+      toast({
+        title: tCommon('status.error'),
+        description: t(disabled ? 'notificationsAdmin.disabledBanner.title' : 'notificationsAdmin.toasts.sendErrorDescription'),
+        variant: 'destructive',
+      })
     },
   })
 
@@ -311,7 +321,7 @@ export default function AdminNotificationsPage() {
         </div>
         <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
           <DialogTrigger asChild>
-            <Button onClick={resetForm}>
+            <Button onClick={resetForm} disabled={notificationsDisabled}>
               <Send className="h-4 w-4 mr-2" />
               {t('notificationsAdmin.sendButton')}
             </Button>
@@ -335,6 +345,16 @@ export default function AdminNotificationsPage() {
           </DialogContent>
         </Dialog>
       </div>
+
+      {notificationsDisabled && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 p-4 text-sm">
+          <p className="font-medium text-amber-800 dark:text-amber-300">{t('notificationsAdmin.disabledBanner.title')}</p>
+          <p className="text-amber-700 dark:text-amber-400 mt-1">
+            {t('notificationsAdmin.disabledBanner.description')}{' '}
+            <Link to="/admin/organization" className="underline">{t('notificationsAdmin.disabledBanner.link')}</Link>
+          </p>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

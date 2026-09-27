@@ -12,7 +12,12 @@
       "badge": "Badge",
       "live_session": "Session live",
       "user": "Utilisateur"
-    }
+    },
+    "pagesGroup": "Onglets",
+    "contentGroup": "Contenus",
+    "sectionAdmin": "Administration",
+    "sectionUser": "Espace personnel",
+    "keepTyping": "Aucun onglet ne correspond — continuez à taper pour chercher dans les contenus"
   },
   "productTour": {
     "close": "Fermer la visite guidée",
@@ -49,5 +54,13 @@
     "compliance": "Conformité",
     "other": "Autre",
     "none": "Formation"
+  },
+  "moduleDisabled": {
+    "title": {
+      "chat": "Le chat est désactivé",
+      "liveSessions": "Les sessions live sont désactivées"
+    },
+    "description": "Votre organisation a désactivé ce module. Contactez un administrateur si vous en avez besoin.",
+    "back": "Retour au tableau de bord"
   }
 }

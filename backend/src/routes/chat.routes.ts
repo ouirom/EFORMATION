@@ -6,8 +6,12 @@ import { db, IS_PG } from '../database/db-helpers';
 import { BadRequestError, NotFoundError, ForbiddenError } from '../middleware/error.middleware';
 import { parsePagination, buildPaginationMeta } from '../utils/pagination';
 import { resolveEntityId } from '../utils/resolvePublicId';
+import { TenantSettingsService, requireFeature } from '../services/tenant-settings.service';
 
 const router = Router();
+
+// Every chat endpoint is unavailable when the organization turned the chat off.
+router.use(authenticate, requireFeature('chat'));
 
 const validate = (req: any) => {
   const errors = validationResult(req);
@@ -113,6 +117,20 @@ router.post(
       validate(req);
 
       const { scope, title, participantIds } = req.body;
+
+      // Group conversations are capped by the organization's "max users per group"
+      // (participants listed + the creator).
+      if (scope !== 'direct') {
+        const { maxUsersPerGroup } = await TenantSettingsService.get(req.user!.tenantId);
+        const size = new Set<number>([req.user!.id, ...participantIds.map(Number)]).size;
+        if (size > maxUsersPerGroup) {
+          throw BadRequestError(
+            `A group conversation can have at most ${maxUsersPerGroup} participants (${size} requested)`,
+            'GROUP_TOO_LARGE',
+            { max: maxUsersPerGroup, requested: size }
+          );
+        }
+      }
 
       // For direct messages, check if conversation already exists
       if (scope === 'direct' && participantIds.length === 1) {

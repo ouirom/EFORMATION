@@ -453,7 +453,7 @@ router.get('/dashboard', authenticate, authorize('admin', 'director', 'manager')
          SUM(CASE WHEN created_at >= @startDate THEN 1 ELSE 0 END) as new_users,
          SUM(CASE WHEN created_at >= @prevStartDate AND created_at < @startDate THEN 1 ELSE 0 END) as prev_new_users,
          SUM(CASE WHEN is_active = ${db.bool(true)} THEN 1 ELSE 0 END) as active_users
-       FROM users WHERE tenant_id = @tenantId`,
+       FROM users WHERE tenant_id = @tenantId AND deleted_at IS NULL`,
       { tenantId, startDate, prevStartDate }
     ),
     // Course statistics (same previous-period pattern as user statistics).
@@ -463,7 +463,7 @@ router.get('/dashboard', authenticate, authorize('admin', 'director', 'manager')
          SUM(CASE WHEN is_published = ${db.bool(true)} THEN 1 ELSE 0 END) as published_courses,
          SUM(CASE WHEN created_at >= @startDate THEN 1 ELSE 0 END) as new_courses,
          SUM(CASE WHEN created_at >= @prevStartDate AND created_at < @startDate THEN 1 ELSE 0 END) as prev_new_courses
-       FROM courses WHERE tenant_id = @tenantId`,
+       FROM courses WHERE tenant_id = @tenantId AND deleted_at IS NULL`,
       { tenantId, startDate, prevStartDate }
     ),
     // Enrollment statistics, plus the average progress of each period's

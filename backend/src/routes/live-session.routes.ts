@@ -8,8 +8,12 @@ import { asyncHandler } from '../middleware/asyncHandler';
 import { db, IS_PG } from '../database/db-helpers';
 import { LiveKitService } from '../services/livekit.service';
 import { RecordingService } from '../services/recording.service';
+import { requireFeature } from '../services/tenant-settings.service';
 
 const router = Router();
+
+// Every live-session endpoint is unavailable when the organization turned the module off.
+router.use(authenticate, requireFeature('liveSessions'));
 
 const validate = (req: any) => {
   const errors = validationResult(req);

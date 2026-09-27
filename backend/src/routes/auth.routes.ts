@@ -6,7 +6,8 @@ import { OAuthService } from '../services/oauth.service';
 import { LdapService } from '../services/ldap.service';
 import { authenticate, AuthRequest } from '../middleware/auth.middleware';
 import { TenantRequest } from '../middleware/tenant.middleware';
-import { BadRequestError } from '../middleware/error.middleware';
+import { BadRequestError, ApiError } from '../middleware/error.middleware';
+import { TenantSettingsService } from '../services/tenant-settings.service';
 import { config } from '../config';
 
 const router = Router();
@@ -42,6 +43,26 @@ const passwordComplexityMessage =
   'Password must contain an uppercase letter, a lowercase letter, a digit, and a special character';
 
 /**
+ * @route GET /api/v1/auth/registration-settings
+ * @desc Public: whether the (header/subdomain-resolved) organization accepts sign-ups,
+ * and its default language -- read by the register and login pages before login.
+ */
+router.get('/registration-settings', async (req: TenantRequest, res, next) => {
+  try {
+    if (!req.tenantId) {
+      throw BadRequestError('Tenant ID is required');
+    }
+    const settings = await TenantSettingsService.get(req.tenantId);
+    res.json({
+      success: true,
+      data: { allowSelfRegistration: settings.allowSelfRegistration, defaultLanguage: settings.defaultLanguage },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
  * @route POST /api/v1/auth/register
  * @desc Register a new user
  */
@@ -67,13 +88,19 @@ router.post(
         throw BadRequestError('Tenant ID is required');
       }
 
+      if (!(await TenantSettingsService.get(req.tenantId)).allowSelfRegistration) {
+        throw new ApiError('Self-registration is disabled for this organization', 403, 'REGISTRATION_CLOSED');
+      }
+
       const result = await AuthService.register({
         tenantId: req.tenantId,
         email: req.body.email,
         password: req.body.password,
         displayName: req.body.displayName,
         username: req.body.username,
-        role: req.body.role,
+        // A public sign-up is always a learner: the role used to come from the request
+        // body, so anyone could apply as "admin" and be promoted on activation.
+        role: 'agent',
         enterpriseId: req.body.enterpriseId,
         directionId: req.body.directionId,
         serviceId: req.body.serviceId,

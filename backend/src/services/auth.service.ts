@@ -151,6 +151,7 @@ export class AuthService {
       userId,
       channel: 'email',
       subject: 'Votre compte E-Formation a été créé',
+      essential: true,
       body: `Bonjour ${data.displayName},\n\nVotre demande de compte E-Formation a bien été reçue. Il est en attente d'activation par votre responsable ; vous recevrez un email dès qu'il sera activé.`,
       actionUrl: `${config.frontendUrl}/login`,
     }).catch((error) => {
@@ -204,6 +205,7 @@ export class AuthService {
           userId: approver.id,
           channel,
           subject: 'Nouvelle inscription en attente d\'activation',
+          essential: true,
           body: `${data.displayName} (${data.email}) vient de créer un compte et attend une activation.`,
           actionUrl: `${config.frontendUrl}/admin/users?status=pending`,
         }).catch(() => {});
@@ -769,6 +771,7 @@ export class AuthService {
       userId: user.id,
       channel: 'email',
       subject: 'Réinitialisation de votre mot de passe',
+      essential: true,
       body: `Vous avez demandé la réinitialisation de votre mot de passe. Cliquez sur le lien ci-dessous pour choisir un nouveau mot de passe (valable 1 heure) :\n\n${resetUrl}\n\nSi vous n'êtes pas à l'origine de cette demande, ignorez cet email.`,
       actionUrl: resetUrl,
     }).catch((error) => {

@@ -62,6 +62,42 @@ interface Organization {
   createdAt: string
 }
 
+type ToggleKey = 'allowSelfRegistration' | 'enableNotifications' | 'enableChat' | 'enableLiveSessions'
+
+const SETTING_TOGGLES: { key: ToggleKey; id: string }[] = [
+  { key: 'allowSelfRegistration', id: 'org-self-registration' },
+  { key: 'enableNotifications', id: 'org-enable-notifications' },
+  { key: 'enableChat', id: 'org-enable-chat' },
+  { key: 'enableLiveSessions', id: 'org-enable-live-sessions' },
+]
+
+const TOGGLE_LABELS: Record<ToggleKey, string> = {
+  allowSelfRegistration: 'selfRegistration',
+  enableNotifications: 'notifications',
+  enableChat: 'chat',
+  enableLiveSessions: 'liveSessions',
+}
+
+// Zones commonly used by this platform's organizations, shown first.
+const COMMON_TIME_ZONES = ['Africa/Abidjan', 'Europe/Paris', 'Africa/Lagos', 'Africa/Douala', 'Africa/Casablanca', 'UTC']
+
+/** Every IANA zone the browser knows (common ones first), always including the current value. */
+function timeZoneOptions(current: string): string[] {
+  let all: string[] = []
+  try {
+    all = (Intl as any).supportedValuesOf?.('timeZone') ?? []
+  } catch {
+    all = []
+  }
+  return Array.from(new Set([...COMMON_TIME_ZONES, current, ...all])).filter(Boolean)
+}
+
+/** An empty or invalid number input keeps a valid value instead of sending NaN. */
+function positiveInt(raw: string, min: number): number {
+  const value = parseInt(raw, 10)
+  return Number.isNaN(value) ? min : Math.max(min, value)
+}
+
 export default function AdminOrganizationPage() {
   const { t } = useTranslation('admin')
   const { t: tCommon } = useTranslation('common')
@@ -578,60 +614,71 @@ export default function AdminOrganizationPage() {
           <DialogHeader>
             <DialogTitle>{t('organization.settingsDialog.title')}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="org-self-registration">{t('organization.settingsDialog.selfRegistration')}</Label>
-              <input
-                id="org-self-registration"
-                type="checkbox"
-                checked={settingsData.allowSelfRegistration}
-                onChange={(e) => setSettingsData({ ...settingsData, allowSelfRegistration: e.target.checked })}
-              />
+          <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-1">
+            {SETTING_TOGGLES.map(({ key, id }) => (
+              <div key={key} className="flex items-start justify-between gap-4">
+                <div className="space-y-0.5">
+                  <Label htmlFor={id}>{t(`organization.settingsDialog.${TOGGLE_LABELS[key]}`)}</Label>
+                  <p className="text-xs text-muted-foreground">{t(`organization.settingsDialog.hints.${key}`)}</p>
+                </div>
+                <input
+                  id={id}
+                  type="checkbox"
+                  className="mt-1"
+                  checked={settingsData[key]}
+                  onChange={(e) => setSettingsData({ ...settingsData, [key]: e.target.checked })}
+                />
+              </div>
+            ))}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="org-default-language">{t('organization.settingsDialog.defaultLanguage')}</Label>
+                <select
+                  id="org-default-language"
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  value={settingsData.defaultLanguage}
+                  onChange={(e) => setSettingsData({ ...settingsData, defaultLanguage: e.target.value })}
+                >
+                  <option value="fr">Français</option>
+                  <option value="en">English</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="org-timezone">{t('organization.settingsDialog.timezone')}</Label>
+                <select
+                  id="org-timezone"
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  value={settingsData.timezone}
+                  onChange={(e) => setSettingsData({ ...settingsData, timezone: e.target.value })}
+                >
+                  {timeZoneOptions(settingsData.timezone).map((zone) => (
+                    <option key={zone} value={zone}>{zone.replace(/_/g, ' ')}</option>
+                  ))}
+                </select>
+              </div>
             </div>
-            <div className="flex items-center justify-between">
-              <Label htmlFor="org-enable-notifications">{t('organization.settingsDialog.notifications')}</Label>
-              <input
-                id="org-enable-notifications"
-                type="checkbox"
-                checked={settingsData.enableNotifications}
-                onChange={(e) => setSettingsData({ ...settingsData, enableNotifications: e.target.checked })}
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <Label htmlFor="org-enable-chat">{t('organization.settingsDialog.chat')}</Label>
-              <input
-                id="org-enable-chat"
-                type="checkbox"
-                checked={settingsData.enableChat}
-                onChange={(e) => setSettingsData({ ...settingsData, enableChat: e.target.checked })}
-              />
-            </div>
-            <div className="flex items-center justify-between">
-              <Label htmlFor="org-enable-live-sessions">{t('organization.settingsDialog.liveSessions')}</Label>
-              <input
-                id="org-enable-live-sessions"
-                type="checkbox"
-                checked={settingsData.enableLiveSessions}
-                onChange={(e) => setSettingsData({ ...settingsData, enableLiveSessions: e.target.checked })}
-              />
-            </div>
+            <p className="text-xs text-muted-foreground -mt-2">{t('organization.settingsDialog.hints.languageTimezone')}</p>
             <div className="space-y-2">
               <Label htmlFor="org-max-users-per-group">{t('organization.settingsDialog.maxUsersPerGroup')}</Label>
               <Input
                 id="org-max-users-per-group"
                 type="number"
+                min={2}
                 value={settingsData.maxUsersPerGroup}
-                onChange={(e) => setSettingsData({ ...settingsData, maxUsersPerGroup: parseInt(e.target.value) })}
+                onChange={(e) => setSettingsData({ ...settingsData, maxUsersPerGroup: positiveInt(e.target.value, 2) })}
               />
+              <p className="text-xs text-muted-foreground">{t('organization.settingsDialog.hints.maxUsersPerGroup')}</p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="org-certificate-validity">{t('organization.settingsDialog.certificateValidity')}</Label>
               <Input
                 id="org-certificate-validity"
                 type="number"
+                min={1}
                 value={settingsData.certificateValidity}
-                onChange={(e) => setSettingsData({ ...settingsData, certificateValidity: parseInt(e.target.value) })}
+                onChange={(e) => setSettingsData({ ...settingsData, certificateValidity: positiveInt(e.target.value, 1) })}
               />
+              <p className="text-xs text-muted-foreground">{t('organization.settingsDialog.hints.certificateValidity')}</p>
             </div>
           </div>
           <DialogFooter>

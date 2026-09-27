@@ -12,7 +12,12 @@
       "badge": "Badge",
       "live_session": "Live session",
       "user": "User"
-    }
+    },
+    "pagesGroup": "Tabs",
+    "contentGroup": "Content",
+    "sectionAdmin": "Administration",
+    "sectionUser": "My space",
+    "keepTyping": "No tab matches — keep typing to search content"
   },
   "productTour": {
     "close": "Close the guided tour",
@@ -49,5 +54,13 @@
     "compliance": "Compliance",
     "other": "Other",
     "none": "Training"
+  },
+  "moduleDisabled": {
+    "title": {
+      "chat": "Chat is turned off",
+      "liveSessions": "Live sessions are turned off"
+    },
+    "description": "Your organization turned this module off. Contact an administrator if you need it.",
+    "back": "Back to dashboard"
   }
 }

@@ -1,5 +1,6 @@
 import { DatabaseService } from './database.service';
 import { PendingNotificationService } from './pending-notification.service';
+import { TenantSettingsService } from './tenant-settings.service';
 import { db } from '../database/db-helpers';
 import { config } from '../config';
 import { logger } from '../utils/logger';
@@ -35,6 +36,9 @@ export class CertificateService {
 
     let remindersSent = 0;
     for (const cert of expiringSoon) {
+      // Not queued (nor marked as reminded) while the organization has notifications
+      // off, so the reminder still goes out if they are turned back on in time.
+      if (!(await TenantSettingsService.get(cert.tenant_id)).enableNotifications) continue;
       const expiresLabel = new Date(cert.expires_at).toLocaleDateString('fr-FR');
 
       await PendingNotificationService.queue({

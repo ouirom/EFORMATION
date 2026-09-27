@@ -6,6 +6,7 @@ import { config } from '../config';
 import { DatabaseService } from './database.service';
 import { db, IS_PG } from '../database/db-helpers';
 import { logger } from '../utils/logger';
+import { TenantSettingsService } from './tenant-settings.service';
 
 interface NotificationPayload {
   tenantId: number;
@@ -15,11 +16,17 @@ interface NotificationPayload {
   body: string;
   actionUrl?: string;
   metadata?: Record<string, any>;
+  /**
+   * Account and security messages (account created/activated/suspended, password
+   * reset...) that must go out even when the organization turned notifications off
+   * in Administration > Organisation.
+   */
+  essential?: boolean;
 }
 
 interface NotificationResult {
   id: number;
-  status: 'sent' | 'failed' | 'pending';
+  status: 'sent' | 'failed' | 'pending' | 'skipped';
   channel: string;
   externalId?: string;
 }
@@ -79,6 +86,11 @@ export class NotificationService {
    */
   static async send(payload: NotificationPayload): Promise<NotificationResult> {
     const { tenantId, userId, channel, subject, body, actionUrl, metadata } = payload;
+
+    if (!payload.essential && !(await TenantSettingsService.get(tenantId)).enableNotifications) {
+      logger.info('Notification skipped: notifications are disabled for this organization', { tenantId, userId, channel });
+      return { id: 0, status: 'skipped', channel };
+    }
 
     // Check user preferences
     const preferences = await this.getUserPreferences(userId);

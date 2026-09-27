@@ -1045,7 +1045,12 @@
     "defaultSubject": "Notification",
     "readStatus": "Read",
     "unreadStatus": "Unread",
-    "userFallback": "User #{{id}}"
+    "userFallback": "User #{{id}}",
+    "disabledBanner": {
+      "title": "Notifications are turned off for your organization",
+      "description": "Nothing can be sent and automatic reminders are suspended. Account and security emails are still sent.",
+      "link": "Change it in Organization"
+    }
   },
   "blogAdmin": {
     "statuses": {
@@ -1148,14 +1153,15 @@
     },
     "toasts": {
       "generatedDescription": "Report generated and downloaded",
-      "generateErrorDescription": "Error while generating"
+      "generateErrorDescription": "Error while generating",
+      "previewErrorDescription": "Could not display the report preview"
     },
     "title": "Reports & analytics",
-    "subtitle": "Generate and download platform reports",
+    "subtitle": "View, generate and download platform reports",
     "generateButton": "Generate a report",
     "generateDialog": {
       "title": "Generate a report",
-      "description": "Select the report type, format, and period",
+      "description": "Choose the report type, language, format and period, then preview it or download the file.",
       "reportType": "Report type",
       "selectType": "Select a type",
       "format": "Format",
@@ -1168,7 +1174,14 @@
       "endDate": "End date",
       "cancel": "Cancel",
       "generating": "Generating...",
-      "generate": "Generate"
+      "generate": "Generate",
+      "language": "Report language",
+      "languages": {
+        "fr": "French",
+        "en": "English"
+      },
+      "preview": "Preview",
+      "download": "Download"
     },
     "stats": {
       "users": "Users",
@@ -1178,7 +1191,35 @@
       "avgTime": "Average time",
       "certificates": "Certificates"
     },
-    "availableTypes": "Available report types"
+    "availableTypes": "Available report types",
+    "cardExport": "Export",
+    "preview": {
+      "ariaLabel": "Report preview",
+      "summary_one": "{{period}} · {{count}} row · {{language}}",
+      "summary_other": "{{period}} · {{count}} rows · {{language}}",
+      "close": "Close preview",
+      "empty": "No data for this report over the selected period.",
+      "filterPlaceholder": "Filter rows...",
+      "sortBy": "Sort by {{column}}",
+      "noMatch": "No row matches “{{query}}”",
+      "shown_one": "{{count}} row shown out of {{total}}",
+      "shown_other": "{{count}} rows shown out of {{total}}",
+      "pageOf": "Page {{page}} / {{total}}",
+      "previousPage": "Previous page",
+      "nextPage": "Next page",
+      "filterColumn": "Filter column {{column}}",
+      "filterAll": "All",
+      "filterEmpty": "(empty)",
+      "textFilterPlaceholder": "Contains…",
+      "numberFilterPlaceholder": "e.g. >50",
+      "numberFilterHelp": "Exact number (5), comparison (>50, <=10) or range (10-20)",
+      "activeColumnFilters_one": "{{count}} column filter active",
+      "activeColumnFilters_other": "{{count}} column filters active",
+      "clearFilters": "Clear filters",
+      "exportFiltered": "CSV of filtered rows",
+      "filteredFileSuffix": "filtered",
+      "noMatchFilters": "No row matches the filters"
+    }
   },
   "organization": {
     "toasts": {
@@ -1264,11 +1305,22 @@
       "notifications": "Notifications",
       "chat": "Chat",
       "liveSessions": "Live sessions",
-      "maxUsersPerGroup": "Max users per group",
-      "certificateValidity": "Certificate validity (days)",
+      "maxUsersPerGroup": "Max participants per group conversation",
+      "certificateValidity": "Default certificate validity (days)",
       "cancel": "Cancel",
       "saving": "Updating...",
-      "save": "Save"
+      "save": "Save",
+      "defaultLanguage": "Default language",
+      "timezone": "Time zone",
+      "hints": {
+        "allowSelfRegistration": "When off, the sign-up page is closed: only administrators create accounts.",
+        "enableNotifications": "When off, no more reminders, announcements or team reports. Account and security emails (creation, activation, password) are still sent.",
+        "enableChat": "When off, messaging disappears from the menu and is unavailable to everyone.",
+        "enableLiveSessions": "When off, live sessions, their administration and their reminders are suspended.",
+        "languageTimezone": "The language applies to users who haven't picked one. The time zone is used for reports, streaks and schedules.",
+        "maxUsersPerGroup": "Applies when creating chat group conversations (creator included).",
+        "certificateValidity": "Used when no duration is given when a certificate is issued."
+      }
     }
   },
   "import": {

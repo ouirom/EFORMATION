@@ -1045,7 +1045,12 @@
     "defaultSubject": "Notification",
     "readStatus": "Lu",
     "unreadStatus": "Non lu",
-    "userFallback": "User #{{id}}"
+    "userFallback": "User #{{id}}",
+    "disabledBanner": {
+      "title": "Les notifications sont désactivées pour votre organisation",
+      "description": "Aucun envoi n'est possible et les rappels automatiques sont suspendus. Les e-mails de compte et de sécurité restent envoyés.",
+      "link": "Modifier dans Organisation"
+    }
   },
   "blogAdmin": {
     "statuses": {
@@ -1148,14 +1153,15 @@
     },
     "toasts": {
       "generatedDescription": "Rapport généré et téléchargé",
-      "generateErrorDescription": "Erreur lors de la génération"
+      "generateErrorDescription": "Erreur lors de la génération",
+      "previewErrorDescription": "Impossible d'afficher l'aperçu du rapport"
     },
     "title": "Rapports et analyses",
-    "subtitle": "Générez et téléchargez les rapports de la plateforme",
+    "subtitle": "Visualisez, générez et téléchargez les rapports de la plateforme",
     "generateButton": "Générer un rapport",
     "generateDialog": {
       "title": "Générer un rapport",
-      "description": "Sélectionnez le type de rapport, le format et la période",
+      "description": "Choisissez le type de rapport, la langue, le format et la période, puis affichez l'aperçu ou téléchargez le fichier.",
       "reportType": "Type de rapport",
       "selectType": "Sélectionner un type",
       "format": "Format",
@@ -1168,7 +1174,14 @@
       "endDate": "Date de fin",
       "cancel": "Annuler",
       "generating": "Génération...",
-      "generate": "Générer"
+      "generate": "Générer",
+      "language": "Langue du rapport",
+      "languages": {
+        "fr": "Français",
+        "en": "Anglais"
+      },
+      "preview": "Aperçu",
+      "download": "Télécharger"
     },
     "stats": {
       "users": "Utilisateurs",
@@ -1178,7 +1191,35 @@
       "avgTime": "Temps moyen",
       "certificates": "Certificats"
     },
-    "availableTypes": "Types de rapports disponibles"
+    "availableTypes": "Types de rapports disponibles",
+    "cardExport": "Exporter",
+    "preview": {
+      "ariaLabel": "Aperçu du rapport",
+      "summary_one": "{{period}} · {{count}} ligne · {{language}}",
+      "summary_other": "{{period}} · {{count}} lignes · {{language}}",
+      "close": "Fermer l'aperçu",
+      "empty": "Aucune donnée pour ce rapport sur la période choisie.",
+      "filterPlaceholder": "Filtrer les lignes...",
+      "sortBy": "Trier par {{column}}",
+      "noMatch": "Aucune ligne ne correspond à « {{query}} »",
+      "shown_one": "{{count}} ligne affichée sur {{total}}",
+      "shown_other": "{{count}} lignes affichées sur {{total}}",
+      "pageOf": "Page {{page}} / {{total}}",
+      "previousPage": "Page précédente",
+      "nextPage": "Page suivante",
+      "filterColumn": "Filtrer la colonne {{column}}",
+      "filterAll": "Tous",
+      "filterEmpty": "(vide)",
+      "textFilterPlaceholder": "Contient…",
+      "numberFilterPlaceholder": "ex. >50",
+      "numberFilterHelp": "Nombre exact (5), comparaison (>50, <=10) ou intervalle (10-20)",
+      "activeColumnFilters_one": "{{count}} filtre de colonne actif",
+      "activeColumnFilters_other": "{{count}} filtres de colonne actifs",
+      "clearFilters": "Effacer les filtres",
+      "exportFiltered": "CSV des lignes filtrées",
+      "filteredFileSuffix": "filtre",
+      "noMatchFilters": "Aucune ligne ne correspond aux filtres"
+    }
   },
   "organization": {
     "toasts": {
@@ -1264,11 +1305,22 @@
       "notifications": "Notifications",
       "chat": "Chat",
       "liveSessions": "Sessions live",
-      "maxUsersPerGroup": "Max utilisateurs par groupe",
-      "certificateValidity": "Validité certificats (jours)",
+      "maxUsersPerGroup": "Participants max. par conversation de groupe",
+      "certificateValidity": "Validité par défaut des certificats (jours)",
       "cancel": "Annuler",
       "saving": "Mise à jour...",
-      "save": "Enregistrer"
+      "save": "Enregistrer",
+      "defaultLanguage": "Langue par défaut",
+      "timezone": "Fuseau horaire",
+      "hints": {
+        "allowSelfRegistration": "Si désactivé, la page d'inscription est fermée : seuls les administrateurs créent les comptes.",
+        "enableNotifications": "Si désactivé, plus de rappels, d'annonces ni de rapports d'équipe. Les e-mails de compte et de sécurité (création, activation, mot de passe) restent envoyés.",
+        "enableChat": "Si désactivé, la messagerie disparaît du menu et devient inaccessible pour tous.",
+        "enableLiveSessions": "Si désactivé, les sessions live, leur administration et leurs rappels sont suspendus.",
+        "languageTimezone": "La langue s'applique aux utilisateurs qui n'en ont pas choisi une. Le fuseau sert aux rapports, aux séries de jours et aux horaires.",
+        "maxUsersPerGroup": "S'applique à la création des conversations de groupe du chat (créateur compris).",
+        "certificateValidity": "Appliquée quand aucune durée n'est précisée à la délivrance d'un certificat."
+      }
     }
   },
   "import": {

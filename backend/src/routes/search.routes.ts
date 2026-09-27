@@ -6,6 +6,7 @@ import { BadRequestError } from '../middleware/error.middleware';
 import { db, IS_PG } from '../database/db-helpers';
 import { parsePagination, buildPaginationMeta } from '../utils/pagination';
 import { CategoryService } from '../services/category.service';
+import { TenantSettingsService } from '../services/tenant-settings.service';
 
 const router = Router();
 
@@ -35,8 +36,10 @@ router.get(
         .map((t) => t.trim())
         .filter(Boolean);
       const isAdmin = ['admin', 'director', 'manager'].includes(req.user!.role);
-      const allTypes = ['course', 'lesson', 'quiz', 'blog', 'badge', 'live_session', ...(isAdmin ? ['user'] : [])];
-      const types = requestedTypes.length > 0 && !requestedTypes.includes('all') ? requestedTypes : allTypes;
+      const liveEnabled = await TenantSettingsService.isFeatureEnabled(req.user!.tenantId, 'liveSessions');
+      const allTypes = ['course', 'lesson', 'quiz', 'blog', 'badge', ...(liveEnabled ? ['live_session'] : []), ...(isAdmin ? ['user'] : [])];
+      const types = (requestedTypes.length > 0 && !requestedTypes.includes('all') ? requestedTypes : allTypes)
+        .filter((type: string) => type !== 'live_session' || liveEnabled);
       const { limit } = parsePagination(req, { defaultLimit: 10, maxLimit: 50 });
       const tenantId = req.user!.tenantId;
       const like = `%${searchQuery}%`;

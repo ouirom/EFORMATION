@@ -804,6 +804,7 @@ router.put(
           userId,
           channel: 'email',
           subject: message.subject,
+          essential: true, // account activation/suspension
           body: message.body,
           actionUrl: `${config.frontendUrl}/login`,
         }).catch(() => {

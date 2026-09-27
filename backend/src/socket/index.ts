@@ -3,9 +3,23 @@ import jwt from 'jsonwebtoken';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 import { UserPayload } from '../middleware/auth.middleware';
+import { DatabaseService } from '../services/database.service';
+import { TenantSettingsService } from '../services/tenant-settings.service';
 
 interface AuthenticatedSocket extends Socket {
   user?: UserPayload;
+}
+
+/** Whether `userId` takes part in `conversationId` of their own tenant. */
+async function isChatParticipant(tenantId: number, userId: number, conversationId: number): Promise<boolean> {
+  if (!Number.isInteger(conversationId)) return false;
+  const rows = await DatabaseService.query<{ id: number }>(
+    `SELECT cp.conversation_id as id FROM chat_participants cp
+     JOIN chat_conversations c ON c.id = cp.conversation_id
+     WHERE cp.conversation_id = @conversationId AND cp.user_id = @userId AND c.tenant_id = @tenantId`,
+    { conversationId, userId, tenantId }
+  );
+  return rows.length > 0;
 }
 
 export const setupSocketIO = (io: SocketServer): void => {
@@ -48,9 +62,25 @@ export const setupSocketIO = (io: SocketServer): void => {
     }
 
     // === CHAT EVENTS ===
-    socket.on('chat:join', (conversationId: number) => {
-      socket.join(`chat:${conversationId}`);
-      logger.debug(`User ${user.id} joined chat ${conversationId}`);
+    // A socket may only join a conversation it takes part in, and only while the
+    // organization has the chat enabled; the other chat events then require that
+    // the socket actually joined the room (they used to accept any conversation id,
+    // letting anyone listen to or post into someone else's conversation).
+    const inChatRoom = (conversationId: number) => socket.rooms.has(`chat:${conversationId}`);
+
+    socket.on('chat:join', async (conversationId: number) => {
+      try {
+        const id = Number(conversationId);
+        if (!(await TenantSettingsService.isFeatureEnabled(user.tenantId, 'chat'))) return;
+        if (!(await isChatParticipant(user.tenantId, user.id, id))) {
+          logger.warn(`User ${user.id} tried to join chat ${conversationId} without being a participant`);
+          return;
+        }
+        socket.join(`chat:${id}`);
+        logger.debug(`User ${user.id} joined chat ${id}`);
+      } catch (error) {
+        logger.error('chat:join failed', { error, userId: user.id, conversationId });
+      }
     });
 
     socket.on('chat:leave', (conversationId: number) => {
@@ -64,6 +94,7 @@ export const setupSocketIO = (io: SocketServer): void => {
       attachments?: number[];
       replyTo?: { id: number; body: string | null; senderName: string; deleted: boolean } | null;
     }) => {
+      if (!inChatRoom(Number(data?.conversationId))) return;
       // Emit to all participants in the conversation
       io.to(`chat:${data.conversationId}`).emit('chat:message', {
         conversationId: data.conversationId,
@@ -77,6 +108,7 @@ export const setupSocketIO = (io: SocketServer): void => {
     });
 
     socket.on('chat:typing', (conversationId: number) => {
+      if (!inChatRoom(Number(conversationId))) return;
       socket.to(`chat:${conversationId}`).emit('chat:typing', {
         userId: user.id,
         conversationId,
@@ -84,6 +116,7 @@ export const setupSocketIO = (io: SocketServer): void => {
     });
 
     socket.on('chat:stop-typing', (conversationId: number) => {
+      if (!inChatRoom(Number(conversationId))) return;
       socket.to(`chat:${conversationId}`).emit('chat:stop-typing', {
         userId: user.id,
         conversationId,
@@ -91,7 +124,17 @@ export const setupSocketIO = (io: SocketServer): void => {
     });
 
     // === LIVE SESSION EVENTS ===
-    socket.on('live:join', (sessionId: number) => {
+    // Joining is refused while the organization has live sessions turned off; the
+    // other live events only reach rooms the socket joined.
+    const inLiveRoom = (sessionId: number) => socket.rooms.has(`live:${sessionId}`);
+
+    socket.on('live:join', async (sessionId: number) => {
+      try {
+        if (!(await TenantSettingsService.isFeatureEnabled(user.tenantId, 'liveSessions'))) return;
+      } catch (error) {
+        logger.error('live:join failed', { error, userId: user.id, sessionId });
+        return;
+      }
       socket.join(`live:${sessionId}`);
       io.to(`live:${sessionId}`).emit('live:participant-joined', {
         userId: user.id,
@@ -109,6 +152,7 @@ export const setupSocketIO = (io: SocketServer): void => {
     });
 
     socket.on('live:raise-hand', (sessionId: number) => {
+      if (!inLiveRoom(sessionId)) return;
       io.to(`live:${sessionId}`).emit('live:hand-raised', {
         userId: user.id,
         sessionId,
@@ -116,6 +160,7 @@ export const setupSocketIO = (io: SocketServer): void => {
     });
 
     socket.on('live:lower-hand', (sessionId: number) => {
+      if (!inLiveRoom(sessionId)) return;
       io.to(`live:${sessionId}`).emit('live:hand-lowered', {
         userId: user.id,
         sessionId,
@@ -126,6 +171,7 @@ export const setupSocketIO = (io: SocketServer): void => {
       sessionId: number;
       body: string;
     }) => {
+      if (!inLiveRoom(data?.sessionId)) return;
       io.to(`live:${data.sessionId}`).emit('live:message', {
         userId: user.id,
         body: data.body,

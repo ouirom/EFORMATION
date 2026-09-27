@@ -4,6 +4,8 @@ import { authenticate, authorize, AuthRequest } from '../middleware/auth.middlew
 import { DatabaseService } from '../services/database.service';
 import { db, IS_PG } from '../database/db-helpers';
 import { BadRequestError, NotFoundError } from '../middleware/error.middleware';
+import { TenantSettingsService } from '../services/tenant-settings.service';
+import { AuditService } from '../services/audit.service';
 
 const router = Router();
 
@@ -16,6 +18,17 @@ const validate = (req: any) => {
 
 // ==================== CURRENT ORGANIZATION (tenant profile) ====================
 
+const SUPPORTED_LANGUAGES = ['fr', 'en'];
+
+function isValidTimeZone(value: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const DEFAULT_TENANT_SETTINGS = {
   description: '',
   logo_url: null as string | null,
@@ -25,14 +38,8 @@ const DEFAULT_TENANT_SETTINGS = {
   contact_phone: '',
   address: '',
   website: '',
-  allow_self_registration: true,
-  default_language: 'fr',
-  timezone: 'Europe/Paris',
-  enable_notifications: true,
-  enable_chat: true,
-  enable_live_sessions: true,
-  max_users_per_group: 50,
-  certificate_validity: 365,
+  // Platform switches (registration, modules, language, time zone...) and their
+  // defaults live in TenantSettingsService.
 };
 
 router.get('/current', authenticate, async (req: AuthRequest, res, next) => {
@@ -58,11 +65,11 @@ router.get('/current', authenticate, async (req: AuthRequest, res, next) => {
         { tenantId }
       ),
       DatabaseService.query<{ total_courses: number }>(
-        'SELECT COUNT(*) as total_courses FROM courses WHERE tenant_id = @tenantId',
+        'SELECT COUNT(*) as total_courses FROM courses WHERE tenant_id = @tenantId AND deleted_at IS NULL',
         { tenantId }
       ),
       DatabaseService.query<{ total_enrollments: number }>(
-        'SELECT COUNT(*) as total_enrollments FROM course_assignments WHERE tenant_id = @tenantId',
+        'SELECT COUNT(*) as total_enrollments FROM enrollments WHERE tenant_id = @tenantId',
         { tenantId }
       ),
       DatabaseService.query<{ active_users: number }>(
@@ -85,16 +92,7 @@ router.get('/current', authenticate, async (req: AuthRequest, res, next) => {
         contactPhone: settings.contact_phone || '',
         address: settings.address || '',
         website: settings.website || '',
-        settings: {
-          allowSelfRegistration: !!settings.allow_self_registration,
-          defaultLanguage: settings.default_language,
-          timezone: settings.timezone,
-          enableNotifications: !!settings.enable_notifications,
-          enableChat: !!settings.enable_chat,
-          enableLiveSessions: !!settings.enable_live_sessions,
-          maxUsersPerGroup: settings.max_users_per_group,
-          certificateValidity: settings.certificate_validity,
-        },
+        settings: await TenantSettingsService.get(tenantId),
         stats: {
           totalUsers: total_users,
           totalCourses: total_courses,
@@ -184,8 +182,8 @@ router.put(
   authorize('admin'),
   [
     body('allowSelfRegistration').optional().isBoolean(),
-    body('defaultLanguage').optional().isString(),
-    body('timezone').optional().isString(),
+    body('defaultLanguage').optional().isIn(SUPPORTED_LANGUAGES),
+    body('timezone').optional().isString().custom(isValidTimeZone).withMessage('Unknown time zone'),
     body('enableNotifications').optional().isBoolean(),
     body('enableChat').optional().isBoolean(),
     body('enableLiveSessions').optional().isBoolean(),
@@ -202,16 +200,20 @@ router.put(
         { tenantId }
       );
 
+      // Fields left out of the request keep their current value (they used to be
+      // reset to the defaults, so saving one toggle wiped the others).
+      TenantSettingsService.invalidate(tenantId);
+      const current = await TenantSettingsService.get(tenantId);
       const params = {
         tenantId,
-        allowSelfRegistration: req.body.allowSelfRegistration ?? DEFAULT_TENANT_SETTINGS.allow_self_registration,
-        defaultLanguage: req.body.defaultLanguage ?? DEFAULT_TENANT_SETTINGS.default_language,
-        timezone: req.body.timezone ?? DEFAULT_TENANT_SETTINGS.timezone,
-        enableNotifications: req.body.enableNotifications ?? DEFAULT_TENANT_SETTINGS.enable_notifications,
-        enableChat: req.body.enableChat ?? DEFAULT_TENANT_SETTINGS.enable_chat,
-        enableLiveSessions: req.body.enableLiveSessions ?? DEFAULT_TENANT_SETTINGS.enable_live_sessions,
-        maxUsersPerGroup: req.body.maxUsersPerGroup ?? DEFAULT_TENANT_SETTINGS.max_users_per_group,
-        certificateValidity: req.body.certificateValidity ?? DEFAULT_TENANT_SETTINGS.certificate_validity,
+        allowSelfRegistration: req.body.allowSelfRegistration ?? current.allowSelfRegistration,
+        defaultLanguage: req.body.defaultLanguage ?? current.defaultLanguage,
+        timezone: req.body.timezone ?? current.timezone,
+        enableNotifications: req.body.enableNotifications ?? current.enableNotifications,
+        enableChat: req.body.enableChat ?? current.enableChat,
+        enableLiveSessions: req.body.enableLiveSessions ?? current.enableLiveSessions,
+        maxUsersPerGroup: req.body.maxUsersPerGroup ?? current.maxUsersPerGroup,
+        certificateValidity: req.body.certificateValidity ?? current.certificateValidity,
       };
 
       if (existing.length === 0) {
@@ -244,7 +246,9 @@ router.put(
         );
       }
 
-      res.json({ success: true, message: 'Settings updated' });
+      TenantSettingsService.invalidate(tenantId);
+      await AuditService.log(tenantId, req.user!.id, 'SETTINGS_UPDATED', 'tenant_settings', null, req.body);
+      res.json({ success: true, message: 'Settings updated', data: await TenantSettingsService.get(tenantId) });
     } catch (error) {
       next(error);
     }

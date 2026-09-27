@@ -1,7 +1,4 @@
-import { DatabaseService } from '../services/database.service';
-
-/** Fallback when a tenant has no settings row (same default as organization.routes.ts). */
-export const DEFAULT_TENANT_TIMEZONE = 'Europe/Paris';
+import { TenantSettingsService } from '../services/tenant-settings.service';
 
 const formatters = new Map<string, Intl.DateTimeFormat>();
 
@@ -34,9 +31,5 @@ export function shiftDayKey(key: string, days: number): string {
 
 /** The tenant's configured time zone (Organization settings), or the default. */
 export async function getTenantTimezone(tenantId: number): Promise<string> {
-  const rows = await DatabaseService.query<{ timezone: string | null }>(
-    'SELECT timezone FROM tenant_settings WHERE tenant_id = @tenantId',
-    { tenantId }
-  );
-  return rows[0]?.timezone || DEFAULT_TENANT_TIMEZONE;
+  return (await TenantSettingsService.get(tenantId)).timezone;
 }

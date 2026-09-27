@@ -16,6 +16,7 @@ import LoginPage from '@/pages/auth/LoginPage';
 import RegisterPage from '@/pages/auth/RegisterPage';
 import ForgotPasswordPage from '@/pages/auth/ForgotPasswordPage';
 import ResetPasswordPage from '@/pages/auth/ResetPasswordPage';
+import { FeatureGate } from '@/components/FeatureGate';
 import SSOCallbackPage from '@/pages/auth/SSOCallbackPage'
 const VerifyCertificatePage = lazy(() => import('@/pages/auth/VerifyCertificatePage'));
 
@@ -137,10 +138,10 @@ function App() {
             <Route path="/certificates" element={<CertificatesPage />} />
             <Route path="/notifications" element={<NotificationsPage />} />
             <Route path="/search" element={<SearchPage />} />
-            <Route path="/chat" element={<ChatPage />} />
-            <Route path="/chat/:conversationId" element={<ChatPage />} />
-            <Route path="/live" element={<LiveSessionsPage />} />
-            <Route path="/live/:id" element={<LiveSessionDetailPage />} />
+            <Route path="/chat" element={<FeatureGate feature="chat"><ChatPage /></FeatureGate>} />
+            <Route path="/chat/:conversationId" element={<FeatureGate feature="chat"><ChatPage /></FeatureGate>} />
+            <Route path="/live" element={<FeatureGate feature="liveSessions"><LiveSessionsPage /></FeatureGate>} />
+            <Route path="/live/:id" element={<FeatureGate feature="liveSessions"><LiveSessionDetailPage /></FeatureGate>} />
             <Route path="/blog" element={<BlogPage />} />
             <Route path="/blog/:id" element={<BlogPostPage />} />
             <Route path="/profile" element={<ProfilePage />} />
@@ -167,7 +168,7 @@ function App() {
             <Route path="teams" element={<AdminTeamsPage />} />
             <Route path="badges" element={<AdminBadgesPage />} />
             <Route path="certificates" element={<AdminCertificatesPage />} />
-            <Route path="live-sessions" element={<AdminLiveSessionsPage />} />
+            <Route path="live-sessions" element={<FeatureGate feature="liveSessions"><AdminLiveSessionsPage /></FeatureGate>} />
             <Route path="notifications" element={<AdminNotificationsPage />} />
             <Route path="email-queue" element={<AdminEmailQueuePage />} />
             <Route path="blog" element={<AdminBlogPage />} />

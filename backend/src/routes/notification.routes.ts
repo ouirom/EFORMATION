@@ -1,13 +1,26 @@
 import { Router } from 'express';
+import { TenantSettingsService } from '../services/tenant-settings.service';
 import { body, validationResult } from 'express-validator';
 import { authenticate, authorize, AuthRequest } from '../middleware/auth.middleware';
 import { DatabaseService } from '../services/database.service';
 import { db } from '../database/db-helpers';
-import { BadRequestError, NotFoundError } from '../middleware/error.middleware';
+import { BadRequestError, NotFoundError, ApiError } from '../middleware/error.middleware';
 import { NotificationService } from '../services/notification.service';
 import { parsePagination, buildPaginationMeta } from '../utils/pagination';
 
 const router = Router();
+
+/** Admin-sent notifications are refused (not silently dropped) when the organization disabled notifications. */
+const requireNotificationsEnabled = async (req: AuthRequest, _res: any, next: any) => {
+  try {
+    if (!(await TenantSettingsService.get(req.user!.tenantId)).enableNotifications) {
+      throw new ApiError('Notifications are disabled for this organization', 403, 'FEATURE_DISABLED');
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
 
 const validate = (req: any) => {
   const errors = validationResult(req);
@@ -71,6 +84,7 @@ router.post(
   '/',
   authenticate,
   authorize('admin', 'director'),
+  requireNotificationsEnabled,
   [
     body('userId').isInt(),
     body('channel').isIn(['email', 'sms', 'whatsapp', 'push', 'in_app']),
@@ -119,6 +133,7 @@ router.post(
   '/bulk',
   authenticate,
   authorize('admin', 'director'),
+  requireNotificationsEnabled,
   [
     body('userIds').optional().isArray({ min: 1 }),
     body('role').optional().isIn(['super_admin', 'admin', 'director', 'manager', 'supervisor', 'agent', 'externe', 'stagiaire']),
