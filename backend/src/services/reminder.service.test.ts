@@ -141,8 +141,35 @@ describe('ReminderService.runDailyAssignmentReminders', () => {
     expect(mockedSend).toHaveBeenCalledTimes(1); // only the learner's overdue reminder
   });
 
-  it('does nothing for assignments that are neither at a reminder threshold nor overdue', async () => {
+  it('catches up a first reminder the job missed, saying how many days are left', async () => {
     const row = makeAssignmentRow({ due_date: daysFromNow(3) });
+    mockedQuery.mockImplementation((query: string) => {
+      if (query.includes('FROM course_assignments')) return Promise.resolve([row]);
+      return Promise.resolve([]);
+    });
+
+    const result = await ReminderService.runDailyAssignmentReminders();
+
+    expect(result.remindersSent).toBe(1);
+    expect(mockedSend.mock.calls[0][0].body).toContain('Il vous reste 3 jours');
+    expect(mockedSend.mock.calls[0][0].metadata.reminderType).toBe('upcoming');
+  });
+
+  it('does not email about courses late for longer than the catch-up window', async () => {
+    const row = makeAssignmentRow({ due_date: daysFromNow(-30) });
+    mockedQuery.mockImplementation((query: string) => {
+      if (query.includes('FROM course_assignments')) return Promise.resolve([row]);
+      return Promise.resolve([]);
+    });
+
+    const result = await ReminderService.runDailyAssignmentReminders();
+
+    expect(result).toEqual({ remindersSent: 0, escalationsSent: 0 });
+    expect(mockedSend).not.toHaveBeenCalled();
+  });
+
+  it('does nothing before the first reminder threshold', async () => {
+    const row = makeAssignmentRow({ due_date: daysFromNow(10) });
     mockedQuery.mockImplementation((query: string) => {
       if (query.includes('FROM course_assignments')) return Promise.resolve([row]);
       return Promise.resolve([]);

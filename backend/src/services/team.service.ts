@@ -84,6 +84,7 @@ export class TeamService {
          JOIN users u2 ON (
            (ca.assignment_type = 'user' AND u2.id = ca.target_id)
            OR (ca.assignment_type = 'enterprise' AND u2.enterprise_id = ca.target_id)
+           OR (ca.assignment_type = 'subsidiary' AND u2.subsidiary_id = ca.target_id)
            OR (ca.assignment_type = 'direction' AND u2.direction_id = ca.target_id)
            OR (ca.assignment_type = 'service' AND u2.service_id = ca.target_id)
            OR (ca.assignment_type = 'role' AND u2.role = ca.target_role)

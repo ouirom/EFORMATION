@@ -36,6 +36,7 @@ import {
   User,
   HelpCircle,
   LifeBuoy,
+  Scale,
 } from 'lucide-react'
 
 function tourSeenKey(section: 'main' | 'admin') {
@@ -101,6 +102,13 @@ export default function MainLayout() {
   }, [organization?.primaryColor])
 
   const { idleLimitOverrideMs } = useSessionTimeoutContext()
+  // The organization's inactivity limit (Administration > Organisation) is the
+  // total until logout: the warning takes its last minute. A long lesson may
+  // still ask for more (idleLimitOverrideMs), never for less.
+  const idleMinutes = organization?.settings?.sessionIdleMinutes
+  const tenantIdleLimitMs = idleMinutes ? Math.max(1, idleMinutes - 1) * 60 * 1000 : undefined
+  const idleLimitMs =
+    idleLimitOverrideMs != null ? Math.max(idleLimitOverrideMs, tenantIdleLimitMs ?? 0) : tenantIdleLimitMs
 
   const { isWarning, secondsLeft, stayActive } = useIdleTimeout(
     () => {
@@ -115,7 +123,7 @@ export default function MainLayout() {
       navigate('/login?timeout=1')
     },
     {
-      idleLimitMs: idleLimitOverrideMs ?? undefined,
+      idleLimitMs,
       onActivity: () => {
         refreshAccessToken().catch(() => {
           // A failed proactive refresh isn't fatal — the reactive 401 handler
@@ -368,6 +376,12 @@ function UserMenu({ user, onLogout, dataTour }: { user: any; onLogout: () => voi
           <Link to="/settings">
             <Settings className="mr-2 h-4 w-4" />
             {t('userMenu.settings')}
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link to="/legal">
+            <Scale className="mr-2 h-4 w-4" />
+            {t('userMenu.legal')}
           </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />

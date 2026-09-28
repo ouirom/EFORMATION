@@ -71,7 +71,11 @@ describe('POST /auth/forgot-password', () => {
 });
 
 describe('POST /auth/reset-password', () => {
-  it('rejects a weak new password before touching the database', async () => {
+  it("rejects a new password that breaks the organization's policy without changing it", async () => {
+    // The account exists; its organization has no settings row (default policy).
+    mockedQuery.mockImplementation((q: string) =>
+      Promise.resolve(q.includes('FROM users') ? [{ id: 5, tenant_id: 10, token_version: 0, password_hash: 'old' }] : [])
+    );
     const response = await request(makeApp())
       .post('/auth/reset-password')
       .send({ token: signResetToken(5), newPassword: 'weakpass' });

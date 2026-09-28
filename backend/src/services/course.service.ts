@@ -114,7 +114,8 @@ export class CourseService {
     userRole?: string,
     userEnterpriseId?: number,
     userDirectionId?: number,
-    userServiceId?: number
+    userServiceId?: number,
+    userSubsidiaryId?: number
   ): Promise<{ data: Course[]; total: number }> {
     const { page, limit, sortBy = 'created_at', sortOrder = 'desc' } = pagination;
     const offset = (page - 1) * limit;
@@ -149,6 +150,7 @@ export class CourseService {
       const audience = this.audienceScopeCondition('c', {
         role: userRole,
         enterpriseId: userEnterpriseId,
+        subsidiaryId: userSubsidiaryId,
         directionId: userDirectionId,
         serviceId: userServiceId,
       });
@@ -224,7 +226,7 @@ export class CourseService {
    */
   private static audienceScopeCondition(
     alias: string,
-    user: { role: string; enterpriseId?: number; directionId?: number; serviceId?: number }
+    user: { role: string; enterpriseId?: number; subsidiaryId?: number; directionId?: number; serviceId?: number }
   ): { clause: string; params: Record<string, any> } {
     // Role-hierarchy check (manager and above, e.g. super_admin) rather than a hardcoded
     // list -- a flat list of role names silently excludes any role ranked above 'manager'
@@ -239,6 +241,7 @@ export class CourseService {
         ${alias}.audience_scope IS NULL
         OR ${audienceLevel} = 'general'
         ${user.enterpriseId ? `OR (${audienceLevel} = 'enterprise' AND ${db.jsonArrayContains(`${alias}.audience_scope`, 'ids', '@userEnterpriseId')})` : ''}
+        ${user.subsidiaryId ? `OR (${audienceLevel} = 'subsidiary' AND ${db.jsonArrayContains(`${alias}.audience_scope`, 'ids', '@userSubsidiaryId')})` : ''}
         ${user.directionId ? `OR (${audienceLevel} = 'direction' AND ${db.jsonArrayContains(`${alias}.audience_scope`, 'ids', '@userDirectionId')})` : ''}
         ${user.serviceId ? `OR (${audienceLevel} = 'service' AND ${db.jsonArrayContains(`${alias}.audience_scope`, 'ids', '@userServiceId')})` : ''}
         OR (${audienceLevel} = 'role' AND ${db.jsonArrayContains(`${alias}.audience_scope`, 'roles', '@userRole')})
@@ -249,6 +252,7 @@ export class CourseService {
       clause,
       params: {
         userEnterpriseId: user.enterpriseId,
+        userSubsidiaryId: user.subsidiaryId,
         userDirectionId: user.directionId,
         userServiceId: user.serviceId,
         userRole: user.role,
@@ -270,7 +274,7 @@ export class CourseService {
    */
   private static accessibleCoursesCondition(
     alias: string,
-    user: { id: number; role: string; enterpriseId?: number; directionId?: number; serviceId?: number }
+    user: { id: number; role: string; enterpriseId?: number; subsidiaryId?: number; directionId?: number; serviceId?: number }
   ): { clause: string; params: Record<string, any> } {
     const audience = this.audienceScopeCondition(alias, user);
     if (audience.clause === '1=1') {
@@ -285,10 +289,11 @@ export class CourseService {
         WHERE ca.course_id = ${alias}.id AND ca.tenant_id = @tenantId AND (
           (ca.assignment_type = 'user' AND ca.target_id = @userId)
           ${user.enterpriseId ? `OR (ca.assignment_type = 'enterprise' AND ca.target_id = @userEnterpriseId)` : ''}
+          ${user.subsidiaryId ? `OR (ca.assignment_type = 'subsidiary' AND ca.target_id = @userSubsidiaryId)` : ''}
           ${user.directionId ? `OR (ca.assignment_type = 'direction' AND ca.target_id = @userDirectionId)` : ''}
           ${user.serviceId ? `OR (ca.assignment_type = 'service' AND ca.target_id = @userServiceId)` : ''}
           OR (ca.assignment_type = 'role' AND ca.target_role = @userRole)
-          OR ${teamAssignmentClause('ca', 'userId', user.enterpriseId ? 'userEnterpriseId' : null, user.directionId ? 'userDirectionId' : null, user.serviceId ? 'userServiceId' : null)}
+          OR ${teamAssignmentClause('ca', 'userId', user.enterpriseId ? 'userEnterpriseId' : null, user.directionId ? 'userDirectionId' : null, user.serviceId ? 'userServiceId' : null, user.subsidiaryId ? 'userSubsidiaryId' : null)}
         )
       )
     )`;
@@ -302,7 +307,7 @@ export class CourseService {
   static async canAccessCourse(
     tenantId: number,
     courseId: number,
-    user: { id: number; role: string; enterpriseId?: number; directionId?: number; serviceId?: number }
+    user: { id: number; role: string; enterpriseId?: number; subsidiaryId?: number; directionId?: number; serviceId?: number }
   ): Promise<boolean> {
     const { clause, params } = this.accessibleCoursesCondition('c', user);
     const rows = await DatabaseService.query<{ id: number }>(
@@ -320,7 +325,7 @@ export class CourseService {
    */
   static async getLessonCatalog(
     tenantId: number,
-    user: { id: number; role: string; enterpriseId?: number; directionId?: number; serviceId?: number },
+    user: { id: number; role: string; enterpriseId?: number; subsidiaryId?: number; directionId?: number; serviceId?: number },
     options: { status?: string; courseId?: number; mandatory?: boolean; page: number; limit: number }
   ): Promise<{ data: any[]; total: number }> {
     const { clause, params: accessParams } = this.accessibleCoursesCondition('c', user);

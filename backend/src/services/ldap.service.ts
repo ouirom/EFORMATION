@@ -1,5 +1,5 @@
 import { Client } from 'ldapts';
-import { config } from '../config';
+import type { LdapConfig } from './sso-config.service';
 import { ApiError, BadRequestError, UnauthorizedError } from '../middleware/error.middleware';
 import { logger } from '../utils/logger';
 
@@ -29,9 +29,21 @@ function firstValue(attr: unknown): string | undefined {
 }
 
 export class LdapService {
-  static isConfigured(): boolean {
-    const { url, bindDN, bindPassword, searchBase } = config.ldap;
-    return !!(url && bindDN && bindPassword && searchBase);
+  /**
+   * Checks the service account can bind and search (admin "test" button),
+   * without authenticating any user. Throws a readable 400 on failure.
+   */
+  static async testConnection(ldap: LdapConfig): Promise<void> {
+    const client = new Client({ url: ldap.url, timeout: 10_000, connectTimeout: 10_000 });
+    try {
+      await client.bind(ldap.bindDN, ldap.bindPassword);
+      await client.search(ldap.searchBase, { scope: 'base', attributes: ['dn'] });
+    } catch (error: any) {
+      logger.warn({ err: error, url: ldap.url }, 'LDAP connection test failed');
+      throw BadRequestError(`LDAP connection failed: ${error?.message || 'unknown error'}`, 'LDAP_TEST_FAILED');
+    } finally {
+      await client.unbind().catch(() => {});
+    }
   }
 
   /**
@@ -39,16 +51,16 @@ export class LdapService {
    * binds with the service account to resolve the user's DN, then re-binds as
    * that DN with the submitted password to verify the credential itself.
    */
-  static async authenticate(username: string, password: string): Promise<LdapProfile> {
-    if (!this.isConfigured()) {
-      throw BadRequestError('LDAP authentication is not configured on this server', 'LDAP_NOT_CONFIGURED');
+  static async authenticate(username: string, password: string, ldap: LdapConfig | null): Promise<LdapProfile> {
+    if (!ldap) {
+      throw BadRequestError('LDAP authentication is not configured for this organization', 'LDAP_NOT_CONFIGURED');
     }
     if (!username || !password) {
       throw BadRequestError('Username and password are required');
     }
 
-    const { url, bindDN, bindPassword, searchBase, searchFilter, emailAttribute, nameAttribute } = config.ldap;
-    const client = new Client({ url });
+    const { url, bindDN, bindPassword, searchBase, searchFilter, emailAttribute, nameAttribute } = ldap;
+    const client = new Client({ url, timeout: 10_000, connectTimeout: 10_000 });
 
     try {
       await client.bind(bindDN, bindPassword);

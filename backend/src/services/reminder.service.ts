@@ -4,6 +4,7 @@ import { NotificationService } from './notification.service';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 import { teamAssignmentClauseForUserRow } from '../utils/teamAssignment';
+import { TenantPlatformSettings, TenantSettingsService } from './tenant-settings.service';
 
 interface PendingAssignmentRow {
   assignment_id: number;
@@ -20,11 +21,36 @@ interface PendingAssignmentRow {
 
 type ReminderType = 'upcoming' | 'urgent' | 'overdue' | 'escalation';
 
-// Days-until-due that trigger each learner-facing reminder. Overdue/escalation fire once,
-// one day after the deadline passes.
-const UPCOMING_DAYS_BEFORE = 7;
-const URGENT_DAYS_BEFORE = 1;
-const OVERDUE_DAYS_AFTER = 1;
+/**
+ * How late a missed overdue reminder / escalation may still go out. The thresholds
+ * are windows (a job that didn't run one day catches up the next), but a course
+ * that has been late for months must not trigger a burst of emails the first time
+ * this runs after a deploy or a settings change.
+ */
+const OVERDUE_CATCH_UP_DAYS = 7;
+
+/**
+ * Which learner reminder is due for a course `daysUntilDue` days from its
+ * deadline, under the organization's thresholds (Administration > Organisation).
+ * Each type is sent once per learner and assignment (assignment_reminders).
+ */
+export function learnerReminderType(
+  daysUntilDue: number,
+  settings: Pick<TenantPlatformSettings, 'assignmentReminderDays' | 'assignmentUrgentDays'>
+): Exclude<ReminderType, 'escalation'> | null {
+  if (daysUntilDue < 0) {
+    return -daysUntilDue <= OVERDUE_CATCH_UP_DAYS ? 'overdue' : null;
+  }
+  if (settings.assignmentUrgentDays > 0 && daysUntilDue <= settings.assignmentUrgentDays) return 'urgent';
+  if (settings.assignmentReminderDays > 0 && daysUntilDue <= settings.assignmentReminderDays) return 'upcoming';
+  return null;
+}
+
+/** Whether the manager should be alerted about a course `daysUntilDue` days from its deadline. */
+export function isEscalationDue(daysUntilDue: number, escalationDaysOverdue: number): boolean {
+  const daysLate = -daysUntilDue;
+  return escalationDaysOverdue > 0 && daysLate >= escalationDaysOverdue && daysLate <= escalationDaysOverdue + OVERDUE_CATCH_UP_DAYS;
+}
 
 function daysBetween(from: Date, to: Date): number {
   const msPerDay = 24 * 60 * 60 * 1000;
@@ -47,6 +73,7 @@ export class ReminderService {
        JOIN users u ON (
          (ca.assignment_type = 'user' AND u.id = ca.target_id)
          OR (ca.assignment_type = 'enterprise' AND u.enterprise_id = ca.target_id)
+         OR (ca.assignment_type = 'subsidiary' AND u.subsidiary_id = ca.target_id)
          OR (ca.assignment_type = 'direction' AND u.direction_id = ca.target_id)
          OR (ca.assignment_type = 'service' AND u.service_id = ca.target_id)
          OR (ca.assignment_type = 'role' AND u.role = ca.target_role)
@@ -64,20 +91,21 @@ export class ReminderService {
     let escalationsSent = 0;
 
     for (const row of pending) {
-      const daysUntilDue = daysBetween(today, new Date(row.due_date));
-      let reminderType: ReminderType | null = null;
+      // Thresholds of the learner's organization (cached per tenant). An organization
+      // with notifications off is skipped rather than marked as reminded, so the
+      // reminders still go out if it turns them back on in time.
+      const settings = await TenantSettingsService.get(row.tenant_id);
+      if (!settings.enableNotifications) continue;
 
-      if (daysUntilDue === UPCOMING_DAYS_BEFORE) reminderType = 'upcoming';
-      else if (daysUntilDue === URGENT_DAYS_BEFORE) reminderType = 'urgent';
-      else if (daysUntilDue === -OVERDUE_DAYS_AFTER) reminderType = 'overdue';
+      const daysUntilDue = daysBetween(today, new Date(row.due_date));
+      const reminderType = learnerReminderType(daysUntilDue, settings);
 
       if (reminderType) {
-        const sent = await this.sendIfNotAlreadySent(row, reminderType);
+        const sent = await this.sendIfNotAlreadySent(row, reminderType, daysUntilDue);
         if (sent) remindersSent++;
       }
 
-      // Escalate to the manager the same day the "overdue" reminder fires.
-      if (daysUntilDue === -OVERDUE_DAYS_AFTER) {
+      if (isEscalationDue(daysUntilDue, settings.escalationDaysOverdue)) {
         const escalated = await this.escalateToManager(row);
         if (escalated) escalationsSent++;
       }
@@ -103,22 +131,25 @@ export class ReminderService {
     );
   }
 
-  private static async sendIfNotAlreadySent(row: PendingAssignmentRow, type: ReminderType): Promise<boolean> {
+  private static async sendIfNotAlreadySent(row: PendingAssignmentRow, type: ReminderType, daysUntilDue: number): Promise<boolean> {
     if (await this.alreadySent(row.assignment_id, row.user_id, type)) return false;
 
     const dueDateLabel = new Date(row.due_date).toLocaleDateString('fr-FR');
+    // Thresholds are per organization now, so say how long is actually left.
+    const whenLabel =
+      daysUntilDue <= 0 ? "aujourd'hui" : daysUntilDue === 1 ? 'demain' : `dans ${daysUntilDue} jours`;
     const messages: Record<Exclude<ReminderType, 'escalation'>, { subject: string; body: string }> = {
       upcoming: {
         subject: `Formation "${row.course_title}" à terminer avant le ${dueDateLabel}`,
-        body: `Bonjour ${row.display_name},\n\nLa formation obligatoire "${row.course_title}" doit être terminée avant le ${dueDateLabel}. Il vous reste ${UPCOMING_DAYS_BEFORE} jours.`,
+        body: `Bonjour ${row.display_name},\n\nLa formation obligatoire "${row.course_title}" doit être terminée avant le ${dueDateLabel}. Il vous reste ${daysUntilDue} jour${daysUntilDue > 1 ? 's' : ''}.`,
       },
       urgent: {
-        subject: `Rappel : "${row.course_title}" à terminer demain`,
-        body: `Bonjour ${row.display_name},\n\nLa formation obligatoire "${row.course_title}" doit être terminée avant le ${dueDateLabel}, soit demain. Merci de la finaliser rapidement.`,
+        subject: `Rappel : "${row.course_title}" à terminer ${whenLabel}`,
+        body: `Bonjour ${row.display_name},\n\nLa formation obligatoire "${row.course_title}" doit être terminée avant le ${dueDateLabel}, soit ${whenLabel}. Merci de la finaliser rapidement.`,
       },
       overdue: {
         subject: `Formation "${row.course_title}" en retard`,
-        body: `Bonjour ${row.display_name},\n\nLa formation obligatoire "${row.course_title}" avait une échéance au ${dueDateLabel} et n'est toujours pas terminée. Votre responsable a été informé.`,
+        body: `Bonjour ${row.display_name},\n\nLa formation obligatoire "${row.course_title}" avait une échéance au ${dueDateLabel} et n'est toujours pas terminée. Merci de la terminer au plus vite.`,
       },
     };
 

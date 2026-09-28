@@ -1,19 +1,27 @@
 import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/components/ui/use-toast'
 import { api } from '@/services/api'
-import { Loader2, Lock, Eye, EyeOff, CheckCircle, ArrowLeft } from 'lucide-react'
+import { Loader2, Lock, Eye, EyeOff, CheckCircle, ArrowLeft, KeyRound } from 'lucide-react'
+import { DEFAULT_PASSWORD_POLICY, PasswordPolicy, isPasswordCompliant } from '@/lib/passwordPolicy'
+import { PasswordRequirements } from '@/components/PasswordRequirements'
 
 export default function ResetPasswordPage() {
   const { t } = useTranslation('auth')
   const { t: tCommon } = useTranslation('common')
   const [searchParams] = useSearchParams()
-  const token = searchParams.get('token')
+  const location = useLocation()
+  // From the emailed link (?token=), or handed over by the login page when the
+  // password expired (router state, so that token never lands in the URL/history).
+  const expiredState = location.state as { resetToken?: string; passwordExpired?: boolean } | null
+  const token = searchParams.get('token') || expiredState?.resetToken || null
+  const passwordExpired = !!expiredState?.passwordExpired
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -21,6 +29,14 @@ export default function ResetPasswordPage() {
   const [isSuccess, setIsSuccess] = useState(false)
   const navigate = useNavigate()
   const { toast } = useToast()
+
+  // The rules of this account's organization (resolved from the token server-side).
+  const { data: passwordPolicy = DEFAULT_PASSWORD_POLICY } = useQuery<PasswordPolicy>({
+    queryKey: ['password-policy', token],
+    queryFn: async () => (await api.get('/auth/password-policy', { params: { token } })).data.data,
+    enabled: !!token,
+    staleTime: 60 * 1000,
+  })
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -34,13 +50,7 @@ export default function ResetPasswordPage() {
       return
     }
 
-    if (
-      password.length < 8 ||
-      !/[A-Z]/.test(password) ||
-      !/[a-z]/.test(password) ||
-      !/\d/.test(password) ||
-      !/[!@#$%^&*(),.?":{}|<>]/.test(password)
-    ) {
+    if (!isPasswordCompliant(password, passwordPolicy)) {
       toast({
         title: tCommon('status.error'),
         description: t('resetPassword.errors.weakPassword'),
@@ -109,9 +119,12 @@ export default function ResetPasswordPage() {
   return (
     <Card className="w-full">
       <CardHeader className="space-y-1">
-        <CardTitle className="text-2xl text-center">{t('resetPassword.title')}</CardTitle>
+        {passwordExpired && <KeyRound className="h-10 w-10 mx-auto text-primary mb-2" />}
+        <CardTitle className="text-2xl text-center">
+          {passwordExpired ? t('resetPassword.expiredTitle') : t('resetPassword.title')}
+        </CardTitle>
         <CardDescription className="text-center">
-          {t('resetPassword.subtitle')}
+          {passwordExpired ? t('resetPassword.expiredDescription') : t('resetPassword.subtitle')}
         </CardDescription>
       </CardHeader>
       <form onSubmit={handleSubmit}>
@@ -139,9 +152,7 @@ export default function ResetPasswordPage() {
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground">
-              {t('resetPassword.passwordHint')}
-            </p>
+            <PasswordRequirements password={password} policy={passwordPolicy} />
           </div>
           <div className="space-y-2">
             <Label htmlFor="confirmPassword">{t('resetPassword.confirmPassword')}</Label>

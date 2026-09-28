@@ -9,6 +9,7 @@ import { db, IS_PG } from '../database/db-helpers';
 import { asyncHandler } from '../middleware/asyncHandler';
 import { teamAssignmentClause } from '../utils/teamAssignment';
 import { dayKey, getTenantTimezone, shiftDayKey } from '../utils/tenantTime';
+import { TenantPlatformSettings, TenantSettingsService, levelFromXp } from '../services/tenant-settings.service';
 
 const router = Router();
 
@@ -56,6 +57,22 @@ const lessonCourseJoin = (lpAlias: string) =>
   `LEFT JOIN lessons vl ON vl.id = ${lpAlias}.lesson_id AND vl.deleted_at IS NULL
    LEFT JOIN modules vm ON vm.id = vl.module_id
    LEFT JOIN courses vc ON vc.id = vm.course_id AND vc.is_published = ${db.bool(true)} AND vc.deleted_at IS NULL`;
+/**
+ * XP of a learner under the organization's scale (Administration > Organisation).
+ * The numbers come from validated integer settings, inlined so the same
+ * expression works in the leaderboard's SQL.
+ */
+export function xpFor(
+  counts: { coursesCompleted: number; quizzesPassed: number; lessonsCompleted: number },
+  s: Pick<TenantPlatformSettings, 'xpPerCourse' | 'xpPerQuiz' | 'xpPerLesson'>
+): number {
+  return counts.coursesCompleted * s.xpPerCourse + counts.quizzesPassed * s.xpPerQuiz + counts.lessonsCompleted * s.xpPerLesson;
+}
+
+const xpSql = (s: Pick<TenantPlatformSettings, 'xpPerCourse' | 'xpPerQuiz' | 'xpPerLesson'>) =>
+  `(COALESCE(e.completed, 0) * ${Math.trunc(Number(s.xpPerCourse))} + COALESCE(q.passed, 0) * ${Math.trunc(Number(s.xpPerQuiz))}` +
+  ` + COALESCE(l.completed, 0) * ${Math.trunc(Number(s.xpPerLesson))})`;
+
 const quizCourseJoin = (qaAlias: string) =>
   `JOIN quizzes vq ON vq.id = ${qaAlias}.quiz_id
    JOIN lessons vl ON vl.id = vq.lesson_id AND vl.deleted_at IS NULL
@@ -78,6 +95,7 @@ router.get('/my-stats', authenticate, asyncHandler(async (req: AuthRequest, res)
     badgeStats,
     activityDates,
     timeZone,
+    settings,
   ] = await Promise.all([
     // Course enrollment stats
     DatabaseService.query<any>(
@@ -133,6 +151,7 @@ router.get('/my-stats', authenticate, asyncHandler(async (req: AuthRequest, res)
       { tenantId, userId }
     ),
     getTenantTimezone(tenantId),
+    TenantSettingsService.get(tenantId),
   ]);
 
   const enrollment = enrollmentStats[0] || {};
@@ -148,7 +167,14 @@ router.get('/my-stats', authenticate, asyncHandler(async (req: AuthRequest, res)
   const activeDays = new Set(activityDates.map((r) => dayKey(new Date(r.activity_at), timeZone)));
   const streak = computeCurrentStreak(activeDays, timeZone);
   const longestStreak = computeLongestStreak(activeDays);
-  const xp = (enrollment.completed || 0) * 100 + (quiz.passed || 0) * 50 + (lesson.completed || 0) * 10;
+  const xp = xpFor(
+    {
+      coursesCompleted: Number(enrollment.completed) || 0,
+      quizzesPassed: Number(quiz.passed) || 0,
+      lessonsCompleted: Number(lesson.completed) || 0,
+    },
+    settings
+  );
 
   res.json({
     success: true,
@@ -167,6 +193,13 @@ router.get('/my-stats', authenticate, asyncHandler(async (req: AuthRequest, res)
       streak,
       longestStreak,
       xp,
+      // Computed here so the dashboard and the profile can't disagree on the level again.
+      ...levelFromXp(xp, settings.xpPerLevel),
+      gamification: {
+        xpEnabled: settings.enableXp,
+        badgesEnabled: settings.enableBadges,
+        leaderboardScope: settings.leaderboardScope,
+      },
       avgProgress: Math.round(enrollment.avg_progress || 0),
     },
   });
@@ -204,10 +237,11 @@ router.get('/my-courses', authenticate, asyncHandler(async (req: AuthRequest, re
          AND (
            (ca.assignment_type = 'user' AND ca.target_id = @userId)
            OR (ca.assignment_type = 'enterprise' AND ca.target_id = @enterpriseId)
+           OR (ca.assignment_type = 'subsidiary' AND ca.target_id = @subsidiaryId)
            OR (ca.assignment_type = 'direction' AND ca.target_id = @directionId)
            OR (ca.assignment_type = 'service' AND ca.target_id = @serviceId)
            OR (ca.assignment_type = 'role' AND ca.target_role = @userRole)
-           OR ${teamAssignmentClause('ca', 'userId', 'enterpriseId', 'directionId', 'serviceId')}
+           OR ${teamAssignmentClause('ca', 'userId', 'enterpriseId', 'directionId', 'serviceId', 'subsidiaryId')}
          )
        GROUP BY ca.course_id
      ) a ON a.course_id = c.id
@@ -218,6 +252,7 @@ router.get('/my-courses', authenticate, asyncHandler(async (req: AuthRequest, re
       tenantId,
       userId,
       enterpriseId: enterpriseId || 0,
+      subsidiaryId: req.user!.subsidiaryId || 0,
       directionId: directionId || 0,
       serviceId: serviceId || 0,
       userRole,
@@ -251,65 +286,65 @@ router.get('/my-courses', authenticate, asyncHandler(async (req: AuthRequest, re
 
 /**
  * @route GET /api/v1/analytics/leaderboard
- * @desc Top learners in the tenant by the same XP formula as /my-stats
- * (completed courses * 100 + passed quizzes * 50 + completed lessons * 10,
- * counting only published, non-deleted courses -- same filter as /my-stats),
- * so the dashboard's leaderboard reflects genuine activity instead of
- * placeholder names.
+ * @desc Top learners by the same XP as /my-stats (organization's XP scale,
+ * counting only published, non-deleted courses), within the organization's
+ * leaderboard scope: the whole organization, the requester's direction or
+ * service, or hidden (empty list). Empty too when XP is turned off.
  */
 router.get('/leaderboard', authenticate, asyncHandler(async (req: AuthRequest, res) => {
   const tenantId = req.user!.tenantId;
   const limit = Math.min(parseInt(req.query.limit as string, 10) || 5, 20);
+  const settings = await TenantSettingsService.get(tenantId);
+  const scope = settings.enableXp ? settings.leaderboardScope : 'hidden';
+
+  const params: Record<string, unknown> = { tenantId, limit };
+  let scopeClause = '';
+  if (scope === 'direction' || scope === 'service') {
+    const unitId = scope === 'direction' ? req.user!.directionId : req.user!.serviceId;
+    if (!unitId) {
+      // Nobody to compare with outside an org unit.
+      res.json({ success: true, data: [], meta: { scope } });
+      return;
+    }
+    scopeClause = scope === 'direction' ? 'AND u.direction_id = @unitId' : 'AND u.service_id = @unitId';
+    params.unitId = unitId;
+  }
+  if (scope === 'hidden') {
+    res.json({ success: true, data: [], meta: { scope } });
+    return;
+  }
+
+  const body = `u.id, u.display_name, u.avatar_url, ${xpSql(settings)} as xp
+         FROM users u
+         LEFT JOIN (
+           SELECT en.user_id, SUM(CASE WHEN en.completed_at IS NOT NULL THEN 1 ELSE 0 END) as completed
+           FROM enrollments en JOIN courses co ON co.id = en.course_id
+           WHERE en.tenant_id = @tenantId AND co.is_published = ${db.bool(true)} AND co.deleted_at IS NULL
+           GROUP BY en.user_id
+         ) e ON e.user_id = u.id
+         LEFT JOIN (
+           SELECT qa.user_id, SUM(CASE WHEN qa.passed = ${db.bool(true)} THEN 1 ELSE 0 END) as passed
+           FROM quiz_attempts qa ${quizCourseJoin('qa')}
+           WHERE qa.tenant_id = @tenantId GROUP BY qa.user_id
+         ) q ON q.user_id = u.id
+         LEFT JOIN (
+           SELECT lp.user_id, SUM(CASE WHEN vc.id IS NOT NULL AND lp.status = 'completed' THEN 1 ELSE 0 END) as completed
+           FROM lesson_progress lp ${lessonCourseJoin('lp')}
+           WHERE lp.tenant_id = @tenantId GROUP BY lp.user_id
+         ) l ON l.user_id = u.id
+         WHERE u.tenant_id = @tenantId AND u.deleted_at IS NULL ${scopeClause}
+         ORDER BY xp DESC`;
 
   const rows = await DatabaseService.query<any>(
-    IS_PG
-      ? `SELECT u.id, u.display_name, u.avatar_url,
-                (COALESCE(e.completed, 0) * 100 + COALESCE(q.passed, 0) * 50 + COALESCE(l.completed, 0) * 10) as xp
-         FROM users u
-         LEFT JOIN (
-           SELECT en.user_id, SUM(CASE WHEN en.completed_at IS NOT NULL THEN 1 ELSE 0 END) as completed
-           FROM enrollments en JOIN courses co ON co.id = en.course_id
-           WHERE en.tenant_id = @tenantId AND co.is_published = ${db.bool(true)} AND co.deleted_at IS NULL
-           GROUP BY en.user_id
-         ) e ON e.user_id = u.id
-         LEFT JOIN (
-           SELECT qa.user_id, SUM(CASE WHEN qa.passed = ${db.bool(true)} THEN 1 ELSE 0 END) as passed
-           FROM quiz_attempts qa ${quizCourseJoin('qa')}
-           WHERE qa.tenant_id = @tenantId GROUP BY qa.user_id
-         ) q ON q.user_id = u.id
-         LEFT JOIN (
-           SELECT lp.user_id, SUM(CASE WHEN vc.id IS NOT NULL AND lp.status = 'completed' THEN 1 ELSE 0 END) as completed
-           FROM lesson_progress lp ${lessonCourseJoin('lp')}
-           WHERE lp.tenant_id = @tenantId GROUP BY lp.user_id
-         ) l ON l.user_id = u.id
-         WHERE u.tenant_id = @tenantId AND u.deleted_at IS NULL
-         ORDER BY xp DESC
-         LIMIT @limit`
-      : `SELECT TOP (@limit) u.id, u.display_name, u.avatar_url,
-                (COALESCE(e.completed, 0) * 100 + COALESCE(q.passed, 0) * 50 + COALESCE(l.completed, 0) * 10) as xp
-         FROM users u
-         LEFT JOIN (
-           SELECT en.user_id, SUM(CASE WHEN en.completed_at IS NOT NULL THEN 1 ELSE 0 END) as completed
-           FROM enrollments en JOIN courses co ON co.id = en.course_id
-           WHERE en.tenant_id = @tenantId AND co.is_published = ${db.bool(true)} AND co.deleted_at IS NULL
-           GROUP BY en.user_id
-         ) e ON e.user_id = u.id
-         LEFT JOIN (
-           SELECT qa.user_id, SUM(CASE WHEN qa.passed = ${db.bool(true)} THEN 1 ELSE 0 END) as passed
-           FROM quiz_attempts qa ${quizCourseJoin('qa')}
-           WHERE qa.tenant_id = @tenantId GROUP BY qa.user_id
-         ) q ON q.user_id = u.id
-         LEFT JOIN (
-           SELECT lp.user_id, SUM(CASE WHEN vc.id IS NOT NULL AND lp.status = 'completed' THEN 1 ELSE 0 END) as completed
-           FROM lesson_progress lp ${lessonCourseJoin('lp')}
-           WHERE lp.tenant_id = @tenantId GROUP BY lp.user_id
-         ) l ON l.user_id = u.id
-         WHERE u.tenant_id = @tenantId AND u.deleted_at IS NULL
-         ORDER BY xp DESC`,
-    { tenantId, limit }
+    IS_PG ? `SELECT ${body} LIMIT @limit` : `SELECT TOP (@limit) ${body}`,
+    params
   );
 
-  res.json({ success: true, data: rows.filter((r: any) => r.xp > 0).slice(0, limit) });
+  res.json({
+    success: true,
+    data: rows.map((r: any) => ({ ...r, xp: Number(r.xp) })).filter((r: any) => r.xp > 0).slice(0, limit),
+    meta: { scope },
+  });
 }));
 
 /**

@@ -14,6 +14,7 @@ export interface UserPayload {
   avatarUrl?: string | null;
   role: string;
   enterpriseId?: number;
+  subsidiaryId?: number;
   directionId?: number;
   serviceId?: number;
 }
@@ -60,11 +61,12 @@ const authenticateHandler = async (
       avatar_url: string | null;
       role: string;
       enterprise_id: number;
+      subsidiary_id: number | null;
       direction_id: number;
       service_id: number;
       is_active: boolean;
     }>(
-      `SELECT id, tenant_id, email, display_name, avatar_url, role, enterprise_id, direction_id, service_id, is_active
+      `SELECT id, tenant_id, email, display_name, avatar_url, role, enterprise_id, subsidiary_id, direction_id, service_id, is_active
        FROM users WHERE id = @id AND deleted_at IS NULL AND (tenant_id = @tenantId OR role = 'super_admin')`,
       { id: payload.id, tenantId: payload.tenantId }
     );
@@ -83,6 +85,7 @@ const authenticateHandler = async (
       avatarUrl: user.avatar_url,
       role: user.role,
       enterpriseId: isSuperAdmin ? undefined : user.enterprise_id,
+      subsidiaryId: isSuperAdmin || !user.subsidiary_id ? undefined : user.subsidiary_id,
       directionId: isSuperAdmin ? undefined : user.direction_id,
       serviceId: isSuperAdmin ? undefined : user.service_id,
     };

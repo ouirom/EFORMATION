@@ -1,11 +1,12 @@
 import { DatabaseService } from './database.service';
 import { PendingNotificationService } from './pending-notification.service';
-import { TenantSettingsService } from './tenant-settings.service';
+import { DEFAULT_PLATFORM_SETTINGS, TenantSettingsService } from './tenant-settings.service';
 import { db } from '../database/db-helpers';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 
-const RENEWAL_REMINDER_DAYS_BEFORE = 30;
+// Organizations without a settings row get the default delay.
+const REMINDER_DAYS_SQL = `COALESCE(ts.certificate_reminder_days, ${Number(DEFAULT_PLATFORM_SETTINGS.certificateReminderDays)})`;
 
 interface ExpiringCertificateRow {
   id: number;
@@ -20,7 +21,8 @@ interface ExpiringCertificateRow {
 export class CertificateService {
   /**
    * Daily job: notifies certificate holders whose certificate expires within
-   * RENEWAL_REMINDER_DAYS_BEFORE days and hasn't already been reminded.
+   * their organization's reminder delay (Administration > Organisation, 0 = off)
+   * and hasn't already been reminded. Revoked certificates are left alone.
    */
   static async runExpiryReminders(): Promise<{ remindersSent: number }> {
     const expiringSoon = await DatabaseService.query<ExpiringCertificateRow>(
@@ -28,10 +30,12 @@ export class CertificateService {
        FROM certificates c
        JOIN users u ON u.id = c.user_id
        JOIN courses co ON co.id = c.course_id
+       LEFT JOIN tenant_settings ts ON ts.tenant_id = c.tenant_id
        WHERE c.expires_at IS NOT NULL
          AND c.renewal_reminder_sent_at IS NULL
-         AND c.expires_at BETWEEN ${db.now()} AND ${db.dateAdd('day', '@daysBefore', db.now())}`,
-      { daysBefore: RENEWAL_REMINDER_DAYS_BEFORE }
+         AND c.revoked_at IS NULL
+         AND ${REMINDER_DAYS_SQL} > 0
+         AND c.expires_at BETWEEN ${db.now()} AND ${db.dateAdd('day', REMINDER_DAYS_SQL, db.now())}`
     );
 
     let remindersSent = 0;

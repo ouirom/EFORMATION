@@ -95,6 +95,7 @@ interface ExtendedAPI extends AxiosInstance {
   };
   organizations: {
     getEnterprises: () => Promise<any[]>;
+    getSubsidiaries: (enterpriseId?: number) => Promise<any[]>;
     getDirections: (enterpriseId?: number) => Promise<any[]>;
     getServices: (directionId?: number) => Promise<any[]>;
     getCurrent: () => Promise<any>;
@@ -359,6 +360,8 @@ api.jobTitles = {
 
 api.organizations = {
   getEnterprises: () => api.get('/organizations/enterprises').then(r => r.data.data || []),
+  getSubsidiaries: (enterpriseId?: number) =>
+    api.get('/organizations/subsidiaries', { params: enterpriseId ? { enterpriseId } : {} }).then(r => r.data.data || []),
   getDirections: (enterpriseId?: number) =>
     api.get('/organizations/directions', { params: enterpriseId ? { enterpriseId } : {} }).then(r => r.data.data || []),
   getServices: (directionId?: number) =>

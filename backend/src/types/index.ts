@@ -71,7 +71,7 @@ export interface Course {
 }
 
 export interface AudienceScope {
-  level: 'general' | 'enterprise' | 'direction' | 'service' | 'role';
+  level: 'general' | 'enterprise' | 'subsidiary' | 'direction' | 'service' | 'role';
   ids?: number[];
   roles?: UserRole[];
 }

@@ -24,7 +24,7 @@ import {
 } from 'lucide-react'
 
 interface SelectedMember {
-  memberType: 'user' | 'enterprise' | 'direction' | 'service'
+  memberType: 'user' | 'enterprise' | 'subsidiary' | 'direction' | 'service'
   targetId: number
   label: string
 }
@@ -106,6 +106,7 @@ function TeamForm({
             <SelectItem value="user">{t('teamsAdmin.form.types.user')}</SelectItem>
             <SelectItem value="direction">{t('teamsAdmin.form.types.direction')}</SelectItem>
             <SelectItem value="service">{t('teamsAdmin.form.types.service')}</SelectItem>
+            <SelectItem value="subsidiary">{t('teamsAdmin.form.types.subsidiary')}</SelectItem>
             <SelectItem value="enterprise">{t('teamsAdmin.form.types.enterprise')}</SelectItem>
           </SelectContent>
         </Select>
@@ -148,7 +149,7 @@ function TeamForm({
           <p className="text-sm text-muted-foreground">{t('teamsAdmin.form.noMembersYet')}</p>
         ) : (
           <div className="space-y-2">
-            {(['user', 'direction', 'service', 'enterprise'] as const).map((type) =>
+            {(['user', 'direction', 'service', 'subsidiary', 'enterprise'] as const).map((type) =>
               grouped[type]?.length ? (
                 <div key={type} className="space-y-1">
                   <p className="text-xs font-medium text-muted-foreground">{t(`teamsAdmin.form.types.${type}`)}</p>
@@ -217,6 +218,12 @@ export default function AdminTeamsPage() {
     queryKey: ['enterprises'],
     queryFn: () => api.organizations.getEnterprises(),
     enabled: isDialogOpen && pickerType === 'enterprise',
+  })
+
+  const { data: subsidiaries = [] } = useQuery({
+    queryKey: ['subsidiaries'],
+    queryFn: () => api.organizations.getSubsidiaries(),
+    enabled: isDialogOpen && pickerType === 'subsidiary',
   })
 
   const resetForm = () => {
@@ -291,6 +298,7 @@ export default function AdminTeamsPage() {
       case 'direction': return directions
       case 'service': return services
       case 'enterprise': return enterprises
+      case 'subsidiary': return subsidiaries
       default: return []
     }
   }

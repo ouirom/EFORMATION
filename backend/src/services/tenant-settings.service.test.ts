@@ -139,7 +139,13 @@ describe('self-registration', () => {
   it('exposes whether sign-ups are open before login', async () => {
     mockDb(row({ allow_self_registration: false, default_language: 'en' }));
     const response = await request(makeApp()).get('/auth/registration-settings').set('X-Tenant-ID', '10');
-    expect(response.body.data).toEqual({ allowSelfRegistration: false, defaultLanguage: 'en' });
+    expect(response.body.data).toEqual({
+      allowSelfRegistration: false,
+      defaultLanguage: 'en',
+      requireApproval: true,
+      allowedEmailDomains: [],
+      passwordPolicy: { minLength: 8, requireComplexity: true },
+    });
   });
 });
 

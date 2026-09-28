@@ -185,7 +185,7 @@ describe('POST /users externe/stagiaire roles', () => {
     const response = await request(makeApp())
       .post('/users')
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ email: `new-${role}@test.com`, password: 'password123', displayName: `New ${role}`, role });
+      .send({ email: `new-${role}@test.com`, password: 'Password123!', displayName: `New ${role}`, role });
 
     expect(response.status).toBe(201);
     expect(mockedQuery).toHaveBeenCalledWith(
@@ -212,7 +212,7 @@ describe('POST /users externe/stagiaire roles', () => {
     const response = await request(makeApp())
       .post('/users')
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ email: 'new-externe@test.com', password: 'password123', displayName: 'New Externe', role: 'externe', supervisorId: 17 });
+      .send({ email: 'new-externe@test.com', password: 'Password123!', displayName: 'New Externe', role: 'externe', supervisorId: 17 });
 
     expect(response.status).toBe(201);
   });
@@ -236,7 +236,7 @@ describe('POST /users duplicate email handling', () => {
     const response = await request(makeApp())
       .post('/users')
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ email: 'taken@test.com', password: 'password123', displayName: 'Dup', role: 'agent' });
+      .send({ email: 'taken@test.com', password: 'Password123!', displayName: 'Dup', role: 'agent' });
 
     expect(response.status).toBe(409);
     const emailCheckCall = mockedQuery.mock.calls.find(([q]: [string]) =>
@@ -263,7 +263,7 @@ describe('POST /users duplicate email handling', () => {
     const response = await request(makeApp())
       .post('/users')
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ email: 'freed-up@test.com', password: 'password123', displayName: 'Reused Email', role: 'agent' });
+      .send({ email: 'freed-up@test.com', password: 'Password123!', displayName: 'Reused Email', role: 'agent' });
 
     expect(response.status).toBe(201);
   });
@@ -290,7 +290,7 @@ describe('POST /users supervisorId assignment', () => {
     const response = await request(makeApp())
       .post('/users')
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ email: 'new-agent@test.com', password: 'password123', displayName: 'New Agent', role: 'agent', supervisorId: 17 });
+      .send({ email: 'new-agent@test.com', password: 'Password123!', displayName: 'New Agent', role: 'agent', supervisorId: 17 });
 
     expect(response.status).toBe(201);
   });
@@ -310,7 +310,7 @@ describe('POST /users supervisorId assignment', () => {
     const response = await request(makeApp())
       .post('/users')
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ email: 'new-agent2@test.com', password: 'password123', displayName: 'New Agent 2', role: 'agent', supervisorId: 3 });
+      .send({ email: 'new-agent2@test.com', password: 'Password123!', displayName: 'New Agent 2', role: 'agent', supervisorId: 3 });
 
     expect(response.status).toBe(400);
   });
@@ -328,7 +328,7 @@ describe('POST /users supervisorId assignment', () => {
     const response = await request(makeApp())
       .post('/users')
       .set('Authorization', `Bearer ${adminToken}`)
-      .send({ email: 'new-agent3@test.com', password: 'password123', displayName: 'New Agent 3', role: 'agent', supervisorId: 999 });
+      .send({ email: 'new-agent3@test.com', password: 'Password123!', displayName: 'New Agent 3', role: 'agent', supervisorId: 999 });
 
     expect(response.status).toBe(400);
   });

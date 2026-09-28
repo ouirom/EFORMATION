@@ -15,6 +15,7 @@ import { getInitials, formatDateTime, dateLocale } from '@/lib/utils'
 import { LessonRow } from '@/components/LessonRow'
 import { categoryGradient, useCategoryLabel } from '@/lib/categories'
 import { useTenantFeatures } from '@/lib/tenantSettings'
+import { levelFromXp } from '@/lib/gamification'
 import {
   BookOpen,
   Clock,
@@ -40,12 +41,22 @@ import { api } from '@/services/api'
 export default function DashboardPage() {
   const { t } = useTranslation('dashboard')
   const { user } = useAuth()
+  // Modules and gamification of the organization (Administration > Organisation).
+  const {
+    liveSessions: liveSessionsEnabled,
+    badges: badgesEnabled,
+    xp: xpEnabled,
+    leaderboardScope,
+    xpPerLevel,
+  } = useTenantFeatures()
+  const showLeaderboard = xpEnabled && leaderboardScope !== 'hidden'
 
   // Badges de l'utilisateur
   const { data: userBadgesData, isLoading: loadingBadges } = useQuery({
     queryKey: ['my-badges-dashboard'],
     queryFn: () => api.badges.getUserBadges(),
     staleTime: 60 * 1000,
+    enabled: badgesEnabled,
   })
 
   // Statistiques globales de l'utilisateur
@@ -61,6 +72,7 @@ export default function DashboardPage() {
     queryKey: ['leaderboard'],
     queryFn: () => api.analytics.getLeaderboard(5),
     staleTime: 60 * 1000,
+    enabled: showLeaderboard,
   })
 
   // Cours attribués + cours où l'utilisateur est inscrit, avec progression, nombre de
@@ -81,7 +93,6 @@ export default function DashboardPage() {
   })
 
   // Sessions Live à venir (seulement si l'organisation n'a pas désactivé le module)
-  const { liveSessions: liveSessionsEnabled } = useTenantFeatures()
   const { data: liveSessions = [], isLoading: loadingLiveSessions } = useQuery({
     queryKey: ['live-sessions'],
     queryFn: () => api.liveSessions.list(),
@@ -226,9 +237,9 @@ export default function DashboardPage() {
     avgProgress: stats?.avgProgress || 0,
   }
 
-  // Calcul du niveau d'apprentissage dynamique
+  // Niveau d'apprentissage, selon le barème de l'organisation (même calcul que le profil)
   const currentXp = dashboardStats.xp || 0
-  const userLevel = Math.floor(currentXp / 250) + 1
+  const userLevel = levelFromXp(currentXp, xpPerLevel).level
 
   return (
     <div className="space-y-6">
@@ -249,6 +260,7 @@ export default function DashboardPage() {
               {t('streakDays', { count: dashboardStats.streak })}
             </span>
           </div>
+          {xpEnabled && (
           <div className="flex items-center gap-2.5 px-3.5 py-1.5 rounded-xl bg-primary/10 border border-primary/20">
             <Target className="h-5 w-5 text-primary" />
             <div className="flex items-center gap-1.5">
@@ -256,6 +268,7 @@ export default function DashboardPage() {
               <span className="text-xs text-muted-foreground font-medium">({currentXp} XP)</span>
             </div>
           </div>
+          )}
         </div>
       </div>
 
@@ -327,9 +340,11 @@ export default function DashboardPage() {
                 ? `${dashboardStats.totalHours}h ${dashboardStats.totalMinutes % 60}min`
                 : `${dashboardStats.totalMinutes}min`}
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {t('stats.badgesEarned', { count: dashboardStats.badges })}
-            </p>
+            {badgesEnabled && (
+              <p className="text-xs text-muted-foreground mt-1">
+                {t('stats.badgesEarned', { count: dashboardStats.badges })}
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -677,6 +692,7 @@ export default function DashboardPage() {
           )}
 
           {/* Badges obtenus (Design soigné & épuré) */}
+          {badgesEnabled && (
           <Card className="border-border/80 bg-gradient-to-br from-card to-muted/20">
             <CardHeader className="pb-3">
               <div className="flex items-center gap-2">
@@ -726,14 +742,19 @@ export default function DashboardPage() {
               </Link>
             </CardContent>
           </Card>
+          )}
 
-          {/* Classement / Leaderboard */}
+          {/* Classement / Leaderboard (portée choisie par l'organisation) */}
+          {showLeaderboard && (
           <Card className="border-border/80">
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-semibold flex items-center gap-2">
                 <Trophy className="h-4 w-4 text-amber-500" />
                 {t('leaderboard.title')}
               </CardTitle>
+              {leaderboardScope !== 'organization' && (
+                <p className="text-xs text-muted-foreground">{t(`leaderboard.scope.${leaderboardScope}`)}</p>
+              )}
             </CardHeader>
             <CardContent className="space-y-2">
               {loadingLeaderboard ? <BlockSkeleton rows={3} /> : leaderboard.length === 0 ? (
@@ -752,6 +773,7 @@ export default function DashboardPage() {
               )}
             </CardContent>
           </Card>
+          )}
         </div>
       </div>
     </div>

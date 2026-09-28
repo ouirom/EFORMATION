@@ -42,6 +42,7 @@ import {
 } from 'lucide-react'
 import { api } from '@/services/api'
 import { fileService } from '@/services/file.service'
+import { useOrganization } from '@/lib/tenantSettings'
 
 interface Module {
   id: number
@@ -129,6 +130,11 @@ export default function AdminCourseEditPage() {
   const [lessonUploadFile, setLessonUploadFile] = useState<File | null>(null)
   const [lessonUploadUploading, setLessonUploadUploading] = useState(false)
   const [lessonUploadProgress, setLessonUploadProgress] = useState(0)
+  const { data: organization } = useOrganization()
+  const quizDefaults = {
+    passingScore: organization?.settings?.quizDefaultPassingScore ?? 70,
+    maxAttempts: organization?.settings?.quizDefaultMaxAttempts ?? 3,
+  }
   const [quizForm, setQuizForm] = useState({
     title: '',
     description: '',
@@ -137,6 +143,7 @@ export default function AdminCourseEditPage() {
     randomized: false,
     questions_to_draw: null as number | null,
     time_limit_minutes: null as number | null,
+    // 0 = unlimited
     max_attempts: 3,
     expires_at: '',
     badge_id: null as number | null,
@@ -533,15 +540,16 @@ export default function AdminCourseEditPage() {
   }
 
   const resetQuizForm = () => {
+    // New quizzes start from the organization's defaults (Administration > Organisation).
     setQuizForm({
       title: '',
       description: '',
       instructions: '',
-      passing_score: 70,
+      passing_score: quizDefaults.passingScore,
       randomized: false,
       questions_to_draw: null,
       time_limit_minutes: null,
-      max_attempts: 3,
+      max_attempts: quizDefaults.maxAttempts,
       expires_at: '',
       badge_id: null,
       certificate_enabled: false,
@@ -568,7 +576,8 @@ export default function AdminCourseEditPage() {
       randomized: quiz.randomized || false,
       questions_to_draw: quiz.questions_to_draw ?? null,
       time_limit_minutes: quiz.time_limit_minutes || null,
-      max_attempts: quiz.max_attempts || 3,
+      // NULL = unlimited: shown as 0, not silently turned into 3 on the next save.
+      max_attempts: quiz.max_attempts ?? 0,
       expires_at: quiz.expires_at ? quiz.expires_at.split('T')[0] : '',
       badge_id: quiz.badge_id || null,
       certificate_enabled: quiz.certificate_enabled || false,
@@ -739,7 +748,7 @@ export default function AdminCourseEditPage() {
       certificateEnabled: quizForm.certificate_enabled,
       showCorrectAnswers: quizForm.show_correct_answers,
       shuffleChoices: quizForm.shuffle_choices,
-      maxAttempts: quizForm.max_attempts || 3,
+      maxAttempts: quizForm.max_attempts || 0,
       questionsToDraw: quizForm.questions_to_draw || null,
     };
     if (quizForm.time_limit_minutes !== null && quizForm.time_limit_minutes !== undefined) {
@@ -1357,7 +1366,10 @@ export default function AdminCourseEditPage() {
                 min="0"
                 max="100"
                 value={quizForm.passing_score}
-                onChange={(e) => setQuizForm({ ...quizForm, passing_score: parseInt(e.target.value) || 70 })}
+                onChange={(e) => {
+                  const score = parseInt(e.target.value)
+                  setQuizForm({ ...quizForm, passing_score: Number.isNaN(score) ? 0 : Math.min(100, Math.max(0, score)) })
+                }}
               />
             </div>
             <div className="flex flex-col sm:flex-row gap-4">
@@ -1377,9 +1389,9 @@ export default function AdminCourseEditPage() {
                 <Input
                   id="quiz-max-attempts"
                   type="number"
-                  min="1"
-                  value={quizForm.max_attempts ?? 3}
-                  onChange={(e) => setQuizForm({ ...quizForm, max_attempts: e.target.value ? parseInt(e.target.value) : 3 })}
+                  min="0"
+                  value={quizForm.max_attempts ?? 0}
+                  onChange={(e) => setQuizForm({ ...quizForm, max_attempts: Math.max(0, parseInt(e.target.value) || 0) })}
                   placeholder={t('courseEdit.quizDialog.maxAttemptsPlaceholder')}
                 />
               </div>

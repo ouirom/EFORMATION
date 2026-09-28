@@ -22,6 +22,10 @@ import {
 } from '@/components/ui/dialog'
 import { getInitials, formatDate, formatRelativeTime } from '@/lib/utils'
 import { EmailConfirmDialog, PendingNotification } from '@/components/EmailConfirmDialog'
+import { PasswordRequirements } from '@/components/PasswordRequirements'
+import { isPasswordCompliant, policyFromSettings } from '@/lib/passwordPolicy'
+import { useOrganization } from '@/lib/tenantSettings'
+import { levelFromXp } from '@/lib/gamification'
 import {
   User,
   Mail,
@@ -38,6 +42,7 @@ import {
   Key,
   Save,
   Loader2,
+  Download,
 } from 'lucide-react'
 import { api } from '@/services/api'
 import { fileService } from '@/services/file.service'
@@ -86,6 +91,8 @@ export default function ProfilePage() {
     newPassword: '',
     confirmPassword: '',
   })
+  const { data: organization } = useOrganization()
+  const passwordPolicy = policyFromSettings(organization?.settings)
 
   // job_title isn't part of the JWT/session payload (AuthContext's `user`),
   // so it's fetched separately -- same pattern as the stats/badges/certificates
@@ -213,6 +220,7 @@ export default function ProfilePage() {
   }
 
   const handleChangePassword = () => {
+    // Same rules as the server: the organization's password policy.
     if (!passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword) {
       toast({ title: tCommon('status.error'), description: t('toasts.fillAllFieldsDescription'), variant: 'destructive' })
       return
@@ -221,7 +229,7 @@ export default function ProfilePage() {
       toast({ title: tCommon('status.error'), description: t('toasts.passwordMismatchDescription'), variant: 'destructive' })
       return
     }
-    if (passwordForm.newPassword.length < 8) {
+    if (!isPasswordCompliant(passwordForm.newPassword, passwordPolicy)) {
       toast({ title: tCommon('status.error'), description: t('toasts.passwordTooShortDescription'), variant: 'destructive' })
       return
     }
@@ -229,6 +237,27 @@ export default function ProfilePage() {
       currentPassword: passwordForm.currentPassword,
       newPassword: passwordForm.newPassword,
     })
+  }
+
+  // GDPR access / portability: everything stored about me, as a JSON file.
+  const [isExporting, setIsExporting] = useState(false)
+  const handleExportData = async () => {
+    setIsExporting(true)
+    try {
+      const response = await api.get('/users/me/export', { responseType: 'blob' })
+      const url = URL.createObjectURL(response.data)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `mes-donnees-e-formation.json`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+    } catch {
+      toast({ title: tCommon('status.error'), description: t('toasts.exportErrorDescription'), variant: 'destructive' })
+    } finally {
+      setIsExporting(false)
+    }
   }
 
   const handleLogout = () => {
@@ -249,8 +278,12 @@ export default function ProfilePage() {
     currentStreak: stats?.streak || 0,
     longestStreak: stats?.longestStreak || 0,
     xp,
-    level: Math.floor(xp / 250),
   }
+  // Organization's scale; levels start at 1, exactly like the dashboard (the
+  // profile used to show one level less than the dashboard for the same XP).
+  const xpEnabled = organization?.settings?.enableXp ?? true
+  const badgesEnabled = organization?.settings?.enableBadges ?? true
+  const levelInfo = levelFromXp(xp, organization?.settings?.xpPerLevel)
 
   const recentBadges = (badgesData?.badges || []).slice(0, 5).map((b: any) => ({
     id: b.id,
@@ -319,14 +352,18 @@ export default function ProfilePage() {
                   <div className="flex items-center gap-4 mt-2">
                     <Badge variant="secondary">{user?.role || t('defaultRole')}</Badge>
                     <Badge variant="outline">{fullProfile?.job_title || t('defaultJobTitle')}</Badge>
-                    <div className="flex items-center gap-1 text-sm">
-                      <Star className="h-4 w-4 text-yellow-500" />
-                      <span className="font-medium">{t('level', { level: userStats.level })}</span>
-                    </div>
-                    <div className="flex items-center gap-1 text-sm text-primary">
-                      <TrendingUp className="h-4 w-4" />
-                      <span className="font-medium">{t('xp', { xp: userStats.xp })}</span>
-                    </div>
+                    {xpEnabled && (
+                      <>
+                        <div className="flex items-center gap-1 text-sm">
+                          <Star className="h-4 w-4 text-yellow-500" />
+                          <span className="font-medium">{t('level', { level: levelInfo.level })}</span>
+                        </div>
+                        <div className="flex items-center gap-1 text-sm text-primary">
+                          <TrendingUp className="h-4 w-4" />
+                          <span className="font-medium">{t('xp', { xp: userStats.xp })}</span>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
                 <div className="flex gap-2">
@@ -337,6 +374,10 @@ export default function ProfilePage() {
                   <Button variant="outline" onClick={() => setIsPasswordDialogOpen(true)}>
                     <Key className="h-4 w-4 mr-2" />
                     {t('changePasswordButton')}
+                  </Button>
+                  <Button variant="outline" onClick={handleExportData} disabled={isExporting}>
+                    {isExporting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+                    {t('exportData')}
                   </Button>
                   <Button variant="destructive" onClick={handleLogout}>
                     <LogOut className="h-4 w-4 mr-2" />
@@ -402,29 +443,31 @@ export default function ProfilePage() {
         />
       </div>
 
-      {/* Level Progress */}
+      {/* Level Progress (XP turned on by the organization) */}
+      {xpEnabled && (
       <Card>
         <CardContent className="p-6">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
               <Star className="h-5 w-5 text-yellow-500" />
-              <span className="font-semibold">{t('level', { level: userStats.level })}</span>
+              <span className="font-semibold">{t('level', { level: levelInfo.level })}</span>
             </div>
             <span className="text-sm text-muted-foreground">
-              {t('xpProgress', { xp: userStats.xp, max: (userStats.level + 1) * 250 })}
+              {t('xpProgress', { xp: userStats.xp, max: levelInfo.nextLevelAt })}
             </span>
           </div>
-          <Progress value={(userStats.xp % 250) / 2.5} className="h-3" />
+          <Progress value={levelInfo.percent} className="h-3" />
           <p className="text-sm text-muted-foreground mt-2">
-            {t('xpRemaining', { remaining: (userStats.level + 1) * 250 - userStats.xp, nextLevel: userStats.level + 1 })}
+            {t('xpRemaining', { remaining: levelInfo.nextLevelAt - userStats.xp, nextLevel: levelInfo.level + 1 })}
           </p>
         </CardContent>
       </Card>
+      )}
 
       {/* Tabs */}
-      <Tabs defaultValue="badges">
+      <Tabs defaultValue={badgesEnabled ? 'badges' : 'certificates'}>
         <TabsList>
-          <TabsTrigger value="badges">{t('tabs.badges')}</TabsTrigger>
+          {badgesEnabled && <TabsTrigger value="badges">{t('tabs.badges')}</TabsTrigger>}
           <TabsTrigger value="certificates">{t('tabs.certificates')}</TabsTrigger>
           <TabsTrigger value="activity">{t('tabs.activity')}</TabsTrigger>
         </TabsList>
@@ -596,8 +639,10 @@ export default function ProfilePage() {
                 type="password"
                 value={passwordForm.newPassword}
                 onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
-                placeholder={t('passwordDialog.newPasswordPlaceholder')}
               />
+              {passwordForm.newPassword && (
+                <PasswordRequirements password={passwordForm.newPassword} policy={passwordPolicy} />
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="confirmPassword">{t('passwordDialog.confirmPassword')}</Label>

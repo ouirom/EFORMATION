@@ -4,10 +4,13 @@ import rateLimit from 'express-rate-limit';
 import { AuthService } from '../services/auth.service';
 import { OAuthService } from '../services/oauth.service';
 import { LdapService } from '../services/ldap.service';
+import { SsoConfigService, SsoProvider } from '../services/sso-config.service';
+import { OrgStructureService } from '../services/org-structure.service';
+import jwt from 'jsonwebtoken';
 import { authenticate, AuthRequest } from '../middleware/auth.middleware';
 import { TenantRequest } from '../middleware/tenant.middleware';
 import { BadRequestError, ApiError } from '../middleware/error.middleware';
-import { TenantSettingsService } from '../services/tenant-settings.service';
+import { TenantSettingsService, MIN_PASSWORD_LENGTH } from '../services/tenant-settings.service';
 import { config } from '../config';
 
 const router = Router();
@@ -33,14 +36,21 @@ const validate = (req: any) => {
   }
 };
 
-// Mirrors the complexity rules the frontend already displays/enforces
-// (RegisterPage.tsx's passwordRequirements) -- without this, those rules were
-// purely cosmetic and any client hitting the API directly could set a
-// password as weak as "aaaaaaaa".
-const isComplexPassword = (value: string) =>
-  /[A-Z]/.test(value) && /[a-z]/.test(value) && /\d/.test(value) && /[!@#$%^&*(),.?":{}|<>]/.test(value);
-const passwordComplexityMessage =
-  'Password must contain an uppercase letter, a lowercase letter, a digit, and a special character';
+// Only the platform-wide floor is checked here; the organization's own password
+// policy (length, complexity -- Administration > Organisation) is enforced by
+// AuthService.assertPasswordAllowed wherever a password is set.
+const passwordFloor = (field: string) =>
+  body(field)
+    .isLength({ min: MIN_PASSWORD_LENGTH })
+    .withMessage(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
+
+/** What the sign-up / reset / change-password forms show and pre-check. */
+function publicPasswordPolicy(settings: { passwordMinLength: number; passwordRequireComplexity: boolean }) {
+  return {
+    minLength: Math.max(MIN_PASSWORD_LENGTH, settings.passwordMinLength),
+    requireComplexity: settings.passwordRequireComplexity,
+  };
+}
 
 /**
  * @route GET /api/v1/auth/registration-settings
@@ -55,8 +65,67 @@ router.get('/registration-settings', async (req: TenantRequest, res, next) => {
     const settings = await TenantSettingsService.get(req.tenantId);
     res.json({
       success: true,
-      data: { allowSelfRegistration: settings.allowSelfRegistration, defaultLanguage: settings.defaultLanguage },
+      data: {
+        allowSelfRegistration: settings.allowSelfRegistration,
+        defaultLanguage: settings.defaultLanguage,
+        requireApproval: settings.requireRegistrationApproval,
+        allowedEmailDomains: settings.allowedEmailDomains,
+        passwordPolicy: publicPasswordPolicy(settings),
+      },
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @route GET /api/v1/auth/legal
+ * @desc Public: the organization's legal notice, privacy policy link and data
+ * protection contact (Administration > Organisation > Conformité).
+ */
+router.get('/legal', async (req: TenantRequest, res, next) => {
+  try {
+    if (!req.tenantId) {
+      throw BadRequestError('Tenant ID is required');
+    }
+    const settings = await TenantSettingsService.get(req.tenantId);
+    res.json({
+      success: true,
+      data: {
+        legalNotice: settings.legalNotice,
+        privacyPolicyUrl: settings.privacyPolicyUrl,
+        privacyContactEmail: settings.privacyContactEmail,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @route GET /api/v1/auth/password-policy
+ * @desc Public: the password rules to show on the reset-password page. With a
+ * valid reset `token`, the rules of that account's organization; otherwise the
+ * header/subdomain-resolved organization's.
+ */
+router.get('/password-policy', async (req: TenantRequest, res, next) => {
+  try {
+    let tenantId = req.tenantId;
+    const token = typeof req.query.token === 'string' ? req.query.token : '';
+    if (token) {
+      try {
+        const payload = jwt.verify(token, config.jwt.secret) as any;
+        if (payload?.type === 'password_reset') {
+          tenantId = (await AuthService.getUserTenantId(Number(payload.userId))) ?? tenantId;
+        }
+      } catch {
+        // invalid/expired token: the reset itself will say so
+      }
+    }
+    if (!tenantId) {
+      throw BadRequestError('Tenant ID is required');
+    }
+    res.json({ success: true, data: publicPasswordPolicy(await TenantSettingsService.get(tenantId)) });
   } catch (error) {
     next(error);
   }
@@ -71,12 +140,7 @@ router.post(
   authLimiter,
   [
     body('email').isEmail().normalizeEmail(),
-    body('password')
-      .isLength({ min: 8 })
-      .withMessage('Password must be at least 8 characters')
-      .bail()
-      .custom(isComplexPassword)
-      .withMessage(passwordComplexityMessage),
+    passwordFloor('password'),
     body('displayName').notEmpty().trim(),
     body('username').optional().trim(),
   ],
@@ -88,9 +152,14 @@ router.post(
         throw BadRequestError('Tenant ID is required');
       }
 
-      if (!(await TenantSettingsService.get(req.tenantId)).allowSelfRegistration) {
+      const settings = await TenantSettingsService.get(req.tenantId);
+      if (!settings.allowSelfRegistration) {
         throw new ApiError('Self-registration is disabled for this organization', 403, 'REGISTRATION_CLOSED');
       }
+      await AuthService.assertEmailDomainAllowed(req.tenantId, req.body.email);
+      await AuthService.assertPasswordAllowed(req.tenantId, req.body.password);
+      // Chosen org units must exist in this organization and fit together.
+      const placement = await OrgStructureService.resolvePlacement(req.tenantId, req.body);
 
       const result = await AuthService.register({
         tenantId: req.tenantId,
@@ -101,19 +170,20 @@ router.post(
         // A public sign-up is always a learner: the role used to come from the request
         // body, so anyone could apply as "admin" and be promoted on activation.
         role: 'agent',
-        enterpriseId: req.body.enterpriseId,
-        directionId: req.body.directionId,
-        serviceId: req.body.serviceId,
+        ...placement,
+        requireApproval: settings.requireRegistrationApproval,
       });
 
-      // Pending accounts get no tokens — they can't log in until an n+1
-      // activates them (PUT /users/:id/status).
+      // No tokens either way: a pending account can't log in until an n+1
+      // activates it (PUT /users/:id/status); an active one signs in normally.
       res.status(201).json({
         success: true,
         data: {
           user: result.user,
-          pending: true,
-          message: "Votre compte a été créé et est en attente d'activation par votre responsable.",
+          pending: result.pending,
+          message: result.pending
+            ? "Votre compte a été créé et est en attente d'activation par votre responsable."
+            : 'Votre compte a été créé. Vous pouvez vous connecter.',
         },
       });
     } catch (error) {
@@ -144,6 +214,20 @@ router.post(
         ip: req.ip,
         userAgent: req.get('user-agent'),
       });
+
+      // Password older than the organization allows: no session, the web app
+      // sends the user to the reset page with this short-lived token.
+      if ('passwordExpired' in result) {
+        res.json({
+          success: true,
+          data: {
+            passwordExpired: true,
+            resetToken: result.resetToken,
+            message: 'Votre mot de passe a expiré. Choisissez-en un nouveau pour continuer.',
+          },
+        });
+        return;
+      }
 
       // Set refresh token in HTTP-only cookie
       res.cookie('refreshToken', result.tokens.refreshToken, {
@@ -279,7 +363,7 @@ router.post(
   authenticate,
   [
     body('currentPassword').notEmpty(),
-    body('newPassword').isLength({ min: 8 }),
+    passwordFloor('newPassword'),
   ],
   async (req: AuthRequest, res, next) => {
     try {
@@ -335,12 +419,7 @@ router.post(
   authLimiter,
   [
     body('token').notEmpty(),
-    body('newPassword')
-      .isLength({ min: 8 })
-      .withMessage('Password must be at least 8 characters')
-      .bail()
-      .custom(isComplexPassword)
-      .withMessage(passwordComplexityMessage),
+    passwordFloor('newPassword'),
   ],
   async (req, res, next) => {
     try {
@@ -358,119 +437,90 @@ router.post(
   }
 );
 
-/**
- * @route GET /api/v1/auth/sso/azure
- * @desc Initiate Azure AD SSO
- */
-router.get('/sso/azure', (req, res) => {
-  const { tenantId, clientId } = config.azureAd;
-  const redirectUri = `${config.frontendUrl}/auth/callback/azure`;
-  const scope = 'openid profile email';
-  
-  const authUrl = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/authorize?` +
-    `client_id=${clientId}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}` +
-    `&scope=${encodeURIComponent(scope)}&response_mode=query`;
+/** Sets the refresh cookie and answers with the session, for every SSO/LDAP login. */
+function sendSsoSession(
+  res: any,
+  result: { user: any; tokens: { accessToken: string; refreshToken: string; expiresIn: number }; isNewUser: boolean }
+) {
+  res.cookie('refreshToken', result.tokens.refreshToken, {
+    httpOnly: true,
+    secure: config.nodeEnv === 'production',
+    sameSite: 'strict',
+    maxAge: 30 * 24 * 60 * 60 * 1000,
+  });
 
-  res.redirect(authUrl);
-});
+  res.json({
+    success: true,
+    data: {
+      user: result.user,
+      accessToken: result.tokens.accessToken,
+      refreshToken: result.tokens.refreshToken,
+      expiresIn: result.tokens.expiresIn,
+      isNewUser: result.isNewUser,
+    },
+  });
+}
 
 /**
- * @route POST /api/v1/auth/sso/azure/callback
- * @desc Handle Azure AD SSO callback — exchanges the authorization code for a
- * verified profile via Microsoft's own token + Graph endpoints before logging in.
+ * The organization a browser-initiated SSO login belongs to: the usual header /
+ * subdomain resolution, or an explicit ?tenant=<id> (a plain redirect can't
+ * carry the X-Tenant-ID header).
  */
-router.post('/sso/azure/callback', async (req, res, next) => {
+function ssoTenantId(req: TenantRequest): number {
+  const fromQuery = parseInt(String(req.query.tenant ?? ''), 10);
+  const tenantId = Number.isInteger(fromQuery) && fromQuery > 0 ? fromQuery : req.tenantId;
+  if (!tenantId) {
+    throw BadRequestError('Tenant ID is required');
+  }
+  return tenantId;
+}
+
+/**
+ * @route GET /api/v1/auth/sso/:provider (azure | google)
+ * @desc Redirects to the organization's identity provider, with a signed `state`
+ * naming that organization (checked by the callback).
+ */
+router.get('/sso/:provider(azure|google)', async (req: TenantRequest, res, next) => {
   try {
-    const { code } = req.body;
-
-    if (!code) {
-      throw BadRequestError('Authorization code is required');
-    }
-
-    const profile = await OAuthService.exchangeAzureCode(code);
-
-    const result = await AuthService.handleSSOLogin('azure_ad', profile.externalId, {
-      email: profile.email,
-      displayName: profile.displayName,
-      ip: req.ip,
-      userAgent: req.get('user-agent'),
-    });
-
-    res.cookie('refreshToken', result.tokens.refreshToken, {
-      httpOnly: true,
-      secure: config.nodeEnv === 'production',
-      sameSite: 'strict',
-      maxAge: 30 * 24 * 60 * 60 * 1000,
-    });
-
-    res.json({
-      success: true,
-      data: {
-        user: result.user,
-        accessToken: result.tokens.accessToken,
-        expiresIn: result.tokens.expiresIn,
-        isNewUser: result.isNewUser,
-      },
-    });
+    const provider = req.params.provider as SsoProvider;
+    res.redirect(await SsoConfigService.authorizationUrl(ssoTenantId(req), provider));
   } catch (error) {
     next(error);
   }
 });
 
 /**
- * @route GET /api/v1/auth/sso/google
- * @desc Initiate Google SSO
+ * @route POST /api/v1/auth/sso/:provider/callback (azure | google)
+ * @desc Exchanges the authorization code with the provider of the organization
+ * named by `state` (the provider's own token + profile endpoints, server-side),
+ * then logs in / provisions the account in that organization only.
  */
-router.get('/sso/google', (req, res) => {
-  const { clientId } = config.google;
-  const redirectUri = `${config.frontendUrl}/auth/callback/google`;
-  const scope = 'openid profile email';
-  
-  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
-    `client_id=${clientId}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}` +
-    `&scope=${encodeURIComponent(scope)}`;
-
-  res.redirect(authUrl);
-});
-
-/**
- * @route POST /api/v1/auth/sso/google/callback
- * @desc Handle Google SSO callback — exchanges the authorization code for a
- * verified profile via Google's own token + userinfo endpoints before logging in.
- */
-router.post('/sso/google/callback', async (req, res, next) => {
+router.post('/sso/:provider(azure|google)/callback', async (req: TenantRequest, res, next) => {
   try {
-    const { code } = req.body;
+    const provider = req.params.provider as SsoProvider;
+    const { code, state } = req.body;
 
     if (!code) {
       throw BadRequestError('Authorization code is required');
     }
+    // No state we signed = a login we didn't start (login CSRF): refused.
+    const tenantId = SsoConfigService.verifyState(state, provider);
+    const providers = await SsoConfigService.get(tenantId);
 
-    const profile = await OAuthService.exchangeGoogleCode(code);
+    const profile =
+      provider === 'azure'
+        ? await OAuthService.exchangeAzureCode(code, providers.azure)
+        : await OAuthService.exchangeGoogleCode(code, providers.google);
 
-    const result = await AuthService.handleSSOLogin('google', profile.externalId, {
+    const result = await AuthService.handleSSOLogin(provider === 'azure' ? 'azure_ad' : 'google', profile.externalId, {
       email: profile.email,
       displayName: profile.displayName,
+      tenantId,
       ip: req.ip,
       userAgent: req.get('user-agent'),
     });
 
-    res.cookie('refreshToken', result.tokens.refreshToken, {
-      httpOnly: true,
-      secure: config.nodeEnv === 'production',
-      sameSite: 'strict',
-      maxAge: 30 * 24 * 60 * 60 * 1000,
-    });
-
-    res.json({
-      success: true,
-      data: {
-        user: result.user,
-        accessToken: result.tokens.accessToken,
-        expiresIn: result.tokens.expiresIn,
-        isNewUser: result.isNewUser,
-      },
-    });
+    sendSsoSession(res, result);
   } catch (error) {
     next(error);
   }
@@ -478,56 +528,52 @@ router.post('/sso/google/callback', async (req, res, next) => {
 
 /**
  * @route GET /api/v1/auth/sso/providers
- * @desc Report which login methods are actually usable, so the frontend can hide
- * options that have no credentials configured instead of failing after a click.
+ * @desc Report which login methods this organization can actually use, so the
+ * login page hides options with no configuration instead of failing after a click.
  */
-router.get('/sso/providers', (req, res) => {
-  res.json({
-    success: true,
-    data: {
-      azure: !!(config.azureAd.clientId && config.azureAd.clientSecret),
-      google: !!(config.google.clientId && config.google.clientSecret),
-      ldap: LdapService.isConfigured(),
-    },
-  });
+router.get('/sso/providers', async (req: TenantRequest, res, next) => {
+  try {
+    const providers = req.tenantId ? await SsoConfigService.get(req.tenantId) : null;
+    res.json({
+      success: true,
+      data: {
+        azure: !!providers?.azure,
+        google: !!providers?.google,
+        ldap: !!providers?.ldap,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
 /**
  * @route POST /api/v1/auth/ldap/login
- * @desc Authenticate against the configured LDAP/Active Directory server. Auto-
- * provisions a local account on first login, matching the SSO provisioning flow.
+ * @desc Authenticate against the organization's LDAP/Active Directory server.
+ * Auto-provisions a local account in that organization on first login, matching
+ * the SSO provisioning flow.
  */
 router.post(
   '/ldap/login',
   authLimiter,
   [body('username').notEmpty().trim(), body('password').notEmpty()],
-  async (req, res, next) => {
+  async (req: TenantRequest, res, next) => {
     try {
       validate(req);
+      if (!req.tenantId) {
+        throw BadRequestError('Tenant ID is required');
+      }
 
-      const profile = await LdapService.authenticate(req.body.username, req.body.password);
+      const { ldap } = await SsoConfigService.get(req.tenantId);
+      const profile = await LdapService.authenticate(req.body.username, req.body.password, ldap);
       const result = await AuthService.handleLdapLogin({
         ...profile,
+        tenantId: req.tenantId,
         ip: req.ip,
         userAgent: req.get('user-agent'),
       });
 
-      res.cookie('refreshToken', result.tokens.refreshToken, {
-        httpOnly: true,
-        secure: config.nodeEnv === 'production',
-        sameSite: 'strict',
-        maxAge: 30 * 24 * 60 * 60 * 1000,
-      });
-
-      res.json({
-        success: true,
-        data: {
-          user: result.user,
-          accessToken: result.tokens.accessToken,
-          expiresIn: result.tokens.expiresIn,
-          isNewUser: result.isNewUser,
-        },
-      });
+      sendSsoSession(res, result);
     } catch (error) {
       next(error);
     }

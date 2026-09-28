@@ -46,6 +46,7 @@ router.get('/', authenticate, authorize('admin', 'director', 'manager'), async (
               CASE
                 WHEN ca.assignment_type = 'user' THEN (SELECT display_name FROM users WHERE id = ca.target_id AND tenant_id = ca.tenant_id)
                 WHEN ca.assignment_type = 'enterprise' THEN (SELECT name FROM enterprises WHERE id = ca.target_id AND tenant_id = ca.tenant_id)
+                WHEN ca.assignment_type = 'subsidiary' THEN (SELECT name FROM subsidiaries WHERE id = ca.target_id AND tenant_id = ca.tenant_id)
                 WHEN ca.assignment_type = 'direction' THEN (SELECT name FROM directions WHERE id = ca.target_id AND tenant_id = ca.tenant_id)
                 WHEN ca.assignment_type = 'service' THEN (SELECT name FROM services WHERE id = ca.target_id AND tenant_id = ca.tenant_id)
                 WHEN ca.assignment_type = 'team' THEN (SELECT name FROM teams WHERE id = ca.target_id AND tenant_id = ca.tenant_id)
@@ -96,7 +97,7 @@ router.post(
   [
     body('courseId').isInt(),
     body('lessonId').optional().isInt(),
-    body('assignmentType').isIn(['user', 'enterprise', 'direction', 'service', 'role', 'team']),
+    body('assignmentType').isIn(['user', 'enterprise', 'subsidiary', 'direction', 'service', 'role', 'team']),
     body('targetIds').isArray({ min: 1 }),
     body('targetRole').optional().trim(),
     body('isMandatory').optional().isBoolean(),
@@ -141,6 +142,7 @@ router.post(
         const targetTable =
           assignmentType === 'user' ? 'users' :
           assignmentType === 'enterprise' ? 'enterprises' :
+          assignmentType === 'subsidiary' ? 'subsidiaries' :
           assignmentType === 'direction' ? 'directions' :
           assignmentType === 'service' ? 'services' : 'teams';
 
@@ -239,6 +241,7 @@ router.post(
              JOIN users u ON u.tenant_id = ca.tenant_id AND (
                (ca.assignment_type = 'user' AND u.id = ca.target_id)
                OR (ca.assignment_type = 'enterprise' AND u.enterprise_id = ca.target_id)
+               OR (ca.assignment_type = 'subsidiary' AND u.subsidiary_id = ca.target_id)
                OR (ca.assignment_type = 'direction' AND u.direction_id = ca.target_id)
                OR (ca.assignment_type = 'service' AND u.service_id = ca.target_id)
                OR (ca.assignment_type = 'role' AND u.role = ca.target_role)
@@ -388,16 +391,18 @@ router.get('/my-courses', authenticate, async (req: AuthRequest, res, next) => {
          AND (
            (ca.assignment_type = 'user' AND ca.target_id = @userId)
            OR (ca.assignment_type = 'enterprise' AND ca.target_id = @enterpriseId)
+           OR (ca.assignment_type = 'subsidiary' AND ca.target_id = @subsidiaryId)
            OR (ca.assignment_type = 'direction' AND ca.target_id = @directionId)
            OR (ca.assignment_type = 'service' AND ca.target_id = @serviceId)
            OR (ca.assignment_type = 'role' AND ca.target_role = @userRole)
-           OR ${teamAssignmentClause('ca', 'userId', 'enterpriseId', 'directionId', 'serviceId')}
+           OR ${teamAssignmentClause('ca', 'userId', 'enterpriseId', 'directionId', 'serviceId', 'subsidiaryId')}
          )
        ORDER BY ca.is_mandatory DESC, ca.due_date ASC`,
       {
         tenantId: req.user!.tenantId,
         userId,
         enterpriseId: enterpriseId || 0,
+        subsidiaryId: req.user!.subsidiaryId || 0,
         directionId: directionId || 0,
         serviceId: serviceId || 0,
         userRole,

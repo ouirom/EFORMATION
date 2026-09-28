@@ -58,9 +58,17 @@
   "moduleDisabled": {
     "title": {
       "chat": "Chat is turned off",
-      "liveSessions": "Live sessions are turned off"
+      "liveSessions": "Live sessions are turned off",
+      "badges": "Badges are turned off"
     },
     "description": "Your organization turned this module off. Contact an administrator if you need it.",
     "back": "Back to dashboard"
+  },
+  "legal": {
+    "title": "Legal notice",
+    "none": "Your organization has not filled in its legal notice yet.",
+    "privacyPolicy": "Privacy policy",
+    "contact": "Data protection: {{email}}",
+    "back": "Back"
   }
 }

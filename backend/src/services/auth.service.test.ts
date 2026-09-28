@@ -14,6 +14,8 @@ const mockedExecute = DatabaseService.execute as jest.Mock;
 const mockedQueue = PendingNotificationService.queue as jest.Mock;
 const mockedBcrypt = bcrypt as jest.Mocked<typeof bcrypt>;
 
+type LoginSuccess = Exclude<Awaited<ReturnType<typeof AuthService.login>>, { passwordExpired: true }>;
+
 describe('AuthService.login', () => {
   beforeEach(() => {
     mockedExecute.mockResolvedValue({ rowsAffected: 1 });
@@ -41,7 +43,7 @@ describe('AuthService.login', () => {
     mockedQuery.mockResolvedValue([userRow()]);
     mockedBcrypt.compare.mockResolvedValue(true as never);
 
-    const result = await AuthService.login({ email: 'jane@test.com', password: 'correct-password' });
+    const result = (await AuthService.login({ email: 'jane@test.com', password: 'correct-password' })) as LoginSuccess;
 
     expect(mockedBcrypt.compare).toHaveBeenCalledWith('correct-password', 'hashed-password');
     expect(result.user).toMatchObject({ id: 42, tenantId: 10, email: 'jane@test.com', role: 'agent' });
@@ -159,7 +161,7 @@ describe('AuthService.handleLdapLogin', () => {
     });
   });
 
-  it('refuses to auto-provision when no default tenant is configured', async () => {
+  it('refuses to auto-provision when the organization does not exist', async () => {
     mockedQuery.mockImplementation((query: string) => {
       if (query.includes('SELECT id, tenant_id, is_active FROM users')) return Promise.resolve([]);
       if (query.includes('FROM tenants WHERE id = @tenantId')) return Promise.resolve([]); // default tenant row missing
@@ -168,7 +170,7 @@ describe('AuthService.handleLdapLogin', () => {
 
     await expect(AuthService.handleLdapLogin(profile)).rejects.toMatchObject({
       statusCode: 401,
-      message: 'LDAP login is not available: no default tenant is configured for auto-provisioning',
+      message: 'LDAP login is not available: no organization to create the account in',
     });
 
     const insertCall = mockedQuery.mock.calls.find(([q]: [string]) => q.includes('INSERT INTO users'));
@@ -184,13 +186,14 @@ describe('AuthService.changePassword', () => {
 
   it('hashes the new password with the configured bcrypt rounds after verifying the current one', async () => {
     mockedQuery.mockResolvedValue([{ password_hash: 'old-hash', tenant_id: 10 }]);
-    mockedBcrypt.compare.mockResolvedValue(true as never);
+    // The current password matches; the new one is not the current one.
+    mockedBcrypt.compare.mockResolvedValueOnce(true as never).mockResolvedValueOnce(false as never);
     mockedBcrypt.hash.mockResolvedValue('new-hash' as never);
 
-    const result = await AuthService.changePassword(42, 'current-pw', 'new-pw');
+    const result = await AuthService.changePassword(42, 'current-pw', 'New-Passw0rd');
 
     expect(mockedBcrypt.compare).toHaveBeenCalledWith('current-pw', 'old-hash');
-    expect(mockedBcrypt.hash).toHaveBeenCalledWith('new-pw', config.bcryptRounds);
+    expect(mockedBcrypt.hash).toHaveBeenCalledWith('New-Passw0rd', config.bcryptRounds);
     expect(mockedExecute).toHaveBeenCalledWith(
       expect.stringContaining('UPDATE users SET password_hash'),
       { passwordHash: 'new-hash', userId: 42 }

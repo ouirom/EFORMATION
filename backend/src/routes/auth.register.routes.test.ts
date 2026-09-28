@@ -52,10 +52,9 @@ describe('POST /auth/register', () => {
       expect.stringContaining('INSERT INTO users'),
       expect.objectContaining({ email: 'new@test.com' })
     );
-    // The insert itself must set status='pending' via the SQL literal, not a param —
-    // confirm the query text carries it since it isn't parameterized.
+    // Approval is required by default: the account is inserted pending and inactive.
     const insertCall = mockedQuery.mock.calls.find(([q]: [string]) => q.includes('INSERT INTO users'));
-    expect(insertCall[0]).toContain("'pending'");
+    expect(insertCall[1]).toMatchObject({ status: 'pending', isActive: false });
   });
 
   it('notifies an admin approver when no service/direction was chosen', async () => {
@@ -114,14 +113,16 @@ describe('POST /auth/register', () => {
     expect(emailCheckCall[0]).not.toContain('tenant_id');
   });
 
-  it('rejects a weak password before checking the database', async () => {
+  it("rejects a password that breaks the organization's policy without creating the account", async () => {
+    mockedQuery.mockResolvedValue([]);
     const response = await request(makeApp())
       .post('/auth/register')
       .set('X-Tenant-Id', '10')
       .send({ email: 'weak@test.com', password: 'password123', displayName: 'Weak' });
 
     expect(response.status).toBe(400);
-    expect(mockedQuery).not.toHaveBeenCalled();
+    expect(response.body.error.code).toBe('PASSWORD_POLICY');
+    expect(mockedQuery).not.toHaveBeenCalledWith(expect.stringContaining('INSERT INTO users'), expect.anything());
   });
 });
 

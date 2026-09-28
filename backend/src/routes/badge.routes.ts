@@ -4,6 +4,10 @@ import { authenticate, authorize, AuthRequest } from '../middleware/auth.middlew
 import { DatabaseService } from '../services/database.service';
 import { db, IS_PG } from '../database/db-helpers';
 import { BadRequestError, ForbiddenError, NotFoundError } from '../middleware/error.middleware';
+import { TenantSettingsService } from '../services/tenant-settings.service';
+
+/** Automatic badges are off for the organization: award nothing, same response shape. */
+const NO_AWARDS = { success: true, data: { awardedBadges: [], message: null } };
 
 const router = Router();
 
@@ -244,24 +248,32 @@ router.delete(
  */
 router.get('/stats/leaderboard', authenticate, async (req: AuthRequest, res, next) => {
   try {
+    // Hidden when the organization turned badges off or hid rankings. It used to
+    // return every colleague's email address to any logged-in user; it no longer does.
+    const settings = await TenantSettingsService.get(req.user!.tenantId);
+    if (!settings.enableBadges || settings.leaderboardScope === 'hidden') {
+      res.json({ success: true, data: [] });
+      return;
+    }
+
     const leaderboard = await DatabaseService.query<any>(
       IS_PG
-        ? `SELECT u.id, u.display_name, u.email,
+        ? `SELECT u.id, u.display_name,
                   COUNT(ub.badge_id) as badge_count,
                   (SELECT COUNT(*) FROM certificates WHERE user_id = u.id) as certificate_count
            FROM users u
            LEFT JOIN user_badges ub ON u.id = ub.user_id
            WHERE u.tenant_id = @tenantId AND u.deleted_at IS NULL
-           GROUP BY u.id, u.display_name, u.email
+           GROUP BY u.id, u.display_name
            ORDER BY badge_count DESC, certificate_count DESC
            LIMIT 50`
-        : `SELECT TOP 50 u.id, u.display_name, u.email,
+        : `SELECT TOP 50 u.id, u.display_name,
                   COUNT(ub.badge_id) as badge_count,
                   (SELECT COUNT(*) FROM certificates WHERE user_id = u.id) as certificate_count
            FROM users u
            LEFT JOIN user_badges ub ON u.id = ub.user_id
            WHERE u.tenant_id = @tenantId AND u.deleted_at IS NULL
-           GROUP BY u.id, u.display_name, u.email
+           GROUP BY u.id, u.display_name
            ORDER BY badge_count DESC, certificate_count DESC`,
       { tenantId: req.user!.tenantId }
     );
@@ -376,6 +388,10 @@ router.post('/award-quiz', authenticate, async (req: AuthRequest, res, next) => 
     if (attempts.length === 0) {
       throw ForbiddenError('No matching graded attempt for this quiz');
     }
+    if (!(await TenantSettingsService.isFeatureEnabled(tenantId, 'badges'))) {
+      res.json(NO_AWARDS);
+      return;
+    }
     const { score, passed } = attempts[0];
 
     const awardedBadges: any[] = [];
@@ -474,6 +490,11 @@ router.post('/award-course', authenticate, async (req: AuthRequest, res, next) =
     const { courseId, action } = req.body; // action: 'start' or 'complete'
     const userId = req.user!.id;
     const tenantId = req.user!.tenantId;
+
+    if (!(await TenantSettingsService.isFeatureEnabled(tenantId, 'badges'))) {
+      res.json(NO_AWARDS);
+      return;
+    }
     
     const awardedBadges: any[] = [];
 

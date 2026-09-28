@@ -6,9 +6,11 @@ import { db, IS_PG } from '../database/db-helpers';
 import { AuditService } from './audit.service';
 import { NotificationService } from './notification.service';
 import { PendingNotificationService } from './pending-notification.service';
+import { TenantSettingsService, isEmailDomainAllowed, passwordPolicyViolation } from './tenant-settings.service';
 import { User, SSOIdentity, SSOProvider } from '../types';
 import { logger } from '../utils/logger';
 import { 
+  ApiError,
   BadRequestError, 
   UnauthorizedError, 
   NotFoundError, 
@@ -21,6 +23,18 @@ interface TokenPair {
   expiresIn: number;
 }
 
+/**
+ * A password login whose password is older than the organization allows: no
+ * session is opened, the user must first choose a new password with this
+ * short-lived reset token (same flow as "forgot password").
+ */
+export interface PasswordExpiredResult {
+  passwordExpired: true;
+  resetToken: string;
+}
+
+const EXPIRED_PASSWORD_RESET_TTL = '15m';
+
 interface RegisterDTO {
   tenantId: number;
   email: string;
@@ -28,9 +42,12 @@ interface RegisterDTO {
   displayName: string;
   username?: string;
   role?: string;
-  enterpriseId?: number;
-  directionId?: number;
-  serviceId?: number;
+  enterpriseId?: number | null;
+  subsidiaryId?: number | null;
+  directionId?: number | null;
+  serviceId?: number | null;
+  /** false: the organization activates self-registered accounts right away. */
+  requireApproval?: boolean;
 }
 
 interface LoginDTO {
@@ -49,7 +66,8 @@ export class AuthService {
    * direction, or failing that any admin) activates it via
    * PUT /users/:id/status.
    */
-  static async register(data: RegisterDTO): Promise<{ user: Partial<User> }> {
+  static async register(data: RegisterDTO): Promise<{ user: Partial<User>; pending: boolean }> {
+    const pending = data.requireApproval !== false;
     // users.email and users.username both carry a GLOBAL unique constraint (not
     // scoped per tenant — matches how login() looks a user up by email alone),
     // so the duplicate checks below must be global too, or a cross-tenant
@@ -80,7 +98,8 @@ export class AuthService {
     // Hash password
     const passwordHash = await bcrypt.hash(data.password, config.bcryptRounds);
 
-    // Insert user — pending, not active, until an n+1 activates the account.
+    // Insert user — pending, not active, until an n+1 activates the account (unless
+    // the organization turned approval off: then the account is active right away).
     let result: { id: number }[];
     try {
       result = await DatabaseService.query<{ id: number }>(
@@ -89,21 +108,21 @@ export class AuthService {
         IS_PG
           ? `INSERT INTO users (
               tenant_id, email, username, password_hash, display_name, role,
-              enterprise_id, direction_id, service_id, is_active, status
+              enterprise_id, subsidiary_id, direction_id, service_id, is_active, status, password_changed_at
             )
             VALUES (
               @tenantId, @email, @username, @passwordHash, @displayName, @role,
-              @enterpriseId, @directionId, @serviceId, @isActive, 'pending'
+              @enterpriseId, @subsidiaryId, @directionId, @serviceId, @isActive, @status, ${db.now()}
             )
             RETURNING id`
           : `INSERT INTO users (
               tenant_id, email, username, password_hash, display_name, role,
-              enterprise_id, direction_id, service_id, is_active, status
+              enterprise_id, subsidiary_id, direction_id, service_id, is_active, status, password_changed_at
             )
             OUTPUT INSERTED.id
             VALUES (
               @tenantId, @email, @username, @passwordHash, @displayName, @role,
-              @enterpriseId, @directionId, @serviceId, @isActive, 'pending'
+              @enterpriseId, @subsidiaryId, @directionId, @serviceId, @isActive, @status, ${db.now()}
             )`,
         {
           tenantId: data.tenantId,
@@ -113,9 +132,11 @@ export class AuthService {
           displayName: data.displayName,
           role: data.role || 'agent',
           enterpriseId: data.enterpriseId || null,
+          subsidiaryId: data.subsidiaryId || null,
           directionId: data.directionId || null,
           serviceId: data.serviceId || null,
-          isActive: false,
+          isActive: !pending,
+          status: pending ? 'pending' : 'active',
         }
       );
     } catch (error: any) {
@@ -137,12 +158,16 @@ export class AuthService {
     );
 
     // Log audit
-    await AuditService.log(data.tenantId, userId, 'USER_REGISTERED', 'users', userId, { status: 'pending' });
+    await AuditService.log(data.tenantId, userId, 'USER_REGISTERED', 'users', userId, {
+      status: pending ? 'pending' : 'active',
+    });
 
     // Best-effort: a failed notification must never fail the registration itself.
-    this.notifyApproversOfPendingRegistration(data).catch((error) => {
-      logger.error('Failed to notify approvers of a pending registration', { error, userId });
-    });
+    if (pending) {
+      this.notifyApproversOfPendingRegistration(data).catch((error) => {
+        logger.error('Failed to notify approvers of a pending registration', { error, userId });
+      });
+    }
 
     // Confirm receipt to the applicant themselves -- separate from the
     // approver notification above, which they never see.
@@ -152,7 +177,9 @@ export class AuthService {
       channel: 'email',
       subject: 'Votre compte E-Formation a été créé',
       essential: true,
-      body: `Bonjour ${data.displayName},\n\nVotre demande de compte E-Formation a bien été reçue. Il est en attente d'activation par votre responsable ; vous recevrez un email dès qu'il sera activé.`,
+      body: pending
+        ? `Bonjour ${data.displayName},\n\nVotre demande de compte E-Formation a bien été reçue. Il est en attente d'activation par votre responsable ; vous recevrez un email dès qu'il sera activé.`
+        : `Bonjour ${data.displayName},\n\nVotre compte E-Formation est créé et actif : vous pouvez vous connecter dès maintenant.`,
       actionUrl: `${config.frontendUrl}/login`,
     }).catch((error) => {
       logger.error('Failed to send registration confirmation email', { error, userId });
@@ -166,6 +193,7 @@ export class AuthService {
         displayName: data.displayName,
         role: (data.role as any) || 'agent',
       },
+      pending,
     };
   }
 
@@ -216,7 +244,9 @@ export class AuthService {
   /**
    * Login with email and password
    */
-  static async login(data: LoginDTO): Promise<{ user: Partial<User>; tokens: TokenPair }> {
+  static async login(
+    data: LoginDTO
+  ): Promise<{ user: Partial<User>; tokens: TokenPair } | PasswordExpiredResult> {
     // Find user
     const users = await DatabaseService.query<{
       id: number;
@@ -232,9 +262,17 @@ export class AuthService {
       is_active: boolean;
       status: string;
       token_version: number;
+      failed_login_attempts: number;
+      locked_until: Date | null;
+      password_set_at: Date;
+      db_now: Date;
     }>(
+      // db_now comes from the same clock as the stored timestamps, so the lock and
+      // password-age arithmetic below never depends on the app server's time zone.
       `SELECT id, tenant_id, email, password_hash, display_name, avatar_url, role,
-              enterprise_id, direction_id, service_id, is_active, status, token_version
+              enterprise_id, direction_id, service_id, is_active, status, token_version,
+              failed_login_attempts, locked_until,
+              COALESCE(password_changed_at, created_at) AS password_set_at, ${db.now()} AS db_now
        FROM users
        WHERE email = @email
        ${data.tenantId ? 'AND tenant_id = @tenantId' : ''}
@@ -262,6 +300,20 @@ export class AuthService {
       throw UnauthorizedError(messages[user.status] || 'Account is disabled');
     }
 
+    const settings = await TenantSettingsService.get(user.tenant_id);
+    const dbNow = new Date(user.db_now).getTime();
+
+    // Locked after too many wrong passwords: refused even with the right password
+    // until the lock expires, an admin unlocks it, or the password is reset.
+    if (user.locked_until && new Date(user.locked_until).getTime() > dbNow) {
+      await AuditService.log(user.tenant_id, user.id, 'LOGIN_FAILED', 'users', user.id, {
+        reason: 'account_locked',
+        ip: data.ip,
+        userAgent: data.userAgent,
+      });
+      throw this.accountLockedError(new Date(user.locked_until).getTime() - dbNow);
+    }
+
     // Verify password
     const isValidPassword = await bcrypt.compare(data.password, user.password_hash);
     if (!isValidPassword) {
@@ -270,11 +322,58 @@ export class AuthService {
         ip: data.ip,
         userAgent: data.userAgent,
       });
+
+      if (settings.maxLoginAttempts > 0) {
+        const attempts = (Number(user.failed_login_attempts) || 0) + 1;
+        if (attempts >= settings.maxLoginAttempts) {
+          // Lockout minutes come from validated settings (an integer), inlined because
+          // pg can't type a parameter that is only multiplied by an interval.
+          const minutes = Math.max(1, Math.trunc(settings.lockoutMinutes));
+          await DatabaseService.execute(
+            `UPDATE users SET failed_login_attempts = 0,
+                    locked_until = ${db.dateAdd('minute', String(minutes), db.now())}
+             WHERE id = @id`,
+            { id: user.id }
+          );
+          await AuditService.log(user.tenant_id, user.id, 'ACCOUNT_LOCKED', 'users', user.id, {
+            attempts,
+            minutes,
+            ip: data.ip,
+          });
+          throw this.accountLockedError(minutes * 60_000);
+        }
+        await DatabaseService.execute(
+          'UPDATE users SET failed_login_attempts = @attempts WHERE id = @id',
+          { attempts, id: user.id }
+        );
+      }
       throw UnauthorizedError('Invalid email or password');
     }
 
+    if (Number(user.failed_login_attempts) > 0 || user.locked_until) {
+      await DatabaseService.execute(
+        'UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE id = @id',
+        { id: user.id }
+      );
+    }
+
+    // Password older than the organization allows: no session until a new one is chosen.
+    if (settings.passwordExpiryDays > 0) {
+      const ageDays = (dbNow - new Date(user.password_set_at).getTime()) / 86_400_000;
+      if (ageDays > settings.passwordExpiryDays) {
+        await AuditService.log(user.tenant_id, user.id, 'LOGIN_PASSWORD_EXPIRED', 'users', user.id, {
+          ip: data.ip,
+          userAgent: data.userAgent,
+        });
+        return {
+          passwordExpired: true,
+          resetToken: this.signPasswordResetToken(user.id, user.token_version, EXPIRED_PASSWORD_RESET_TTL),
+        };
+      }
+    }
+
     // Generate tokens
-    const tokens = this.generateTokenPair({
+    const tokens = await this.issueTokens({
       id: user.id,
       tenantId: user.tenant_id,
       email: user.email,
@@ -349,16 +448,22 @@ export class AuthService {
         throw UnauthorizedError('Invalid refresh token');
       }
 
-      return this.generateTokenPair({
-        id: user.id,
-        tenantId: user.tenant_id,
-        email: user.email,
-        role: user.role,
-        tokenVersion: user.token_version,
-        enterpriseId: user.enterprise_id,
-        directionId: user.direction_id,
-        serviceId: user.service_id,
-      });
+      // The original login time travels with every refresh token (older tokens
+      // without it fall back to their issue time), so the organization's maximum
+      // session length counts from the real login, not from the last refresh.
+      return await this.issueTokens(
+        {
+          id: user.id,
+          tenantId: user.tenant_id,
+          email: user.email,
+          role: user.role,
+          tokenVersion: user.token_version,
+          enterpriseId: user.enterprise_id,
+          directionId: user.direction_id,
+          serviceId: user.service_id,
+        },
+        Number(payload.authTime ?? payload.iat)
+      );
     } catch (error) {
       throw UnauthorizedError('Invalid refresh token');
     }
@@ -392,7 +497,7 @@ export class AuthService {
       throw UnauthorizedError('Super admin account not found');
     }
 
-    const tokens = this.generateTokenPair({
+    const tokens = await this.issueTokens({
       id: users[0].id,
       tenantId: targetTenantId,
       email: users[0].email,
@@ -437,6 +542,7 @@ export class AuthService {
       // Existing user - login
       userId = existingIdentities[0].user_id;
       tenantId = existingIdentities[0].tenant_id;
+      this.assertSameOrganization(profile.tenantId, tenantId);
     } else {
       // Check if email exists
       const existingUsers = await DatabaseService.query<{
@@ -449,9 +555,12 @@ export class AuthService {
       );
 
       if (existingUsers.length > 0) {
-        // Link SSO to existing account
+        // Link SSO to existing account -- only within the organization whose identity
+        // provider vouched for this email: another organization's provider must never
+        // open an account it doesn't own.
         userId = existingUsers[0].id;
         tenantId = existingUsers[0].tenant_id;
+        this.assertSameOrganization(profile.tenantId, tenantId);
 
         await DatabaseService.execute(
           `INSERT INTO sso_identities (tenant_id, user_id, provider, external_id)
@@ -461,10 +570,9 @@ export class AuthService {
       } else {
         // Create new user
         if (!profile.tenantId) {
-          // SSO is a single, global identity provider config for this backend instance,
-          // not per-tenant, so a new SSO identity can't be assigned to "the tenant it
-          // belongs to" -- resolve to the operator's explicit DEFAULT_TENANT_ID rather
-          // than silently picking whichever tenant happens to have the lowest id.
+          // Callers always pass the organization whose provider was used (signed SSO
+          // state); without one, fall back to the operator's explicit DEFAULT_TENANT_ID
+          // rather than whichever tenant has the lowest id.
           const configuredTenant = await DatabaseService.query<{ id: number }>(
             `SELECT id FROM tenants WHERE id = @tenantId`,
             { tenantId: config.defaultTenantId }
@@ -476,6 +584,8 @@ export class AuthService {
         } else {
           tenantId = profile.tenantId;
         }
+
+        await this.assertEmailDomainAllowed(tenantId, profile.email);
 
         const result = await DatabaseService.query<{ id: number }>(
           IS_PG
@@ -523,16 +633,28 @@ export class AuthService {
       direction_id: number;
       service_id: number;
       token_version: number;
+      status: string;
     }>(
       `SELECT id, tenant_id, email, display_name, role,
-              enterprise_id, direction_id, service_id, token_version
+              enterprise_id, direction_id, service_id, token_version, status
        FROM users WHERE id = @userId`,
       { userId }
     );
 
     const user = users[0];
 
-    const tokens = this.generateTokenPair({
+    // A suspended/deactivated/pending account used to get in through SSO anyway:
+    // only password logins checked the status.
+    if (user.status && user.status !== 'active') {
+      await AuditService.log(user.tenant_id, user.id, 'LOGIN_FAILED', 'users', user.id, {
+        reason: `account_${user.status}`,
+        provider,
+        ip: profile.ip,
+      });
+      throw UnauthorizedError('Account is disabled');
+    }
+
+    const tokens = await this.issueTokens({
       id: user.id,
       tenantId: user.tenant_id,
       email: user.email,
@@ -570,6 +692,8 @@ export class AuthService {
   static async handleLdapLogin(profile: {
     email: string;
     displayName: string;
+    /** Organization whose directory authenticated the user (default tenant if omitted). */
+    tenantId?: number;
     ip?: string;
     userAgent?: string;
   }): Promise<{ user: Partial<User>; tokens: TokenPair; isNewUser: boolean }> {
@@ -585,21 +709,22 @@ export class AuthService {
       if (!existingUsers[0].is_active) {
         throw UnauthorizedError('Account is disabled');
       }
+      this.assertSameOrganization(profile.tenantId, existingUsers[0].tenant_id);
       userId = existingUsers[0].id;
     } else {
-      // LDAP is a single, global directory server for this whole backend instance
-      // (config.ldap.*, not per-tenant), so a newly-seen LDAP identity can't be
-      // assigned to "the tenant it belongs to" -- there's no such signal in an LDAP
-      // bind. Resolve to the operator's explicit DEFAULT_TENANT_ID rather than
-      // silently picking whichever tenant happens to have the lowest id.
+      // The account goes to the organization whose directory authenticated it
+      // (Administration > SSO & annuaire); without one, to the operator's explicit
+      // DEFAULT_TENANT_ID rather than whichever tenant has the lowest id.
       const configuredTenant = await DatabaseService.query<{ id: number }>(
         `SELECT id FROM tenants WHERE id = @tenantId`,
-        { tenantId: config.defaultTenantId }
+        { tenantId: profile.tenantId ?? config.defaultTenantId }
       );
       if (configuredTenant.length === 0) {
-        throw UnauthorizedError('LDAP login is not available: no default tenant is configured for auto-provisioning');
+        throw UnauthorizedError('LDAP login is not available: no organization to create the account in');
       }
       const tenantId = configuredTenant[0].id;
+
+      await this.assertEmailDomainAllowed(tenantId, profile.email);
 
       const result = await DatabaseService.query<{ id: number }>(
         IS_PG
@@ -639,7 +764,7 @@ export class AuthService {
 
     const user = users[0];
 
-    const tokens = this.generateTokenPair({
+    const tokens = await this.issueTokens({
       id: user.id,
       tenantId: user.tenant_id,
       email: user.email,
@@ -696,11 +821,13 @@ export class AuthService {
       throw BadRequestError('Current password is incorrect');
     }
 
+    await this.assertPasswordAllowed(user.tenant_id, newPassword, user.password_hash);
+
     // Hash new password
     const newPasswordHash = await bcrypt.hash(newPassword, config.bcryptRounds);
 
     await DatabaseService.execute(
-      'UPDATE users SET password_hash = @passwordHash WHERE id = @userId',
+      `UPDATE users SET password_hash = @passwordHash, password_changed_at = ${db.now()} WHERE id = @userId`,
       { passwordHash: newPasswordHash, userId }
     );
 
@@ -745,11 +872,7 @@ export class AuthService {
     // tokenVersion pins this reset link to the account's password state at the moment
     // it was requested -- resetPassword() bumps it on use, so the same link can't be
     // replayed, and a second "forgot password" request invalidates any earlier one.
-    const resetToken = jwt.sign(
-      { userId: user.id, type: 'password_reset', tokenVersion: user.token_version },
-      config.jwt.secret,
-      { expiresIn: '1h' }
-    );
+    const resetToken = this.signPasswordResetToken(user.id, user.token_version, '1h');
 
     const resetUrl = `${config.frontendUrl}/reset-password?token=${resetToken}`;
 
@@ -796,8 +919,13 @@ export class AuthService {
         throw BadRequestError('Invalid reset token');
       }
 
-      const users = await DatabaseService.query<{ id: number; token_version: number }>(
-        'SELECT id, token_version FROM users WHERE id = @userId',
+      const users = await DatabaseService.query<{
+        id: number;
+        tenant_id: number;
+        token_version: number;
+        password_hash: string;
+      }>(
+        'SELECT id, tenant_id, token_version, password_hash FROM users WHERE id = @userId',
         { userId: payload.userId }
       );
       if (users.length === 0) {
@@ -812,13 +940,17 @@ export class AuthService {
         throw BadRequestError('Invalid or expired reset token');
       }
 
+      await this.assertPasswordAllowed(users[0].tenant_id, newPassword, users[0].password_hash);
+
       const passwordHash = await bcrypt.hash(newPassword, config.bcryptRounds);
 
       // Bump token_version in the same update: consumes this reset token and, since
       // outstanding refresh tokens carry the old version too, signs the account out
-      // of every other session as well.
+      // of every other session as well. Choosing a new password also lifts a lockout.
       const result = await DatabaseService.execute(
-        'UPDATE users SET password_hash = @passwordHash, token_version = token_version + 1 WHERE id = @userId',
+        `UPDATE users SET password_hash = @passwordHash, token_version = token_version + 1,
+                password_changed_at = ${db.now()}, failed_login_attempts = 0, locked_until = NULL
+         WHERE id = @userId`,
         { passwordHash, userId: payload.userId }
       );
 
@@ -841,37 +973,115 @@ export class AuthService {
     await AuditService.log(tenantId, userId, 'USER_LOGOUT', 'users', userId);
   }
 
+  /** The organization an account belongs to (null if it doesn't exist). */
+  static async getUserTenantId(userId: number): Promise<number | null> {
+    if (!Number.isInteger(userId)) return null;
+    const rows = await DatabaseService.query<{ tenant_id: number }>(
+      'SELECT tenant_id FROM users WHERE id = @userId AND deleted_at IS NULL',
+      { userId }
+    );
+    return rows[0] ? Number(rows[0].tenant_id) : null;
+  }
+
   /**
-   * Generate access and refresh tokens
+   * 400 PASSWORD_POLICY when `password` breaks the organization's password rules,
+   * or PASSWORD_REUSED when it is the password being replaced (an expired password
+   * must really change).
    */
-  private static generateTokenPair(payload: {
-    id: number;
-    tenantId: number;
-    email: string;
-    role: string;
-    tokenVersion?: number;
-    enterpriseId?: number;
-    directionId?: number;
-    serviceId?: number;
-  }): TokenPair {
+  static async assertPasswordAllowed(tenantId: number, password: string, currentHash?: string): Promise<void> {
+    const violation = passwordPolicyViolation(password, await TenantSettingsService.get(tenantId));
+    if (violation) {
+      throw BadRequestError(violation, 'PASSWORD_POLICY');
+    }
+    if (currentHash && (await bcrypt.compare(password, currentHash).catch(() => false))) {
+      throw BadRequestError('The new password must be different from the current one', 'PASSWORD_REUSED');
+    }
+  }
+
+  /**
+   * 403 SSO_WRONG_ORGANIZATION when an organization's identity provider (SSO or
+   * LDAP) vouches for an account that belongs to another organization.
+   */
+  private static assertSameOrganization(providerTenantId: number | undefined, accountTenantId: number | string): void {
+    if (providerTenantId !== undefined && Number(accountTenantId) !== Number(providerTenantId)) {
+      throw new ApiError(
+        'This account belongs to another organization and cannot sign in with this identity provider',
+        403,
+        'SSO_WRONG_ORGANIZATION'
+      );
+    }
+  }
+
+  /** 403 EMAIL_DOMAIN_NOT_ALLOWED when the organization restricts accounts to some email domains. */
+  static async assertEmailDomainAllowed(tenantId: number, email: string): Promise<void> {
+    const { allowedEmailDomains } = await TenantSettingsService.get(tenantId);
+    if (!isEmailDomainAllowed(email, allowedEmailDomains)) {
+      throw new ApiError(
+        `Only email addresses from ${allowedEmailDomains.map((d) => '@' + d).join(', ')} can create an account in this organization`,
+        403,
+        'EMAIL_DOMAIN_NOT_ALLOWED'
+      );
+    }
+  }
+
+  /** 423 ACCOUNT_LOCKED, telling the user how long the lock still lasts. */
+  private static accountLockedError(remainingMs: number): ApiError {
+    const minutes = Math.max(1, Math.ceil(remainingMs / 60_000));
+    return new ApiError(
+      `Compte verrouillé après plusieurs mots de passe erronés. Réessayez dans ${minutes} minute${minutes > 1 ? 's' : ''} ou réinitialisez votre mot de passe.`,
+      423,
+      'ACCOUNT_LOCKED'
+    );
+  }
+
+  /**
+   * One-time password reset token. tokenVersion pins it to the account's password
+   * state at the moment it was issued -- resetPassword() bumps it on use, so the
+   * same token can't be replayed, and a newer one invalidates any earlier one.
+   */
+  private static signPasswordResetToken(userId: number, tokenVersion: number, expiresIn: string): string {
+    // @ts-expect-error - jwt.sign overload resolution with dynamic expiresIn string type
+    return jwt.sign({ userId, type: 'password_reset', tokenVersion }, config.jwt.secret, { expiresIn });
+  }
+
+  /**
+   * Access and refresh tokens, capped by the organization's maximum session
+   * length (Administration > Organisation): `authTime` is when the user actually
+   * logged in, and it is carried over by every refresh, so refreshing never
+   * extends a session past that limit.
+   */
+  private static async issueTokens(
+    payload: {
+      id: number;
+      tenantId: number;
+      email: string;
+      role: string;
+      tokenVersion?: number;
+      enterpriseId?: number;
+      directionId?: number;
+      serviceId?: number;
+    },
+    authTime: number = Math.floor(Date.now() / 1000)
+  ): Promise<TokenPair> {
     const { tokenVersion, ...accessPayload } = payload;
 
-    // @ts-expect-error - jwt.sign overload resolution with dynamic expiresIn string type
-    const accessToken = jwt.sign(accessPayload, config.jwt.secret, {
-      expiresIn: config.jwt.expiresIn,
-    });
+    const { sessionMaxDays } = await TenantSettingsService.get(payload.tenantId);
+    const remaining = authTime + sessionMaxDays * 86_400 - Math.floor(Date.now() / 1000);
+    if (remaining <= 0) {
+      throw UnauthorizedError('Session expired, please log in again');
+    }
+    const expiresIn = Math.min(this.parseExpiresIn(config.jwt.expiresIn), remaining);
+    const refreshExpiresIn = Math.min(this.parseExpiresIn(config.jwt.refreshExpiresIn), remaining);
 
-    // @ts-expect-error - jwt.sign overload resolution with dynamic expiresIn string type
+    const accessToken = jwt.sign(accessPayload, config.jwt.secret, { expiresIn });
+
     const refreshToken = jwt.sign(
-      { id: payload.id, type: 'refresh', tokenVersion: tokenVersion ?? 0 },
+      { id: payload.id, type: 'refresh', tokenVersion: tokenVersion ?? 0, authTime },
       config.jwt.refreshSecret,
-      { expiresIn: config.jwt.refreshExpiresIn }
+      { expiresIn: refreshExpiresIn }
     );
 
-    // Parse expiresIn to seconds
-    const expiresIn = this.parseExpiresIn(config.jwt.expiresIn);
-
-    return { accessToken, refreshToken, expiresIn: expiresIn };
+    return { accessToken, refreshToken, expiresIn };
   }
 
   private static parseExpiresIn(value: string): number {

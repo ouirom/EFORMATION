@@ -8,16 +8,19 @@ import { Input } from '../components/ui/input';
 import { Card } from '../components/ui/card';
 import { QuizQuestionSelector } from '../components/QuizQuestionSelector';
 import { Textarea } from '../components/ui/textarea';
+import { useOrganization } from '@/lib/tenantSettings';
 
 export const QuizCreatePage: React.FC = () => {
   const { t } = useTranslation('courses');
   const { lessonId } = useParams<{ lessonId: string }>();
   const navigate = useNavigate();
+  // New quizzes start from the organization's pass mark (Administration > Organisation).
+  const { data: organization } = useOrganization();
   const [formData, setFormData] = useState({
     title: '',
     description: '',
     instructions: '',
-    passingScore: 70,
+    passingScore: organization?.settings?.quizDefaultPassingScore ?? 70,
     randomized: false,
     timeLimitMinutes: 0,
     questionsToDraw: 0,

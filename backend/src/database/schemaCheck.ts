@@ -9,6 +9,11 @@ import { logger } from '../utils/logger';
  */
 const REQUIRED_COLUMNS: { table: string; column: string; migration: string }[] = [
   { table: 'categories', column: 'code', migration: '034_tenant_course_categories' },
+  { table: 'tenant_settings', column: 'require_registration_approval', migration: '035_tenant_security_settings' },
+  { table: 'users', column: 'locked_until', migration: '035_tenant_security_settings' },
+  { table: 'tenant_sso_settings', column: 'ldap_url', migration: '036_tenant_sso_settings' },
+  { table: 'tenant_settings', column: 'xp_per_level', migration: '037_tenant_learning_settings' },
+  { table: 'users', column: 'subsidiary_id', migration: '038_subsidiaries' },
 ];
 
 /** Returns the migrations that still need to run (empty when the schema is up to date). */

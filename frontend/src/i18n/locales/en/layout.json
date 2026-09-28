@@ -32,7 +32,8 @@
     "videoConferencing": "Video conferencing",
     "recording": "Recording",
     "logs": "Audit logs",
-    "platform": "Platform"
+    "platform": "Platform",
+    "sso": "SSO & directory"
   },
   "sectionToggle": {
     "userSpace": "User space",
@@ -45,6 +46,7 @@
   "userMenu": {
     "profile": "My profile",
     "settings": "Settings",
-    "logout": "Log out"
+    "logout": "Log out",
+    "legal": "Legal & privacy"
   }
 }

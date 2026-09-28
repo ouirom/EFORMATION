@@ -26,7 +26,7 @@ import { Label } from '@/components/ui/label'
 import { PageLoading } from '@/components/ui/loading'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { useToast } from '@/components/ui/use-toast'
-import { getInitials, formatRelativeTime } from '@/lib/utils'
+import { getInitials, formatRelativeTime, dateLocale } from '@/lib/utils'
 import { downloadCsv } from '@/lib/csv'
 import {
   Search,
@@ -44,6 +44,8 @@ import {
   Tag,
   X,
   Check,
+  Lock,
+  Unlock,
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -183,6 +185,7 @@ export default function AdminUsersPage() {
     role: '',
     jobTitle: '',
     enterpriseId: '',
+    subsidiaryId: '',
     directionId: '',
     serviceId: '',
     supervisorId: '',
@@ -192,6 +195,7 @@ export default function AdminUsersPage() {
     role: '',
     jobTitle: '',
     enterpriseId: '',
+    subsidiaryId: '',
     directionId: '',
     serviceId: '',
     supervisorId: '',
@@ -224,10 +228,26 @@ export default function AdminUsersPage() {
     queryFn: () => api.organizations.getEnterprises(),
   })
 
+  const { data: subsidiaries = [] } = useQuery({
+    queryKey: ['subsidiaries'],
+    queryFn: () => api.organizations.getSubsidiaries(),
+  })
+
   const { data: directions = [] } = useQuery({
     queryKey: ['directions'],
     queryFn: () => api.organizations.getDirections(),
   })
+
+  // Directions offered for a placement: those of the enterprise, and of the
+  // subsidiary when one is chosen (ids compared as numbers: pg may send strings).
+  const directionsFor = (enterpriseId: string, subsidiaryId: string) =>
+    directions.filter(
+      (d: any) =>
+        (!enterpriseId || Number(d.enterprise_id) === Number(enterpriseId)) &&
+        (!subsidiaryId || Number(d.subsidiary_id) === Number(subsidiaryId))
+    )
+  const subsidiariesFor = (enterpriseId: string) =>
+    subsidiaries.filter((sub: any) => !enterpriseId || Number(sub.enterprise_id) === Number(enterpriseId))
 
   const { data: services = [] } = useQuery({
     queryKey: ['services'],
@@ -293,7 +313,7 @@ export default function AdminUsersPage() {
       toast({ title: t('users.toasts.createdTitle'), description: t('users.toasts.createdDescription') })
       queryClient.invalidateQueries({ queryKey: ['admin-users'] })
       setIsAddDialogOpen(false)
-      setNewUser({ firstName: '', lastName: '', email: '', password: '', role: '', jobTitle: '', enterpriseId: '', directionId: '', serviceId: '', supervisorId: '' })
+      setNewUser({ firstName: '', lastName: '', email: '', password: '', role: '', jobTitle: '', enterpriseId: '', subsidiaryId: '', directionId: '', serviceId: '', supervisorId: '' })
       if (response.data.pendingNotification) {
         setPendingNotification(response.data.pendingNotification)
       }
@@ -355,6 +375,22 @@ export default function AdminUsersPage() {
     },
   })
 
+  // Lifts a lockout after too many wrong passwords (Organisation > Accès & sécurité).
+  const unlockMutation = useMutation({
+    mutationFn: (userId: number) => api.post(`/users/${userId}/unlock`),
+    onSuccess: () => {
+      toast({ title: t('users.toasts.unlockedTitle') })
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] })
+    },
+    onError: (error: any) => {
+      toast({
+        title: tCommon('status.error'),
+        description: error.response?.data?.error?.message || t('users.toasts.statusUpdateErrorDescription'),
+        variant: 'destructive',
+      })
+    },
+  })
+
   const importMutation = useMutation({
     mutationFn: async (file: File) => {
       const formData = new FormData()
@@ -396,6 +432,7 @@ export default function AdminUsersPage() {
       role: user.role || '',
       jobTitle: user.job_title || '',
       enterpriseId: user.enterprise_id ? String(user.enterprise_id) : '',
+      subsidiaryId: user.subsidiary_id ? String(user.subsidiary_id) : '',
       directionId: user.direction_id ? String(user.direction_id) : '',
       serviceId: user.service_id ? String(user.service_id) : '',
       supervisorId: user.supervisor_id ? String(user.supervisor_id) : '',
@@ -413,6 +450,8 @@ export default function AdminUsersPage() {
         role: editUser.role,
         jobTitle: editUser.jobTitle || 'Défaut',
         enterpriseId: editUser.enterpriseId ? parseInt(editUser.enterpriseId) : null,
+        // A chosen direction decides the subsidiary on the server.
+        subsidiaryId: editUser.directionId ? undefined : editUser.subsidiaryId ? parseInt(editUser.subsidiaryId) : null,
         directionId: editUser.directionId ? parseInt(editUser.directionId) : null,
         serviceId: editUser.serviceId ? parseInt(editUser.serviceId) : null,
         supervisorId: editUser.supervisorId ? parseInt(editUser.supervisorId) : null,
@@ -442,6 +481,7 @@ export default function AdminUsersPage() {
       role: newUser.role,
       jobTitle: newUser.jobTitle.trim() || undefined,
       enterpriseId: newUser.enterpriseId ? parseInt(newUser.enterpriseId) : undefined,
+      subsidiaryId: !newUser.directionId && newUser.subsidiaryId ? parseInt(newUser.subsidiaryId) : undefined,
       directionId: newUser.directionId ? parseInt(newUser.directionId) : undefined,
       serviceId: newUser.serviceId ? parseInt(newUser.serviceId) : undefined,
       supervisorId: newUser.supervisorId ? parseInt(newUser.supervisorId) : undefined,
@@ -497,6 +537,7 @@ export default function AdminUsersPage() {
         { key: 'email', label: 'Email' },
         { key: 'job_title', label: t('users.editDialog.jobTitle') },
         { key: 'enterprise_name', label: t('users.editDialog.enterprise') },
+        { key: 'subsidiary_name', label: t('users.addDialog.subsidiary') },
         { key: 'direction_name', label: t('users.editDialog.direction') },
         { key: 'service_name', label: t('users.editDialog.service') },
         { key: 'supervisor_name', label: t('users.editDialog.supervisor') },
@@ -645,7 +686,7 @@ export default function AdminUsersPage() {
                   <Label htmlFor="enterprise">{t('users.addDialog.enterprise')}</Label>
                   <Select
                     value={newUser.enterpriseId}
-                    onValueChange={(value: string) => setNewUser({ ...newUser, enterpriseId: value, directionId: '', serviceId: '' })}
+                    onValueChange={(value: string) => setNewUser({ ...newUser, enterpriseId: value, subsidiaryId: '', directionId: '', serviceId: '' })}
                   >
                     <SelectTrigger id="enterprise">
                       <SelectValue placeholder={t('users.addDialog.enterprisePlaceholder')} />
@@ -657,6 +698,26 @@ export default function AdminUsersPage() {
                     </SelectContent>
                   </Select>
                 </div>
+                {subsidiariesFor(newUser.enterpriseId).length > 0 && (
+                  <div className="space-y-2">
+                    <Label htmlFor="subsidiary">{t('users.addDialog.subsidiary')}</Label>
+                    <Select
+                      value={newUser.subsidiaryId || '__none__'}
+                      onValueChange={(value: string) => setNewUser({ ...newUser, subsidiaryId: value === '__none__' ? '' : value, directionId: '', serviceId: '' })}
+                      disabled={!newUser.enterpriseId}
+                    >
+                      <SelectTrigger id="subsidiary">
+                        <SelectValue placeholder={t('users.addDialog.subsidiaryPlaceholder')} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">{t('users.addDialog.noSubsidiary')}</SelectItem>
+                        {subsidiariesFor(newUser.enterpriseId).map((sub: any) => (
+                          <SelectItem key={sub.id} value={String(sub.id)}>{sub.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 <div className="space-y-2">
                   <Label htmlFor="direction">{t('users.addDialog.direction')}</Label>
                   <Select
@@ -668,8 +729,7 @@ export default function AdminUsersPage() {
                       <SelectValue placeholder={t('users.addDialog.directionPlaceholder')} />
                     </SelectTrigger>
                     <SelectContent>
-                      {directions
-                        .filter((d: any) => !newUser.enterpriseId || d.enterprise_id === parseInt(newUser.enterpriseId))
+                      {directionsFor(newUser.enterpriseId, newUser.subsidiaryId)
                         .map((d: any) => (
                           <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
                         ))}
@@ -688,7 +748,7 @@ export default function AdminUsersPage() {
                     </SelectTrigger>
                     <SelectContent>
                       {services
-                        .filter((s: any) => !newUser.directionId || s.direction_id === parseInt(newUser.directionId))
+                        .filter((s: any) => !newUser.directionId || Number(s.direction_id) === Number(newUser.directionId))
                         .map((s: any) => (
                           <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
                         ))}
@@ -813,6 +873,7 @@ export default function AdminUsersPage() {
                     </td>
                     <td className="p-4">
                       <span className="text-sm">{user.enterprise_name || '-'}</span>
+                      {user.subsidiary_name && <span className="block text-xs text-muted-foreground">{user.subsidiary_name}</span>}
                     </td>
                     <td className="p-4">
                       <span className="text-sm">{user.direction_name || '-'}</span>
@@ -833,6 +894,16 @@ export default function AdminUsersPage() {
                       <Badge className={statusColors[user.status] || 'bg-gray-100 text-gray-800'}>
                         {statusLabels[user.status] || user.status || (user.is_active ? t('users.statuses.active') : t('users.statuses.inactive'))}
                       </Badge>
+                      {user.locked_until && (
+                        <Badge
+                          variant="outline"
+                          className="ml-1 border-red-300 text-red-700"
+                          title={t('users.lockedUntil', { time: new Date(user.locked_until).toLocaleTimeString(dateLocale(), { hour: '2-digit', minute: '2-digit' }) })}
+                        >
+                          <Lock className="h-3 w-3 mr-1" />
+                          {t('users.locked')}
+                        </Badge>
+                      )}
                     </td>
                     <td className="p-4 text-sm text-muted-foreground">
                       {user.last_login_at ? formatRelativeTime(user.last_login_at) : user.created_at ? formatRelativeTime(user.created_at) : '-'}
@@ -854,6 +925,12 @@ export default function AdminUsersPage() {
                             {t('users.rowActions.sendEmail')}
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
+                          {user.locked_until && (
+                            <DropdownMenuItem onClick={() => unlockMutation.mutate(user.id)}>
+                              <Unlock className="h-4 w-4 mr-2" />
+                              {t('users.rowActions.unlock')}
+                            </DropdownMenuItem>
+                          )}
                           {user.status !== 'active' && (
                             <DropdownMenuItem onClick={() => changeStatusMutation.mutate({ userId: user.id, status: 'active' })}>
                               <UserCheck className="h-4 w-4 mr-2" />
@@ -989,7 +1066,7 @@ export default function AdminUsersPage() {
               <Label htmlFor="editEnterprise">{t('users.editDialog.enterprise')}</Label>
               <Select
                 value={editUser.enterpriseId || '__none__'}
-                onValueChange={(value: string) => setEditUser({ ...editUser, enterpriseId: value === '__none__' ? '' : value, directionId: '', serviceId: '' })}
+                onValueChange={(value: string) => setEditUser({ ...editUser, enterpriseId: value === '__none__' ? '' : value, subsidiaryId: '', directionId: '', serviceId: '' })}
               >
                 <SelectTrigger id="editEnterprise">
                   <SelectValue placeholder={t('users.addDialog.enterprisePlaceholder')} />
@@ -1002,6 +1079,26 @@ export default function AdminUsersPage() {
                 </SelectContent>
               </Select>
             </div>
+            {subsidiariesFor(editUser.enterpriseId).length > 0 && (
+              <div className="space-y-2">
+                <Label htmlFor="editSubsidiary">{t('users.addDialog.subsidiary')}</Label>
+                <Select
+                  value={editUser.subsidiaryId || '__none__'}
+                  onValueChange={(value: string) => setEditUser({ ...editUser, subsidiaryId: value === '__none__' ? '' : value, directionId: '', serviceId: '' })}
+                  disabled={!editUser.enterpriseId}
+                >
+                  <SelectTrigger id="editSubsidiary">
+                    <SelectValue placeholder={t('users.addDialog.subsidiaryPlaceholder')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">{t('users.addDialog.noSubsidiary')}</SelectItem>
+                    {subsidiariesFor(editUser.enterpriseId).map((sub: any) => (
+                      <SelectItem key={sub.id} value={String(sub.id)}>{sub.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="editDirection">{t('users.editDialog.direction')}</Label>
               <Select
@@ -1014,8 +1111,7 @@ export default function AdminUsersPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">{t('users.editDialog.none')}</SelectItem>
-                  {directions
-                    .filter((d: any) => !editUser.enterpriseId || d.enterprise_id === parseInt(editUser.enterpriseId))
+                  {directionsFor(editUser.enterpriseId, editUser.subsidiaryId)
                     .map((d: any) => (
                       <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
                     ))}
@@ -1035,7 +1131,7 @@ export default function AdminUsersPage() {
                 <SelectContent>
                   <SelectItem value="__none__">{t('users.addDialog.none')}</SelectItem>
                   {services
-                    .filter((s: any) => !editUser.directionId || s.direction_id === parseInt(editUser.directionId))
+                    .filter((s: any) => !editUser.directionId || Number(s.direction_id) === Number(editUser.directionId))
                     .map((s: any) => (
                       <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
                     ))}

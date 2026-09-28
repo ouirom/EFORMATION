@@ -8,6 +8,7 @@ import { CategoryService } from '../services/category.service';
 import { BadRequestError } from '../middleware/error.middleware';
 import { parseSpreadsheet, buildXlsxTemplate } from '../utils/xlsx';
 import { db, IS_PG } from '../database/db-helpers';
+import { TenantSettingsService } from '../services/tenant-settings.service';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -54,20 +55,24 @@ router.get('/organization/template', authenticate, authorize('admin'), async (re
       [
         { header: 'enterpriseName' },
         { header: 'enterpriseCode' },
+        { header: 'subsidiaryName' },
+        { header: 'subsidiaryCode' },
         { header: 'directionName' },
         { header: 'directionCode' },
         { header: 'serviceName' },
         { header: 'serviceCode' },
       ],
       [
-        ['Entreprise Demo', 'DEMO', 'Direction Technique', 'TECH', 'Ingénierie', 'ENG'],
-        ['Entreprise Demo', 'DEMO', 'Direction Technique', 'TECH', 'Support', 'SUP'],
-        ['Entreprise Demo', 'DEMO', 'Direction Opérations', 'OPS', '', ''],
+        ['Entreprise Demo', 'DEMO', '', '', 'Direction Technique', 'TECH', 'Ingénierie', 'ENG'],
+        ['Entreprise Demo', 'DEMO', '', '', 'Direction Technique', 'TECH', 'Support', 'SUP'],
+        ['Entreprise Demo', 'DEMO', 'Filiale Côte d\'Ivoire', 'FIL-CI', 'Direction Commerciale', 'COM-CI', 'Ventes', 'VTE-CI'],
+        ['Entreprise Demo', 'DEMO', '', '', 'Direction Opérations', 'OPS', '', ''],
       ],
       [
         'Une ligne = un service (ou une direction si serviceName est vide, ou une entreprise si directionName est aussi vide).',
         'enterpriseName est obligatoire sur chaque ligne.',
         'directionName est obligatoire si serviceName est renseigné.',
+        "subsidiaryName (filiale) est optionnel : renseigné, la direction de la ligne est créée dans cette filiale de l'entreprise ; vide, elle est rattachée directement à l'entreprise.",
         'Les colonnes *Code sont optionnelles ; si un enterprise/direction/service du même nom (ou code) existe déjà pour votre organisation, il est réutilisé au lieu d\'être recréé (import idempotent, rejouable sans risque de doublons).',
       ]
     );
@@ -87,6 +92,7 @@ router.post('/organization', authenticate, authorize('admin'), upload.single('fi
 
     // Caches so repeated enterprise/direction names across rows don't re-query.
     const enterpriseCache = new Map<string, number>();
+    const subsidiaryCache = new Map<string, number>();
     const directionCache = new Map<string, number>();
 
     for (let i = 0; i < rows.length; i++) {
@@ -94,6 +100,8 @@ router.post('/organization', authenticate, authorize('admin'), upload.single('fi
       const row = rows[i];
       const enterpriseName = (row.enterpriseName || '').trim();
       const enterpriseCode = (row.enterpriseCode || '').trim() || null;
+      const subsidiaryName = (row.subsidiaryName || '').trim();
+      const subsidiaryCode = (row.subsidiaryCode || '').trim() || null;
       const directionName = (row.directionName || '').trim();
       const directionCode = (row.directionCode || '').trim() || null;
       const serviceName = (row.serviceName || '').trim();
@@ -131,14 +139,44 @@ router.post('/organization', authenticate, authorize('admin'), upload.single('fi
           enterpriseCache.set(enterpriseName.toLowerCase(), enterpriseId);
         }
 
+        // Optional subsidiary (filiale) of the enterprise.
+        let subsidiaryId: number | null = null;
+        let subsidiaryWasCreated = false;
+        if (subsidiaryName) {
+          const subsidiaryKey = `${enterpriseId}:${subsidiaryName.toLowerCase()}`;
+          subsidiaryId = subsidiaryCache.get(subsidiaryKey) ?? null;
+          if (!subsidiaryId) {
+            const existing = await DatabaseService.query<{ id: number }>(
+              `SELECT id FROM subsidiaries WHERE tenant_id = @tenantId AND enterprise_id = @enterpriseId AND (LOWER(name) = @name OR (code IS NOT NULL AND code = @code))`,
+              { tenantId, enterpriseId, name: subsidiaryName.toLowerCase(), code: subsidiaryCode }
+            );
+            if (existing.length > 0) {
+              subsidiaryId = existing[0].id;
+            } else {
+              const inserted = await DatabaseService.query<{ id: number }>(
+                IS_PG
+                  ? `INSERT INTO subsidiaries (tenant_id, enterprise_id, name, code) VALUES (@tenantId, @enterpriseId, @name, @code) RETURNING id`
+                  : `INSERT INTO subsidiaries (tenant_id, enterprise_id, name, code) OUTPUT INSERTED.id VALUES (@tenantId, @enterpriseId, @name, @code)`,
+                { tenantId, enterpriseId, name: subsidiaryName, code: subsidiaryCode }
+              );
+              subsidiaryId = inserted[0].id;
+              subsidiaryWasCreated = true;
+            }
+            subsidiaryCache.set(subsidiaryKey, subsidiaryId as number);
+          }
+        }
+
         if (!directionName) {
+          const wasCreated = subsidiaryName ? subsidiaryWasCreated : enterpriseWasCreated;
           results.push({
             line,
-            label: enterpriseName,
-            status: enterpriseWasCreated ? 'created' : 'skipped',
-            message: enterpriseWasCreated ? 'Entreprise créée' : 'Entreprise déjà existante',
+            label: subsidiaryName ? `${enterpriseName} / ${subsidiaryName}` : enterpriseName,
+            status: wasCreated ? 'created' : 'skipped',
+            message: subsidiaryName
+              ? wasCreated ? 'Filiale créée' : 'Filiale déjà existante'
+              : wasCreated ? 'Entreprise créée' : 'Entreprise déjà existante',
           });
-          if (enterpriseWasCreated) created++;
+          if (wasCreated) created++;
           continue;
         }
 
@@ -155,9 +193,9 @@ router.post('/organization', authenticate, authorize('admin'), upload.single('fi
           } else {
             const inserted = await DatabaseService.query<{ id: number }>(
               IS_PG
-                ? `INSERT INTO directions (tenant_id, enterprise_id, name, code) VALUES (@tenantId, @enterpriseId, @name, @code) RETURNING id`
-                : `INSERT INTO directions (tenant_id, enterprise_id, name, code) OUTPUT INSERTED.id VALUES (@tenantId, @enterpriseId, @name, @code)`,
-              { tenantId, enterpriseId, name: directionName, code: directionCode }
+                ? `INSERT INTO directions (tenant_id, enterprise_id, subsidiary_id, name, code) VALUES (@tenantId, @enterpriseId, @subsidiaryId, @name, @code) RETURNING id`
+                : `INSERT INTO directions (tenant_id, enterprise_id, subsidiary_id, name, code) OUTPUT INSERTED.id VALUES (@tenantId, @enterpriseId, @subsidiaryId, @name, @code)`,
+              { tenantId, enterpriseId, subsidiaryId, name: directionName, code: directionCode }
             );
             directionId = inserted[0].id;
             directionWasCreated = true;
@@ -216,18 +254,19 @@ router.get('/users/template', authenticate, authorize('admin', 'director'), asyn
         { header: 'displayName' },
         { header: 'role' },
         { header: 'enterpriseCode' },
+        { header: 'subsidiaryCode' },
         { header: 'directionCode' },
         { header: 'serviceCode' },
         { header: 'supervisorEmail' },
       ],
       [
-        ['marie.martin@entreprise.com', 'Marie Martin', 'supervisor', 'DEMO', 'TECH', 'ENG', ''],
-        ['jean.dupont@entreprise.com', 'Jean Dupont', 'agent', 'DEMO', 'TECH', 'ENG', 'marie.martin@entreprise.com'],
+        ['marie.martin@entreprise.com', 'Marie Martin', 'supervisor', 'DEMO', '', 'TECH', 'ENG', ''],
+        ['jean.dupont@entreprise.com', 'Jean Dupont', 'agent', 'DEMO', '', 'TECH', 'ENG', 'marie.martin@entreprise.com'],
       ],
       [
         'email et displayName sont obligatoires.',
         "role doit être l'une des valeurs : agent, externe, stagiaire, supervisor, manager, director, admin, super_admin (les deux derniers requièrent des droits suffisants ; externe et stagiaire ont les mêmes droits qu'agent).",
-        'Les colonnes *Code sont optionnelles et doivent correspondre à un code existant (voir le modèle Organisation) ; laissez vide si non applicable.',
+        'Les colonnes *Code sont optionnelles et doivent correspondre à un code existant (voir le modèle Organisation) ; laissez vide si non applicable. Le niveau le plus bas suffit : un serviceCode renseigne aussi la direction, la filiale et l\'entreprise.',
         "supervisorEmail (optionnel) attribue un superviseur direct à cet utilisateur — l'email doit correspondre à un utilisateur existant (ou déjà présent plus haut dans ce même fichier) ayant un rôle strictement supérieur.",
         'Un mot de passe temporaire est généré automatiquement pour chaque utilisateur importé.',
         "Les emails déjà enregistrés sont ignorés (marqués 'skipped'), l'import est donc rejouable sans risque de doublons.",
@@ -566,14 +605,17 @@ router.post('/quizzes', authenticate, authorize('admin', 'director', 'manager'),
           if (existingQuizzes.length > 0) {
             quizId = existingQuizzes[0].id;
           } else {
-            const passingScore = row.passingScore ? parseInt(row.passingScore, 10) : 70;
+            // Columns left empty take the organization's quiz defaults.
+            const defaults = await TenantSettingsService.get(tenantId);
+            const passingScore = row.passingScore ? parseInt(row.passingScore, 10) : defaults.quizDefaultPassingScore;
+            const maxAttempts = defaults.quizDefaultMaxAttempts > 0 ? defaults.quizDefaultMaxAttempts : null;
             const inserted = await DatabaseService.query<{ id: number }>(
               IS_PG
-                ? `INSERT INTO quizzes (tenant_id, lesson_id, title, passing_score)
-                   VALUES (@tenantId, @lessonId, @title, @passingScore) RETURNING id`
-                : `INSERT INTO quizzes (tenant_id, lesson_id, title, passing_score)
-                   OUTPUT INSERTED.id VALUES (@tenantId, @lessonId, @title, @passingScore)`,
-              { tenantId, lessonId, title: quizTitle, passingScore }
+                ? `INSERT INTO quizzes (tenant_id, lesson_id, title, passing_score, max_attempts)
+                   VALUES (@tenantId, @lessonId, @title, @passingScore, @maxAttempts) RETURNING id`
+                : `INSERT INTO quizzes (tenant_id, lesson_id, title, passing_score, max_attempts)
+                   OUTPUT INSERTED.id VALUES (@tenantId, @lessonId, @title, @passingScore, @maxAttempts)`,
+              { tenantId, lessonId, title: quizTitle, passingScore, maxAttempts }
             );
             quizId = inserted[0].id;
           }

@@ -9,6 +9,9 @@ import { NotificationService } from '../services/notification.service';
 import { InactivityPolicyService, INACTIVITY_POLICY_ROLES } from '../services/inactivity.service';
 import { LiveKitService } from '../services/livekit.service';
 import { RecordingService } from '../services/recording.service';
+import { AuditService } from '../services/audit.service';
+import { LdapService } from '../services/ldap.service';
+import { DEFAULT_LDAP_SEARCH_FILTER, SsoConfigService } from '../services/sso-config.service';
 
 const router = Router();
 
@@ -430,5 +433,222 @@ router.put(
     }
   }
 );
+
+// ==================== SSO & DIRECTORY (per organization) ====================
+
+const SSO_SECRET_FIELDS = {
+  azureClientSecret: 'azure_client_secret',
+  googleClientSecret: 'google_client_secret',
+  ldapBindPassword: 'ldap_bind_password',
+} as const;
+
+/** Masked secret on the way out, like the SMTP password: never the real value. */
+const maskSecret = (value: string | null | undefined) => (value ? MASKED_PASSWORD : '');
+
+/**
+ * @route GET /api/v1/settings/sso
+ * @desc The organization's identity providers (Azure AD, Google, LDAP), secrets
+ *       masked, plus the redirect URIs to register with the providers.
+ */
+router.get('/sso', authenticate, authorize('admin'), async (req: AuthRequest, res, next) => {
+  try {
+    const tenantId = req.user!.tenantId;
+    const rows = await DatabaseService.query<any>('SELECT * FROM tenant_sso_settings WHERE tenant_id = @tenantId', {
+      tenantId,
+    });
+    const row = rows[0] || {};
+    const resolved = await SsoConfigService.get(tenantId);
+
+    res.json({
+      success: true,
+      data: {
+        azureEnabled: !!row.azure_enabled,
+        azureDirectoryId: row.azure_directory_id || '',
+        azureClientId: row.azure_client_id || '',
+        azureClientSecret: maskSecret(row.azure_client_secret),
+        googleEnabled: !!row.google_enabled,
+        googleClientId: row.google_client_id || '',
+        googleClientSecret: maskSecret(row.google_client_secret),
+        ldapEnabled: !!row.ldap_enabled,
+        ldapUrl: row.ldap_url || '',
+        ldapBindDn: row.ldap_bind_dn || '',
+        ldapBindPassword: maskSecret(row.ldap_bind_password),
+        ldapSearchBase: row.ldap_search_base || '',
+        ldapSearchFilter: row.ldap_search_filter || DEFAULT_LDAP_SEARCH_FILTER,
+        ldapEmailAttribute: row.ldap_email_attribute || 'mail',
+        ldapNameAttribute: row.ldap_name_attribute || 'displayName',
+        redirectUris: {
+          azure: SsoConfigService.redirectUri('azure'),
+          google: SsoConfigService.redirectUri('google'),
+        },
+        // What the login page will actually offer, and whether it's this
+        // organization's provider or the platform one (.env, default tenant only).
+        active: resolved.source,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @route PUT /api/v1/settings/sso
+ * @desc Save the organization's identity providers. A secret sent back masked
+ *       (or omitted) keeps its stored value; an empty string clears it.
+ */
+router.put(
+  '/sso',
+  authenticate,
+  authorize('admin'),
+  [
+    body('azureEnabled').optional().isBoolean(),
+    body('googleEnabled').optional().isBoolean(),
+    body('ldapEnabled').optional().isBoolean(),
+    body(['azureDirectoryId', 'azureClientId', 'googleClientId', 'ldapBindDn', 'ldapSearchBase', 'ldapEmailAttribute', 'ldapNameAttribute'])
+      .optional({ nullable: true })
+      .isString()
+      .isLength({ max: 255 }),
+    body(['azureClientSecret', 'googleClientSecret', 'ldapBindPassword']).optional({ nullable: true }).isString(),
+    body('ldapUrl')
+      .optional({ nullable: true })
+      .custom((value) => !value || /^ldaps?:\/\/[^\s]+$/i.test(value))
+      .withMessage('The LDAP URL must start with ldap:// or ldaps://'),
+    body('ldapSearchFilter')
+      .optional({ nullable: true })
+      .custom((value) => !value || String(value).includes('{{username}}'))
+      .withMessage('The LDAP search filter must contain {{username}}'),
+  ],
+  async (req: AuthRequest, res, next) => {
+    try {
+      validate(req);
+      const tenantId = req.user!.tenantId;
+      const b = req.body;
+
+      const existing = await DatabaseService.query<any>('SELECT * FROM tenant_sso_settings WHERE tenant_id = @tenantId', {
+        tenantId,
+      });
+      const current = existing[0] || {};
+
+      const secret = (field: keyof typeof SSO_SECRET_FIELDS) => {
+        const incoming = b[field];
+        return incoming === undefined || incoming === MASKED_PASSWORD
+          ? current[SSO_SECRET_FIELDS[field]] ?? null
+          : incoming || null;
+      };
+      const text = (field: string, column: string) =>
+        b[field] === undefined ? current[column] ?? null : String(b[field] ?? '').trim() || null;
+      const flag = (field: string, column: string) => (b[field] === undefined ? !!current[column] : !!b[field]);
+
+      const params = {
+        tenantId,
+        azureEnabled: flag('azureEnabled', 'azure_enabled'),
+        azureDirectoryId: text('azureDirectoryId', 'azure_directory_id'),
+        azureClientId: text('azureClientId', 'azure_client_id'),
+        azureClientSecret: secret('azureClientSecret'),
+        googleEnabled: flag('googleEnabled', 'google_enabled'),
+        googleClientId: text('googleClientId', 'google_client_id'),
+        googleClientSecret: secret('googleClientSecret'),
+        ldapEnabled: flag('ldapEnabled', 'ldap_enabled'),
+        ldapUrl: text('ldapUrl', 'ldap_url'),
+        ldapBindDn: text('ldapBindDn', 'ldap_bind_dn'),
+        ldapBindPassword: secret('ldapBindPassword'),
+        ldapSearchBase: text('ldapSearchBase', 'ldap_search_base'),
+        ldapSearchFilter: text('ldapSearchFilter', 'ldap_search_filter'),
+        ldapEmailAttribute: text('ldapEmailAttribute', 'ldap_email_attribute'),
+        ldapNameAttribute: text('ldapNameAttribute', 'ldap_name_attribute'),
+        updatedBy: req.user!.id,
+      };
+
+      // An enabled provider must be usable: otherwise the login page would offer a
+      // button that can only fail.
+      const missing: string[] = [];
+      if (params.azureEnabled && !(params.azureClientId && params.azureClientSecret)) missing.push('Azure AD');
+      if (params.googleEnabled && !(params.googleClientId && params.googleClientSecret)) missing.push('Google');
+      if (params.ldapEnabled && !(params.ldapUrl && params.ldapBindDn && params.ldapBindPassword && params.ldapSearchBase)) {
+        missing.push('LDAP');
+      }
+      if (missing.length > 0) {
+        throw BadRequestError(`Incomplete configuration for: ${missing.join(', ')}`, 'SSO_INCOMPLETE', { missing });
+      }
+
+      if (existing.length === 0) {
+        await DatabaseService.execute(
+          `INSERT INTO tenant_sso_settings (
+             tenant_id, azure_enabled, azure_directory_id, azure_client_id, azure_client_secret,
+             google_enabled, google_client_id, google_client_secret,
+             ldap_enabled, ldap_url, ldap_bind_dn, ldap_bind_password, ldap_search_base,
+             ldap_search_filter, ldap_email_attribute, ldap_name_attribute, updated_by
+           ) VALUES (
+             @tenantId, @azureEnabled, @azureDirectoryId, @azureClientId, @azureClientSecret,
+             @googleEnabled, @googleClientId, @googleClientSecret,
+             @ldapEnabled, @ldapUrl, @ldapBindDn, @ldapBindPassword, @ldapSearchBase,
+             @ldapSearchFilter, @ldapEmailAttribute, @ldapNameAttribute, @updatedBy
+           )`,
+          params
+        );
+      } else {
+        await DatabaseService.execute(
+          `UPDATE tenant_sso_settings SET
+             azure_enabled = @azureEnabled, azure_directory_id = @azureDirectoryId,
+             azure_client_id = @azureClientId, azure_client_secret = @azureClientSecret,
+             google_enabled = @googleEnabled, google_client_id = @googleClientId,
+             google_client_secret = @googleClientSecret,
+             ldap_enabled = @ldapEnabled, ldap_url = @ldapUrl, ldap_bind_dn = @ldapBindDn,
+             ldap_bind_password = @ldapBindPassword, ldap_search_base = @ldapSearchBase,
+             ldap_search_filter = @ldapSearchFilter, ldap_email_attribute = @ldapEmailAttribute,
+             ldap_name_attribute = @ldapNameAttribute, updated_by = @updatedBy, updated_at = ${db.now()}
+           WHERE tenant_id = @tenantId`,
+          params
+        );
+      }
+
+      SsoConfigService.invalidate(tenantId);
+      // Audit which providers changed state, never the secrets themselves.
+      await AuditService.log(tenantId, req.user!.id, 'SSO_SETTINGS_UPDATED', 'tenant_sso_settings', null, {
+        azureEnabled: params.azureEnabled,
+        googleEnabled: params.googleEnabled,
+        ldapEnabled: params.ldapEnabled,
+      });
+
+      res.json({ success: true, message: 'SSO settings updated' });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * @route POST /api/v1/settings/sso/ldap/test
+ * @desc Bind with the service account and read the search base, using the
+ *       values in the form (masked password = the stored one). Saves nothing.
+ */
+router.post('/sso/ldap/test', authenticate, authorize('admin'), async (req: AuthRequest, res, next) => {
+  try {
+    const tenantId = req.user!.tenantId;
+    const rows = await DatabaseService.query<any>('SELECT ldap_bind_password FROM tenant_sso_settings WHERE tenant_id = @tenantId', {
+      tenantId,
+    });
+    const b = req.body || {};
+    const bindPassword =
+      b.ldapBindPassword === undefined || b.ldapBindPassword === MASKED_PASSWORD ? rows[0]?.ldap_bind_password : b.ldapBindPassword;
+
+    if (!b.ldapUrl || !/^ldaps?:\/\//i.test(b.ldapUrl) || !b.ldapBindDn || !bindPassword || !b.ldapSearchBase) {
+      throw BadRequestError('Fill in the URL, service account, password and search base first', 'SSO_INCOMPLETE');
+    }
+
+    await LdapService.testConnection({
+      url: b.ldapUrl,
+      bindDN: b.ldapBindDn,
+      bindPassword,
+      searchBase: b.ldapSearchBase,
+      searchFilter: b.ldapSearchFilter || DEFAULT_LDAP_SEARCH_FILTER,
+      emailAttribute: b.ldapEmailAttribute || 'mail',
+      nameAttribute: b.ldapNameAttribute || 'displayName',
+    });
+    res.json({ success: true, message: 'LDAP connection succeeded' });
+  } catch (error) {
+    next(error);
+  }
+});
 
 export default router;

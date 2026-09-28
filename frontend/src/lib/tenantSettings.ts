@@ -18,7 +18,31 @@ export interface TenantPlatformSettings {
   enableLiveSessions: boolean
   maxUsersPerGroup: number
   certificateValidity: number
+  passwordMinLength: number
+  passwordRequireComplexity: boolean
+  passwordExpiryDays: number
+  maxLoginAttempts: number
+  lockoutMinutes: number
+  sessionIdleMinutes: number
+  sessionMaxDays: number
+  allowedEmailDomains: string[]
+  requireRegistrationApproval: boolean
+  quizDefaultPassingScore: number
+  quizDefaultMaxAttempts: number
+  certificateReminderDays: number
+  assignmentReminderDays: number
+  assignmentUrgentDays: number
+  escalationDaysOverdue: number
+  enableBadges: boolean
+  enableXp: boolean
+  leaderboardScope: LeaderboardScope
+  xpPerCourse: number
+  xpPerQuiz: number
+  xpPerLesson: number
+  xpPerLevel: number
 }
+
+export type LeaderboardScope = 'organization' | 'direction' | 'service' | 'hidden'
 
 export interface Organization {
   id: number
@@ -29,7 +53,7 @@ export interface Organization {
   [key: string]: any
 }
 
-export type TenantFeature = 'chat' | 'liveSessions'
+export type TenantFeature = 'chat' | 'liveSessions' | 'badges'
 
 export function useOrganization() {
   return useQuery<Organization | undefined>({
@@ -47,13 +71,23 @@ export function useOrganization() {
  * enabled so the menu doesn't flicker for the (default) enabled case; the server
  * still refuses a disabled module's API with FEATURE_DISABLED.
  */
-export function useTenantFeatures(): Record<TenantFeature, boolean> & { loaded: boolean } {
+export function useTenantFeatures(): Record<TenantFeature, boolean> & {
+  loaded: boolean
+  /** XP, levels and leaderboard. */
+  xp: boolean
+  leaderboardScope: LeaderboardScope
+  xpPerLevel: number
+} {
   const { data } = useOrganization()
   const settings = data?.settings
   return {
     loaded: !!settings,
     chat: settings?.enableChat ?? true,
     liveSessions: settings?.enableLiveSessions ?? true,
+    badges: settings?.enableBadges ?? true,
+    xp: settings?.enableXp ?? true,
+    leaderboardScope: settings?.leaderboardScope ?? 'organization',
+    xpPerLevel: settings?.xpPerLevel ?? 250,
   }
 }
 

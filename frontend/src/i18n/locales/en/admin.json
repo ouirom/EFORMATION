@@ -210,7 +210,8 @@
       "importCompleteTitle": "Import complete",
       "importCompleteDescription": "{{count}} user(s) created",
       "importErrorDescription": "Unable to import the file",
-      "fillRequiredFields": "Please fill in all required fields"
+      "fillRequiredFields": "Please fill in all required fields",
+      "unlockedTitle": "Account unlocked"
     },
     "confirmDelete": "Are you sure you want to delete {{name}}?",
     "loadError": "Unable to load the user list. Please try again.",
@@ -242,7 +243,10 @@
       "none": "None",
       "cancel": "Cancel",
       "creating": "Creating...",
-      "create": "Create"
+      "create": "Create",
+      "subsidiary": "Subsidiary",
+      "subsidiaryPlaceholder": "Choose a subsidiary",
+      "noSubsidiary": "None (directly under the enterprise)"
     },
     "filters": {
       "searchPlaceholder": "Search by name or email...",
@@ -269,7 +273,8 @@
       "reactivate": "Reactivate",
       "suspend": "Suspend",
       "deactivate": "Deactivate",
-      "delete": "Delete"
+      "delete": "Delete",
+      "unlock": "Unlock"
     },
     "pagination": {
       "pageOf": "Page {{page}} of {{totalPages}} ({{total}} users)",
@@ -322,7 +327,9 @@
         "deletedDescription": "Label deleted",
         "deleteErrorDescription": "Error while deleting"
       }
-    }
+    },
+    "locked": "Locked",
+    "lockedUntil": "Too many wrong passwords — locked until {{time}}"
   },
   "courses": {
     "categories": {
@@ -343,7 +350,8 @@
         "enterprise": "Enterprise",
         "direction": "Direction",
         "service": "Service",
-        "role": "Role"
+        "role": "Role",
+        "subsidiary": "Subsidiary"
       }
     },
     "statuses": {
@@ -540,7 +548,7 @@
       "timeLimit": "Time limit (minutes)",
       "timeLimitPlaceholder": "e.g. 30",
       "maxAttempts": "Max attempts",
-      "maxAttemptsPlaceholder": "e.g. 3",
+      "maxAttemptsPlaceholder": "Empty or 0 = unlimited",
       "questionsToDraw": "Randomly drawn questions (from the question bank)",
       "questionsToDrawPlaceholder": "Leave empty to use all questions",
       "questionsToDrawHint": "Each attempt will randomly draw this number of questions from the quiz.",
@@ -636,7 +644,8 @@
         "direction": "Division",
         "service": "Department",
         "role": "Role",
-        "team": "Team"
+        "team": "Team",
+        "subsidiary": "Subsidiary"
       },
       "mandatory": "Mandatory",
       "idFallback": "ID: {{id}}"
@@ -664,7 +673,8 @@
         "enterprise": "Company",
         "direction": "Division",
         "service": "Department",
-        "team": "Team"
+        "team": "Team",
+        "subsidiary": "Subsidiary"
       },
       "searchUsers": "Search for users",
       "searchPlaceholder": "Search by name or email...",
@@ -718,7 +728,8 @@
         "user": "User",
         "direction": "Direction",
         "service": "Service",
-        "enterprise": "Enterprise"
+        "enterprise": "Enterprise",
+        "subsidiary": "Subsidiary"
       }
     },
     "createDialog": {
@@ -1320,6 +1331,216 @@
         "languageTimezone": "The language applies to users who haven't picked one. The time zone is used for reports, streaks and schedules.",
         "maxUsersPerGroup": "Applies when creating chat group conversations (creator included).",
         "certificateValidity": "Used when no duration is given when a certificate is issued."
+      },
+      "security": {
+        "title": "Access & security",
+        "requireRegistrationApproval": "Approve new sign-ups",
+        "passwordRequireComplexity": "Complex password",
+        "passwordMinLength": "Minimum password length",
+        "passwordExpiryDays": "Renew password every (days)",
+        "maxLoginAttempts": "Failures before lockout",
+        "lockoutMinutes": "Lockout duration (minutes)",
+        "sessionIdleMinutes": "Logout after inactivity (minutes)",
+        "sessionMaxDays": "Maximum session length (days)",
+        "allowedEmailDomains": "Allowed email domains",
+        "invalidDomains": "One of the email domains is invalid (expected e.g. belife.ci).",
+        "hints": {
+          "requireRegistrationApproval": "When on, a self-registered account waits for its manager to activate it. Otherwise it is active right away.",
+          "passwordRequireComplexity": "Requires an uppercase and a lowercase letter, a digit and a special character.",
+          "passwordMinLength": "Between 8 and 64 characters. Applies to new passwords.",
+          "passwordExpiryDays": "0 = never. When due, users must choose a new one when they log in.",
+          "maxLoginAttempts": "0 = no lockout. The account is locked after that many wrong passwords in a row.",
+          "lockoutMinutes": "An administrator can also unlock the account from the user list.",
+          "sessionIdleMinutes": "A warning shows one minute before the logout.",
+          "sessionMaxDays": "Past this, users must log in again, even while active.",
+          "allowedEmailDomains": "Comma-separated. Empty = any. Applies to self-registration and first SSO/LDAP logins; accounts created by an administrator are not affected."
+        }
+      },
+      "learning": {
+        "title": "Learning & gamification",
+        "quizDefaultPassingScore": "Quiz pass mark (%)",
+        "quizDefaultMaxAttempts": "Attempts per quiz",
+        "assignmentReminderDays": "First reminder (days before the due date)",
+        "assignmentUrgentDays": "Last reminder (days before the due date)",
+        "escalationDaysOverdue": "Manager follow-up (days late)",
+        "certificateReminderDays": "Certificate expiry reminder (days before)",
+        "enableBadges": "Badges",
+        "enableXp": "Experience points, levels and leaderboard",
+        "leaderboardScope": "Leaderboard scope",
+        "xpPerCourse": "XP per completed course",
+        "xpPerQuiz": "XP per passed quiz",
+        "xpPerLesson": "XP per completed lesson",
+        "xpPerLevel": "XP per level",
+        "hints": {
+          "quizDefaultPassingScore": "Suggested when a quiz is created; each quiz can still be changed.",
+          "quizDefaultMaxAttempts": "0 = unlimited. Suggested when a quiz is created.",
+          "assignmentReminderDays": "Mandatory courses with a due date. 0 = no first reminder.",
+          "assignmentUrgentDays": "0 = no last reminder.",
+          "escalationDaysOverdue": "The manager is told when the course is still not completed. 0 = never.",
+          "certificateReminderDays": "0 = no reminder.",
+          "enableBadges": "When off, no badge is awarded automatically any more and the Badges page leaves the menu.",
+          "enableXp": "When off, level, XP and leaderboard disappear from the dashboard and the profile.",
+          "leaderboardScope": "Who each learner is compared with on the dashboard."
+        }
+      },
+      "compliance": {
+        "auditLogRetentionDays": "Activity log retention (days)",
+        "anonymizeDeletedUsers": "Anonymize deleted accounts",
+        "privacyPolicyUrl": "Privacy policy link",
+        "privacyContactEmail": "Data protection contact (DPO)",
+        "legalNotice": "Legal notice",
+        "hints": {
+          "auditLogRetentionDays": "0 = kept forever. Older entries are deleted every night.",
+          "anonymizeDeletedUsers": "When an account is deleted, its name, email, phone, photo, notifications and messages are erased. Its training results stay, no longer linked to the person.",
+          "privacyPolicyUrl": "Shown on sign-up and in the account menu.",
+          "privacyContactEmail": "Where users exercise their rights (access, correction, erasure).",
+          "legalNotice": "Shown on the public \"Legal notice\" page."
+        }
+      }
+    },
+    "security": {
+      "title": "Access & security",
+      "password": "Password",
+      "passwordComplex": "At least {{count}} characters, upper and lower case, digit and special character",
+      "passwordLength": "At least {{count}} characters",
+      "expiry": "Password renewal",
+      "everyDays_one": "Every {{count}} day",
+      "everyDays_other": "Every {{count}} days",
+      "never": "Never",
+      "lockout": "Account lockout",
+      "lockoutValue_one": "After {{count}} failure, for {{minutes}} min",
+      "lockoutValue_other": "After {{count}} failures, for {{minutes}} min",
+      "none": "None",
+      "idle": "Logout after inactivity",
+      "minutes_one": "{{count}} minute",
+      "minutes_other": "{{count}} minutes",
+      "sessionMax": "Maximum session length",
+      "days_one": "{{count}} day",
+      "days_other": "{{count}} days",
+      "domains": "Allowed email domains",
+      "anyDomain": "Any domain",
+      "approval": "New sign-ups",
+      "approvalOn": "Activated by their manager",
+      "approvalOff": "Active right away"
+    },
+    "learning": {
+      "title": "Learning & gamification",
+      "quiz": "Quizzes (defaults)",
+      "quizValue": "Pass at {{score}} %, {{attempts}}",
+      "attempts_one": "{{count}} attempt",
+      "attempts_other": "{{count}} attempts",
+      "unlimited": "unlimited attempts",
+      "reminders": "Reminders before the due date",
+      "escalation": "Manager follow-up",
+      "escalationValue_one": "{{count}} day after the due date",
+      "escalationValue_other": "{{count}} days after the due date",
+      "certificateReminder": "Certificate expiry reminder",
+      "off": "Off",
+      "badges": "Badges",
+      "xp": "Experience points",
+      "xpValue": "Course {{course}}, quiz {{quiz}}, lesson {{lesson}} — {{level}} XP per level",
+      "leaderboard": "Leaderboard",
+      "leaderboardScope": {
+        "organization": "Whole organization",
+        "direction": "Per department",
+        "service": "Per team",
+        "hidden": "Hidden"
+      }
+    },
+    "tabs": {
+      "general": "General",
+      "platform": "Platform",
+      "security": "Access & security",
+      "learning": "Learning",
+      "structure": "Structure",
+      "integrations": "Integrations",
+      "compliance": "Compliance",
+      "history": "History",
+      "groups": {
+        "modules": "Modules",
+        "localization": "Language and time zone",
+        "passwords": "Passwords",
+        "sessions": "Sign-in and session",
+        "registration": "Sign-up",
+        "quizzes": "Quizzes",
+        "reminders": "Reminders and follow-ups",
+        "gamification": "Gamification",
+        "personalData": "Personal data",
+        "legal": "Legal information"
+      },
+      "defaultValue": "Default: {{value}}",
+      "reset": "Reset",
+      "empty": "empty",
+      "forever": "Kept forever",
+      "unsaved": "Unsaved changes",
+      "cancel": "Cancel",
+      "save": "Save",
+      "invalidFields": "Invalid value: {{fields}}"
+    },
+    "structure": {
+      "intro": "Enterprise → subsidiary → department → team. The subsidiary is optional: a department belongs to a subsidiary or directly to the enterprise.",
+      "empty": "No enterprise yet. Start by creating one.",
+      "addEnterprise": "Add an enterprise",
+      "addSubsidiary": "Subsidiary",
+      "addDirection": "Department",
+      "addService": "Team",
+      "edit": "Edit",
+      "delete": "Delete",
+      "members": "Members",
+      "levels": {
+        "enterprise": "Enterprise",
+        "subsidiary": "Subsidiary",
+        "direction": "Department",
+        "service": "Team"
+      },
+      "createTitle": "New {{level}}",
+      "editTitle": "Edit {{level}}",
+      "name": "Name",
+      "code": "Code",
+      "codeHint": "Optional. Used to place users during Excel imports.",
+      "attachment": "Belongs to",
+      "directlyUnderEnterprise": "Directly under the enterprise",
+      "inSubsidiary": "Subsidiary: {{name}}",
+      "moveHint": "Moving the department also updates the subsidiary of its members.",
+      "saved": "Structure updated.",
+      "deleted": "Deleted.",
+      "deleteTitle": "Delete \"{{name}}\"?",
+      "deleteDescription": "Only possible once it has no sub-units, members, assignments or teams left.",
+      "inUse": "Cannot delete: it still has sub-units or members, or assignments or teams use it.",
+      "error": "The operation failed."
+    },
+    "integrations": {
+      "email": {
+        "title": "Email (SMTP)",
+        "description": "Server sending the platform emails."
+      },
+      "sso": {
+        "title": "SSO & directory",
+        "description": "Sign-in with Microsoft, Google or your LDAP directory."
+      },
+      "video": {
+        "title": "Video conferencing",
+        "description": "LiveKit server of live sessions."
+      },
+      "recording": {
+        "title": "Recording",
+        "description": "Storage of live session recordings."
+      },
+      "import": {
+        "title": "Import",
+        "description": "Excel import of the structure, users and courses."
+      }
+    },
+    "history": {
+      "empty": "No change recorded yet.",
+      "system": "System",
+      "actions": {
+        "SETTINGS_UPDATED": "Settings changed",
+        "SSO_SETTINGS_UPDATED": "SSO changed",
+        "ORG_UNIT_DELETED": "Structure: deletion",
+        "ORGANIZATION_IMPORTED": "Structure imported",
+        "USER_ANONYMIZED": "Account anonymized",
+        "USER_DATA_EXPORTED": "Personal data exported"
       }
     }
   },
@@ -1510,6 +1731,59 @@
       "lastAccess": "Last access",
       "durationMinutes": "{{count}} min",
       "durationHoursMinutes": "{{hours}}h {{minutes}}min"
+    }
+  },
+  "ssoSettings": {
+    "title": "SSO & directory",
+    "subtitle": "Connect your identity provider: your staff sign in with their company account.",
+    "status": {
+      "active": "Active",
+      "platform": "Platform (default)",
+      "inactive": "Inactive"
+    },
+    "azure": {
+      "title": "Microsoft Entra ID (Azure AD)",
+      "description": "App registered in your organization's Azure portal.",
+      "enable": "Offer Microsoft sign-in"
+    },
+    "google": {
+      "title": "Google Workspace",
+      "description": "OAuth client created in the Google Cloud Console.",
+      "enable": "Offer Google sign-in"
+    },
+    "ldap": {
+      "title": "LDAP / Active Directory",
+      "description": "Users sign in with their directory username and password.",
+      "enable": "Offer LDAP sign-in",
+      "filterHint": "{{username}} is replaced with the login entered.",
+      "test": "Test the connection"
+    },
+    "fields": {
+      "azureDirectoryId": "Directory (tenant) ID",
+      "azureClientId": "Application (client) ID",
+      "azureClientSecret": "Client secret",
+      "googleClientId": "Client ID",
+      "googleClientSecret": "Client secret",
+      "ldapUrl": "Server URL",
+      "ldapBindDn": "Service account (DN)",
+      "ldapBindPassword": "Service account password",
+      "ldapSearchBase": "Search base",
+      "ldapSearchFilter": "Search filter",
+      "ldapEmailAttribute": "Email attribute",
+      "ldapNameAttribute": "Display name attribute"
+    },
+    "redirectUri": "Redirect URI to register",
+    "redirectUriHint": "Enter it exactly as shown in the app's configuration at the provider.",
+    "copy": "Copy",
+    "provisioningHint": "On first sign-in, a learner account is created in your organization (within the allowed email domains). An existing account of another organization cannot sign in through your provider.",
+    "save": "Save",
+    "toasts": {
+      "saved": "SSO configuration saved.",
+      "saveError": "Could not save the configuration.",
+      "incomplete": "Incomplete configuration for: {{providers}}.",
+      "ldapOk": "Directory connection succeeded.",
+      "ldapError": "Could not connect to the directory.",
+      "copied": "URI copied."
     }
   }
 }

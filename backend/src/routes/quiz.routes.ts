@@ -5,6 +5,7 @@ import { DatabaseService } from '../services/database.service';
 import { db, IS_PG } from '../database/db-helpers';
 import { BadRequestError, NotFoundError } from '../middleware/error.middleware';
 import { asyncHandler } from '../middleware/asyncHandler';
+import { TenantSettingsService } from '../services/tenant-settings.service';
 
 const router = Router();
 
@@ -390,25 +391,32 @@ router.post(
     body('lessonId').isInt(),
     body('title').notEmpty().trim(),
     body('passingScore').optional().isInt({ min: 0, max: 100 }),
+    body('maxAttempts').optional({ nullable: true }).isInt({ min: 0 }),
     body('randomized').optional().isBoolean(),
     body('questionsToDraw').optional({ nullable: true }).isInt({ min: 1 }),
   ],
   asyncHandler(async (req: AuthRequest, res) => {
     validate(req);
 
+    // Unset values take the organization's defaults (Administration > Organisation).
+    const defaults = await TenantSettingsService.get(req.user!.tenantId);
+    const maxAttempts = req.body.maxAttempts ?? defaults.quizDefaultMaxAttempts;
+
     const result = await DatabaseService.query<{ id: number }>(
       IS_PG
-        ? `INSERT INTO quizzes (tenant_id, lesson_id, title, passing_score, randomized, questions_to_draw)
-           VALUES (@tenantId, @lessonId, @title, @passingScore, @randomized, @questionsToDraw)
+        ? `INSERT INTO quizzes (tenant_id, lesson_id, title, passing_score, max_attempts, randomized, questions_to_draw)
+           VALUES (@tenantId, @lessonId, @title, @passingScore, @maxAttempts, @randomized, @questionsToDraw)
            RETURNING id`
-        : `INSERT INTO quizzes (tenant_id, lesson_id, title, passing_score, randomized, questions_to_draw)
+        : `INSERT INTO quizzes (tenant_id, lesson_id, title, passing_score, max_attempts, randomized, questions_to_draw)
            OUTPUT INSERTED.id
-           VALUES (@tenantId, @lessonId, @title, @passingScore, @randomized, @questionsToDraw)`,
+           VALUES (@tenantId, @lessonId, @title, @passingScore, @maxAttempts, @randomized, @questionsToDraw)`,
       {
         tenantId: req.user!.tenantId,
         lessonId: req.body.lessonId,
         title: req.body.title,
-        passingScore: req.body.passingScore || 70,
+        passingScore: req.body.passingScore ?? defaults.quizDefaultPassingScore,
+        // 0 = unlimited, stored as NULL like quizzes that never had a limit.
+        maxAttempts: maxAttempts > 0 ? maxAttempts : null,
         randomized: req.body.randomized || false,
         questionsToDraw: req.body.questionsToDraw || null,
       }
@@ -434,7 +442,7 @@ router.put(
     body('passingScore').optional().isInt({ min: 0, max: 100 }),
     body('randomized').optional().isBoolean(),
     body('timeLimitMinutes').optional().isInt({ min: 0 }),
-    body('maxAttempts').optional().isInt({ min: 1 }),
+    body('maxAttempts').optional({ nullable: true }).isInt({ min: 0 }),
     body('expiresAt').optional().isISO8601(),
     body('badgeId').optional().isInt(),
     body('certificateEnabled').optional().isBoolean(),
@@ -475,8 +483,9 @@ router.put(
       params.timeLimitMinutes = req.body.timeLimitMinutes;
     }
     if (req.body.maxAttempts !== undefined) {
+      // 0 / null = unlimited, stored as NULL (it used to be impossible to go back to unlimited).
       updateFields.push('max_attempts = @maxAttempts');
-      params.maxAttempts = req.body.maxAttempts;
+      params.maxAttempts = req.body.maxAttempts ? req.body.maxAttempts : null;
     }
     if (req.body.expiresAt !== undefined) {
       updateFields.push('expires_at = @expiresAt');

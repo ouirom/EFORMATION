@@ -24,6 +24,7 @@ import {
   MailCheck,
   UsersRound,
   Library,
+  KeyRound,
 } from 'lucide-react'
 
 /**
@@ -70,6 +71,7 @@ export const adminNavItems: NavItem[] = [
   { icon: Building2, labelKey: 'adminNav.organization', path: '/admin/organization' },
   { icon: UploadCloud, labelKey: 'adminNav.import', path: '/admin/import' },
   { icon: Mail, labelKey: 'adminNav.email', path: '/admin/email-settings' },
+  { icon: KeyRound, labelKey: 'adminNav.sso', path: '/admin/sso-settings' },
   { icon: PlugZap, labelKey: 'adminNav.videoConferencing', path: '/admin/livekit-settings' },
   { icon: Disc, labelKey: 'adminNav.recording', path: '/admin/recording-settings' },
   { icon: ScrollText, labelKey: 'adminNav.logs', path: '/admin/logs', tourId: 'logs' },
@@ -81,14 +83,17 @@ const platformNavItem: NavItem = { icon: Globe, labelKey: 'adminNav.platform', p
 export interface EnabledModules {
   chat: boolean
   liveSessions: boolean
+  badges: boolean
 }
 
-const ALL_MODULES: EnabledModules = { chat: true, liveSessions: true }
+const ALL_MODULES: EnabledModules = { chat: true, liveSessions: true, badges: true }
 
 // Tabs that belong to an optional module disappear when it is turned off.
 const MODULE_PATHS: Record<keyof EnabledModules, string[]> = {
   chat: ['/chat'],
   liveSessions: ['/live', '/admin/live-sessions'],
+  // Admins keep /admin/badges to prepare badges before turning them on.
+  badges: ['/badges'],
 }
 
 function withoutDisabledModules(items: NavItem[], modules: EnabledModules): NavItem[] {

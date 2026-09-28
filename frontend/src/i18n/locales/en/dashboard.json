@@ -109,7 +109,11 @@
   "leaderboard": {
     "title": "Leaderboard",
     "you": "(you)",
-    "none": "No leaderboard yet. Complete courses and quizzes to appear here!"
+    "none": "No leaderboard yet. Complete courses and quizzes to appear here!",
+    "scope": {
+      "direction": "Within my department",
+      "service": "Within my team"
+    }
   },
   "level": "Level {{level}}",
   "resume": {

@@ -1,7 +1,7 @@
 /**
  * course_assignments.assignment_type = 'team' points target_id at teams.id, but
  * team membership itself is polymorphic (team_members.member_type = user/
- * enterprise/direction/service, same shape as course_assignments' own target
+ * enterprise/subsidiary/direction/service, same shape as course_assignments' own target
  * types). So "does this user get a team assignment" always needs a second,
  * nested resolution against team_members -- these two helpers build that
  * EXISTS fragment consistently everywhere a course_assignments OR-chain exists
@@ -21,11 +21,13 @@ export function teamAssignmentClause(
   userIdParam: string,
   enterpriseIdParam?: string | null,
   directionIdParam?: string | null,
-  serviceIdParam?: string | null
+  serviceIdParam?: string | null,
+  subsidiaryIdParam?: string | null
 ): string {
   const memberConditions = [
     `(tm.member_type = 'user' AND tm.target_id = @${userIdParam})`,
     enterpriseIdParam ? `(tm.member_type = 'enterprise' AND tm.target_id = @${enterpriseIdParam})` : '',
+    subsidiaryIdParam ? `(tm.member_type = 'subsidiary' AND tm.target_id = @${subsidiaryIdParam})` : '',
     directionIdParam ? `(tm.member_type = 'direction' AND tm.target_id = @${directionIdParam})` : '',
     serviceIdParam ? `(tm.member_type = 'service' AND tm.target_id = @${serviceIdParam})` : '',
   ].filter(Boolean).join(' OR ');
@@ -49,6 +51,7 @@ export function teamAssignmentClauseForUserRow(caAlias: string, userAlias: strin
     WHERE tm.team_id = ${caAlias}.target_id AND (
       (tm.member_type = 'user' AND tm.target_id = ${userAlias}.id)
       OR (tm.member_type = 'enterprise' AND tm.target_id = ${userAlias}.enterprise_id)
+      OR (tm.member_type = 'subsidiary' AND tm.target_id = ${userAlias}.subsidiary_id)
       OR (tm.member_type = 'direction' AND tm.target_id = ${userAlias}.direction_id)
       OR (tm.member_type = 'service' AND tm.target_id = ${userAlias}.service_id)
     )

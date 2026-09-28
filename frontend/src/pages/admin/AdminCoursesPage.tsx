@@ -743,6 +743,12 @@ function AudienceScopePicker({ value, onChange }: { value: any; onChange: (value
     queryFn: () => api.organizations.getEnterprises(),
     enabled: value.level === 'enterprise',
   })
+  const { data: subsidiaries = [] } = useQuery({
+    queryKey: ['subsidiaries'],
+    queryFn: () => api.organizations.getSubsidiaries(),
+    enabled: value.level === 'subsidiary',
+  })
+
   const { data: directions = [] } = useQuery({
     queryKey: ['directions'],
     queryFn: () => api.organizations.getDirections(),
@@ -757,6 +763,7 @@ function AudienceScopePicker({ value, onChange }: { value: any; onChange: (value
   const getList = (): any[] => {
     switch (value.level) {
       case 'enterprise': return enterprises
+      case 'subsidiary': return subsidiaries
       case 'direction': return directions
       case 'service': return services
       case 'role': return AUDIENCE_ROLES.map((r) => ({ id: r, name: getRoleLabel(r) }))
@@ -787,6 +794,7 @@ function AudienceScopePicker({ value, onChange }: { value: any; onChange: (value
         <SelectContent>
           <SelectItem value="general">{t('courses.audienceScope.levels.general')}</SelectItem>
           <SelectItem value="enterprise">{t('courses.audienceScope.levels.enterprise')}</SelectItem>
+          <SelectItem value="subsidiary">{t('courses.audienceScope.levels.subsidiary')}</SelectItem>
           <SelectItem value="direction">{t('courses.audienceScope.levels.direction')}</SelectItem>
           <SelectItem value="service">{t('courses.audienceScope.levels.service')}</SelectItem>
           <SelectItem value="role">{t('courses.audienceScope.levels.role')}</SelectItem>

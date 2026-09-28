@@ -87,6 +87,12 @@ export default function AdminAssignmentsPage() {
     enabled: assignmentData.assignmentType === 'enterprise',
   })
 
+  const { data: subsidiaries = [] } = useQuery({
+    queryKey: ['subsidiaries'],
+    queryFn: () => api.organizations.getSubsidiaries(),
+    enabled: assignmentData.assignmentType === 'subsidiary',
+  })
+
   const { data: directions = [] } = useQuery({
     queryKey: ['directions'],
     queryFn: () => api.organizations.getDirections(),
@@ -214,6 +220,7 @@ export default function AdminAssignmentsPage() {
     switch (assignmentData.assignmentType) {
       case 'user': return users
       case 'enterprise': return enterprises
+      case 'subsidiary': return subsidiaries
       case 'direction': return directions
       case 'service': return services
       case 'team': return teams
@@ -340,6 +347,7 @@ export default function AdminAssignmentsPage() {
                           <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${
                             assignment.assignmentType === 'user' ? 'bg-blue-100' :
                             assignment.assignmentType === 'enterprise' ? 'bg-purple-100' :
+                            assignment.assignmentType === 'subsidiary' ? 'bg-indigo-100' :
                             assignment.assignmentType === 'direction' ? 'bg-green-100' :
                             assignment.assignmentType === 'team' ? 'bg-teal-100' :
                             'bg-orange-100'
@@ -358,6 +366,7 @@ export default function AdminAssignmentsPage() {
                               <Badge variant="outline" className="text-xs">
                                 {assignment.assignmentType === 'user' ? t('assignments.assignmentsPanel.types.user') :
                                  assignment.assignmentType === 'enterprise' ? t('assignments.assignmentsPanel.types.enterprise') :
+                                 assignment.assignmentType === 'subsidiary' ? t('assignments.assignmentsPanel.types.subsidiary') :
                                  assignment.assignmentType === 'direction' ? t('assignments.assignmentsPanel.types.direction') :
                                  assignment.assignmentType === 'service' ? t('assignments.assignmentsPanel.types.service') :
                                  assignment.assignmentType === 'team' ? t('assignments.assignmentsPanel.types.team') : t('assignments.assignmentsPanel.types.role')}
@@ -511,6 +520,7 @@ export default function AdminAssignmentsPage() {
                 <SelectContent>
                   <SelectItem value="user">{t('assignments.assignDialog.types.user')}</SelectItem>
                   <SelectItem value="enterprise">{t('assignments.assignDialog.types.enterprise')}</SelectItem>
+                  <SelectItem value="subsidiary">{t('assignments.assignDialog.types.subsidiary')}</SelectItem>
                   <SelectItem value="direction">{t('assignments.assignDialog.types.direction')}</SelectItem>
                   <SelectItem value="service">{t('assignments.assignDialog.types.service')}</SelectItem>
                   <SelectItem value="team">{t('assignments.assignDialog.types.team')}</SelectItem>

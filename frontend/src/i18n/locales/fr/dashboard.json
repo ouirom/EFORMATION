@@ -109,7 +109,11 @@
   "leaderboard": {
     "title": "Classement",
     "you": "(vous)",
-    "none": "Pas encore de classement. Terminez des cours et des quiz pour y apparaître !"
+    "none": "Pas encore de classement. Terminez des cours et des quiz pour y apparaître !",
+    "scope": {
+      "direction": "Au sein de ma direction",
+      "service": "Au sein de mon service"
+    }
   },
   "level": "Niveau {{level}}",
   "resume": {

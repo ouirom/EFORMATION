@@ -11,6 +11,21 @@ import { useToast } from '@/components/ui/use-toast'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/services/api'
 import { useTenantDefaultLanguage } from '@/lib/tenantSettings'
+import { DEFAULT_PASSWORD_POLICY, PasswordPolicy, isPasswordCompliant } from '@/lib/passwordPolicy'
+import { PasswordRequirements } from '@/components/PasswordRequirements'
+import { useLegalInfo } from '@/lib/legal'
+
+interface RegistrationSettings {
+  allowSelfRegistration: boolean
+  defaultLanguage: string
+  requireApproval?: boolean
+  allowedEmailDomains?: string[]
+  passwordPolicy?: PasswordPolicy
+}
+
+function emailDomain(email: string): string {
+  return email.split('@').pop()?.trim().toLowerCase() || ''
+}
 
 export default function RegisterPage() {
   const { t } = useTranslation('auth')
@@ -19,11 +34,12 @@ export default function RegisterPage() {
   const { toast } = useToast()
   const [showPassword, setShowPassword] = useState(false)
   const [pendingMessage, setPendingMessage] = useState<string | null>(null)
+  const [accountActive, setAccountActive] = useState(false)
   const [registrationClosed, setRegistrationClosed] = useState(false)
 
-  // Whether this organization accepts sign-ups (Administration > Organisation), and
-  // its default language for visitors who never picked one.
-  const { data: registrationSettings, isLoading: loadingRegistrationSettings } = useQuery<{ allowSelfRegistration: boolean; defaultLanguage: string }>({
+  // Whether this organization accepts sign-ups (Administration > Organisation), its
+  // default language for visitors who never picked one, and its account rules.
+  const { data: registrationSettings, isLoading: loadingRegistrationSettings } = useQuery<RegistrationSettings>({
     queryKey: ['registration-settings'],
     queryFn: async () => (await api.get('/auth/registration-settings')).data.data,
     staleTime: 60 * 1000,
@@ -37,15 +53,12 @@ export default function RegisterPage() {
     confirmPassword: '',
   })
 
-  const passwordRequirements = [
-    { label: t('register.passwordRequirements.minLength'), met: formData.password.length >= 8 },
-    { label: t('register.passwordRequirements.uppercase'), met: /[A-Z]/.test(formData.password) },
-    { label: t('register.passwordRequirements.lowercase'), met: /[a-z]/.test(formData.password) },
-    { label: t('register.passwordRequirements.digit'), met: /\d/.test(formData.password) },
-    { label: t('register.passwordRequirements.special'), met: /[!@#$%^&*(),.?":{}|<>]/.test(formData.password) },
-  ]
-
-  const isPasswordValid = passwordRequirements.every((req) => req.met)
+  const { data: legal } = useLegalInfo()
+  const passwordPolicy = registrationSettings?.passwordPolicy ?? DEFAULT_PASSWORD_POLICY
+  const allowedDomains = registrationSettings?.allowedEmailDomains ?? []
+  const isPasswordValid = isPasswordCompliant(formData.password, passwordPolicy)
+  const isDomainAllowed =
+    allowedDomains.length === 0 || !formData.email.includes('@') || allowedDomains.includes(emailDomain(formData.email))
   const doPasswordsMatch = formData.password === formData.confirmPassword && formData.confirmPassword.length > 0
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -55,6 +68,15 @@ export default function RegisterPage() {
       toast({
         title: tCommon('status.error'),
         description: t('register.errors.fillAllFields'),
+        variant: 'destructive',
+      })
+      return
+    }
+
+    if (!isDomainAllowed) {
+      toast({
+        title: tCommon('status.error'),
+        description: t('register.errors.domainNotAllowed', { domains: allowedDomains.map((d) => '@' + d).join(', ') }),
         variant: 'destructive',
       })
       return
@@ -84,7 +106,8 @@ export default function RegisterPage() {
         email: formData.email,
         password: formData.password,
       })
-      setPendingMessage(result.message || t('register.defaultPendingMessage'))
+      setAccountActive(!result.pending)
+      setPendingMessage(result.pending ? result.message || t('register.defaultPendingMessage') : t('register.accountActiveMessage'))
     } catch (error: any) {
       // Closed between page load and submit: switch to the closed notice.
       if (error.response?.data?.error?.code === 'REGISTRATION_CLOSED') {
@@ -137,7 +160,7 @@ export default function RegisterPage() {
         </CardHeader>
         <CardFooter className="flex flex-col gap-4">
           <Link to="/login" className="w-full">
-            <Button className="w-full">{t('register.backToLogin')}</Button>
+            <Button className="w-full">{accountActive ? t('register.signIn') : t('register.backToLogin')}</Button>
           </Link>
         </CardFooter>
       </Card>
@@ -185,7 +208,13 @@ export default function RegisterPage() {
               value={formData.email}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
               disabled={isLoading}
+              aria-invalid={!isDomainAllowed}
             />
+            {allowedDomains.length > 0 && (
+              <p className={`text-xs ${isDomainAllowed ? 'text-muted-foreground' : 'text-red-500'}`}>
+                {t('register.allowedDomainsHint', { domains: allowedDomains.map((d) => '@' + d).join(', ') })}
+              </p>
+            )}
           </div>
           <div className="space-y-2">
             <Label htmlFor="password">{t('register.password')}</Label>
@@ -208,22 +237,7 @@ export default function RegisterPage() {
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </Button>
             </div>
-            {formData.password && (
-              <div className="grid grid-cols-2 gap-1 mt-2">
-                {passwordRequirements.map((req, i) => (
-                  <div key={i} className="flex items-center gap-1 text-xs">
-                    {req.met ? (
-                      <Check className="h-3 w-3 text-green-500" />
-                    ) : (
-                      <X className="h-3 w-3 text-red-500" />
-                    )}
-                    <span className={req.met ? 'text-green-600' : 'text-muted-foreground'}>
-                      {req.label}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
+            {formData.password && <PasswordRequirements password={formData.password} policy={passwordPolicy} />}
           </div>
           <div className="space-y-2">
             <Label htmlFor="confirmPassword">{t('register.confirmPassword')}</Label>
@@ -257,6 +271,14 @@ export default function RegisterPage() {
             {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {t('register.submit')}
           </Button>
+          {legal?.privacyPolicyUrl && (
+            <p className="text-center text-xs text-muted-foreground">
+              {t('register.privacyNotice')}{' '}
+              <a href={legal.privacyPolicyUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                {t('register.privacyPolicy')}
+              </a>
+            </p>
+          )}
           <p className="text-center text-sm text-muted-foreground">
             {t('register.alreadyHaveAccount')}{' '}
             <Link to="/login" className="text-primary hover:underline">

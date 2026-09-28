@@ -57,7 +57,7 @@ export function QuickSearch() {
   const { t } = useTranslation('shared')
   const { t: tLayout } = useTranslation('layout')
   const { user } = useAuth()
-  const { chat: chatEnabled, liveSessions: liveEnabled } = useTenantFeatures()
+  const { chat: chatEnabled, liveSessions: liveEnabled, badges: badgesEnabled } = useTenantFeatures()
   const navigate = useNavigate()
   const containerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -84,7 +84,7 @@ export function QuickSearch() {
   const pageMatches = useMemo<PageMatch[]>(() => {
     const needle = fold(input.trim())
     if (!needle) return []
-    const modules = { chat: chatEnabled, liveSessions: liveEnabled }
+    const modules = { chat: chatEnabled, liveSessions: liveEnabled, badges: badgesEnabled }
     const candidates: PageMatch[] = [
       ...userSpaceNavItems(user?.role, modules).map((item) => ({ item, label: tLayout(item.labelKey), section: 'user' as const })),
       ...adminSectionNavItems(user?.role, modules).map((item) => ({ item, label: tLayout(item.labelKey), section: 'admin' as const })),
@@ -94,7 +94,7 @@ export function QuickSearch() {
       // Labels starting with the query first ("rap" -> "Rapports" before "Paramètres de rappel").
       .sort((a, b) => Number(!fold(a.label).startsWith(needle)) - Number(!fold(b.label).startsWith(needle)))
       .slice(0, MAX_PAGE_MATCHES)
-  }, [input, user?.role, tLayout, chatEnabled, liveEnabled])
+  }, [input, user?.role, tLayout, chatEnabled, liveEnabled, badgesEnabled])
 
   const showContent = debouncedQuery.length >= 2
   const contentResults = showContent && !isFetching ? results : []

@@ -5,6 +5,7 @@ import { TeamReportService } from '../services/team-report.service';
 import { InactivitySuspensionService } from '../services/inactivity.service';
 import { LiveSessionReminderService } from '../services/live-session-reminder.service';
 import { logger } from '../utils/logger';
+import { ComplianceService } from '../services/compliance.service';
 
 /**
  * node-cron fires a new run on schedule regardless of whether the previous run of
@@ -47,6 +48,9 @@ export function startScheduledJobs(): void {
   // Daily at 08:45 server time: auto-suspend accounts inactive past their role's
   // configured threshold (admin-set per role via /settings/inactivity-policies).
   cron.schedule('45 8 * * *', withLock('Inactivity suspension', () => InactivitySuspensionService.runDailySuspensions()));
+
+  // 03:30: purge activity-log rows older than each organization's retention (Conformité).
+  cron.schedule('30 3 * * *', withLock('Activity log retention', () => ComplianceService.purgeAuditLogs()));
 
   // Hourly, on the hour: upcoming live-session reminders. Sessions are
   // time-sensitive (unlike the once-daily jobs above), so this needs a

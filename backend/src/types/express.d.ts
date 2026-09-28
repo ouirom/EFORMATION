@@ -7,6 +7,7 @@ declare global {
         email: string;
         role: string;
         enterpriseId?: number;
+        subsidiaryId?: number;
         directionId?: number;
         serviceId?: number;
       };

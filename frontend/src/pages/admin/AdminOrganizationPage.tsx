@@ -5,7 +5,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
 import { PageLoading } from '@/components/ui/loading'
@@ -15,7 +14,6 @@ import {
   Building2,
   Users,
   BookOpen,
-  Settings,
   Globe,
   Mail,
   Phone,
@@ -23,11 +21,22 @@ import {
   Calendar,
   Edit,
   Palette,
-  Server,
   Upload,
   Loader2,
 } from 'lucide-react'
 import { api } from '@/services/api'
+import { useSearchParams } from 'react-router-dom'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { SettingsTab } from './organization/SettingsTab'
+import { StructureTab } from './organization/StructureTab'
+import { IntegrationsTab } from './organization/IntegrationsTab'
+import { HistoryTab } from './organization/HistoryTab'
+import { COMPLIANCE_GROUPS, LEARNING_GROUPS, PLATFORM_GROUPS, SECURITY_GROUPS } from './organization/settingsFields'
+
+// Tabs of the organization settings page; the active one is kept in ?tab= so it
+// survives a reload and can be linked to (e.g. ?tab=structure).
+const TABS = ['general', 'platform', 'security', 'learning', 'structure', 'integrations', 'compliance', 'history'] as const
+type TabKey = (typeof TABS)[number]
 import { fileService } from '@/services/file.service'
 import { formatDate } from '@/lib/utils'
 
@@ -43,16 +52,9 @@ interface Organization {
   contactPhone: string
   address: string
   website: string
-  settings: {
-    allowSelfRegistration: boolean
-    defaultLanguage: string
-    timezone: string
-    enableNotifications: boolean
-    enableChat: boolean
-    enableLiveSessions: boolean
-    maxUsersPerGroup: number
-    certificateValidity: number
-  }
+  /** Every platform setting (see settingsFields.ts); edited tab by tab. */
+  settings: Record<string, any>
+  settingsDefaults?: Record<string, any>
   stats: {
     totalUsers: number
     totalCourses: number
@@ -62,43 +64,16 @@ interface Organization {
   createdAt: string
 }
 
-type ToggleKey = 'allowSelfRegistration' | 'enableNotifications' | 'enableChat' | 'enableLiveSessions'
-
-const SETTING_TOGGLES: { key: ToggleKey; id: string }[] = [
-  { key: 'allowSelfRegistration', id: 'org-self-registration' },
-  { key: 'enableNotifications', id: 'org-enable-notifications' },
-  { key: 'enableChat', id: 'org-enable-chat' },
-  { key: 'enableLiveSessions', id: 'org-enable-live-sessions' },
-]
-
-const TOGGLE_LABELS: Record<ToggleKey, string> = {
-  allowSelfRegistration: 'selfRegistration',
-  enableNotifications: 'notifications',
-  enableChat: 'chat',
-  enableLiveSessions: 'liveSessions',
-}
-
-// Zones commonly used by this platform's organizations, shown first.
-const COMMON_TIME_ZONES = ['Africa/Abidjan', 'Europe/Paris', 'Africa/Lagos', 'Africa/Douala', 'Africa/Casablanca', 'UTC']
-
-/** Every IANA zone the browser knows (common ones first), always including the current value. */
-function timeZoneOptions(current: string): string[] {
-  let all: string[] = []
-  try {
-    all = (Intl as any).supportedValuesOf?.('timeZone') ?? []
-  } catch {
-    all = []
-  }
-  return Array.from(new Set([...COMMON_TIME_ZONES, current, ...all])).filter(Boolean)
-}
-
-/** An empty or invalid number input keeps a valid value instead of sending NaN. */
-function positiveInt(raw: string, min: number): number {
-  const value = parseInt(raw, 10)
-  return Number.isNaN(value) ? min : Math.max(min, value)
-}
-
 export default function AdminOrganizationPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const requestedTab = searchParams.get('tab') as TabKey | null
+  const tab: TabKey = requestedTab && (TABS as readonly string[]).includes(requestedTab) ? requestedTab : 'general'
+  const changeTab = (value: string) => {
+    const next = new URLSearchParams(searchParams)
+    if (value === 'general') next.delete('tab')
+    else next.set('tab', value)
+    setSearchParams(next, { replace: true })
+  }
   const { t } = useTranslation('admin')
   const { t: tCommon } = useTranslation('common')
   const { toast } = useToast()
@@ -106,7 +81,6 @@ export default function AdminOrganizationPage() {
   const logoInputRef = useRef<HTMLInputElement>(null)
   const [isUploadingLogo, setIsUploadingLogo] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
-  const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false)
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -118,17 +92,6 @@ export default function AdminOrganizationPage() {
     address: '',
     website: '',
   })
-  const [settingsData, setSettingsData] = useState({
-    allowSelfRegistration: true,
-    defaultLanguage: 'fr',
-    timezone: 'Europe/Paris',
-    enableNotifications: true,
-    enableChat: true,
-    enableLiveSessions: true,
-    maxUsersPerGroup: 50,
-    certificateValidity: 365,
-  })
-
   const { data: organization, isLoading, error, refetch } = useQuery<Organization>({
     queryKey: ['organization'],
     queryFn: async () => {
@@ -148,20 +111,6 @@ export default function AdminOrganizationPage() {
     },
     onError: () => {
       toast({ title: tCommon('status.error'), description: t('organization.toasts.updateErrorDescription'), variant: 'destructive' })
-    },
-  })
-
-  const updateSettingsMutation = useMutation({
-    mutationFn: async (data: typeof settingsData) => {
-      await api.put('/organizations/current/settings', data)
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['organization'] })
-      setIsSettingsDialogOpen(false)
-      toast({ title: tCommon('status.success'), description: t('organization.toasts.settingsUpdatedDescription') })
-    },
-    onError: () => {
-      toast({ title: tCommon('status.error'), description: t('organization.toasts.settingsUpdateErrorDescription'), variant: 'destructive' })
     },
   })
 
@@ -215,13 +164,6 @@ export default function AdminOrganizationPage() {
     setIsEditDialogOpen(true)
   }
 
-  const handleSettingsClick = () => {
-    if (organization?.settings) {
-      setSettingsData(organization.settings)
-    }
-    setIsSettingsDialogOpen(true)
-  }
-
   if (isLoading) {
     return <PageLoading />
   }
@@ -239,10 +181,6 @@ export default function AdminOrganizationPage() {
           <p className="text-muted-foreground">{t('organization.subtitle')}</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={handleSettingsClick}>
-            <Settings className="h-4 w-4 mr-2" />
-            {t('organization.settingsButton')}
-          </Button>
           <Button onClick={handleEditClick}>
             <Edit className="h-4 w-4 mr-2" />
             {t('organization.edit')}
@@ -250,6 +188,16 @@ export default function AdminOrganizationPage() {
         </div>
       </div>
 
+      <Tabs value={tab} onValueChange={changeTab}>
+        <div className="overflow-x-auto -mx-1 px-1">
+          <TabsList className="w-max">
+            {TABS.map((key) => (
+              <TabsTrigger key={key} value={key}>{t(`organization.tabs.${key}`)}</TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
+
+        <TabsContent value="general" className="space-y-6 mt-6">
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
@@ -399,81 +347,31 @@ export default function AdminOrganizationPage() {
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Server className="h-5 w-5" />
-              {t('organization.platformSettings.title')}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="p-4 bg-muted rounded-lg">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium">{t('organization.platformSettings.selfRegistration.title')}</span>
-                  <Badge variant={organization.settings?.allowSelfRegistration ? 'default' : 'secondary'}>
-                    {organization.settings?.allowSelfRegistration ? t('organization.platformSettings.enabled') : t('organization.platformSettings.disabled')}
-                  </Badge>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {t('organization.platformSettings.selfRegistration.description')}
-                </p>
-              </div>
-              <div className="p-4 bg-muted rounded-lg">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium">{t('organization.platformSettings.notifications.title')}</span>
-                  <Badge variant={organization.settings?.enableNotifications ? 'default' : 'secondary'}>
-                    {organization.settings?.enableNotifications ? t('organization.platformSettings.enabled') : t('organization.platformSettings.disabled')}
-                  </Badge>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {t('organization.platformSettings.notifications.description')}
-                </p>
-              </div>
-              <div className="p-4 bg-muted rounded-lg">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium">{t('organization.platformSettings.chat.title')}</span>
-                  <Badge variant={organization.settings?.enableChat ? 'default' : 'secondary'}>
-                    {organization.settings?.enableChat ? t('organization.platformSettings.enabled') : t('organization.platformSettings.disabled')}
-                  </Badge>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {t('organization.platformSettings.chat.description')}
-                </p>
-              </div>
-              <div className="p-4 bg-muted rounded-lg">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium">{t('organization.platformSettings.liveSessions.title')}</span>
-                  <Badge variant={organization.settings?.enableLiveSessions ? 'default' : 'secondary'}>
-                    {organization.settings?.enableLiveSessions ? t('organization.platformSettings.enabled') : t('organization.platformSettings.disabled')}
-                  </Badge>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {t('organization.platformSettings.liveSessions.description')}
-                </p>
-              </div>
-              <div className="p-4 bg-muted rounded-lg">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium">{t('organization.platformSettings.language.title')}</span>
-                  <Badge variant="outline">{organization.settings?.defaultLanguage?.toUpperCase()}</Badge>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {t('organization.platformSettings.language.description')}
-                </p>
-              </div>
-              <div className="p-4 bg-muted rounded-lg">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium">{t('organization.platformSettings.timezone.title')}</span>
-                  <Badge variant="outline">{organization.settings?.timezone}</Badge>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {t('organization.platformSettings.timezone.description')}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
       </div>
+        </TabsContent>
+
+        <TabsContent value="platform" className="mt-6">
+          <SettingsTab groups={PLATFORM_GROUPS} settings={organization.settings} defaults={organization.settingsDefaults} />
+        </TabsContent>
+        <TabsContent value="security" className="mt-6">
+          <SettingsTab groups={SECURITY_GROUPS} settings={organization.settings} defaults={organization.settingsDefaults} />
+        </TabsContent>
+        <TabsContent value="learning" className="mt-6">
+          <SettingsTab groups={LEARNING_GROUPS} settings={organization.settings} defaults={organization.settingsDefaults} />
+        </TabsContent>
+        <TabsContent value="structure" className="mt-6">
+          <StructureTab />
+        </TabsContent>
+        <TabsContent value="integrations" className="mt-6">
+          <IntegrationsTab />
+        </TabsContent>
+        <TabsContent value="compliance" className="mt-6">
+          <SettingsTab groups={COMPLIANCE_GROUPS} settings={organization.settings} defaults={organization.settingsDefaults} />
+        </TabsContent>
+        <TabsContent value="history" className="mt-6">
+          <HistoryTab />
+        </TabsContent>
+      </Tabs>
 
       {/* Edit Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
@@ -608,89 +506,6 @@ export default function AdminOrganizationPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Settings Dialog */}
-      <Dialog open={isSettingsDialogOpen} onOpenChange={setIsSettingsDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t('organization.settingsDialog.title')}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 max-h-[65vh] overflow-y-auto pr-1">
-            {SETTING_TOGGLES.map(({ key, id }) => (
-              <div key={key} className="flex items-start justify-between gap-4">
-                <div className="space-y-0.5">
-                  <Label htmlFor={id}>{t(`organization.settingsDialog.${TOGGLE_LABELS[key]}`)}</Label>
-                  <p className="text-xs text-muted-foreground">{t(`organization.settingsDialog.hints.${key}`)}</p>
-                </div>
-                <input
-                  id={id}
-                  type="checkbox"
-                  className="mt-1"
-                  checked={settingsData[key]}
-                  onChange={(e) => setSettingsData({ ...settingsData, [key]: e.target.checked })}
-                />
-              </div>
-            ))}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="org-default-language">{t('organization.settingsDialog.defaultLanguage')}</Label>
-                <select
-                  id="org-default-language"
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  value={settingsData.defaultLanguage}
-                  onChange={(e) => setSettingsData({ ...settingsData, defaultLanguage: e.target.value })}
-                >
-                  <option value="fr">Français</option>
-                  <option value="en">English</option>
-                </select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="org-timezone">{t('organization.settingsDialog.timezone')}</Label>
-                <select
-                  id="org-timezone"
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                  value={settingsData.timezone}
-                  onChange={(e) => setSettingsData({ ...settingsData, timezone: e.target.value })}
-                >
-                  {timeZoneOptions(settingsData.timezone).map((zone) => (
-                    <option key={zone} value={zone}>{zone.replace(/_/g, ' ')}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <p className="text-xs text-muted-foreground -mt-2">{t('organization.settingsDialog.hints.languageTimezone')}</p>
-            <div className="space-y-2">
-              <Label htmlFor="org-max-users-per-group">{t('organization.settingsDialog.maxUsersPerGroup')}</Label>
-              <Input
-                id="org-max-users-per-group"
-                type="number"
-                min={2}
-                value={settingsData.maxUsersPerGroup}
-                onChange={(e) => setSettingsData({ ...settingsData, maxUsersPerGroup: positiveInt(e.target.value, 2) })}
-              />
-              <p className="text-xs text-muted-foreground">{t('organization.settingsDialog.hints.maxUsersPerGroup')}</p>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="org-certificate-validity">{t('organization.settingsDialog.certificateValidity')}</Label>
-              <Input
-                id="org-certificate-validity"
-                type="number"
-                min={1}
-                value={settingsData.certificateValidity}
-                onChange={(e) => setSettingsData({ ...settingsData, certificateValidity: positiveInt(e.target.value, 1) })}
-              />
-              <p className="text-xs text-muted-foreground">{t('organization.settingsDialog.hints.certificateValidity')}</p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsSettingsDialogOpen(false)}>
-              {t('organization.settingsDialog.cancel')}
-            </Button>
-            <Button onClick={() => updateSettingsMutation.mutate(settingsData)} disabled={updateSettingsMutation.isPending}>
-              {updateSettingsMutation.isPending ? t('organization.settingsDialog.saving') : t('organization.settingsDialog.save')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

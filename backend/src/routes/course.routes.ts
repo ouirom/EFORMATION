@@ -41,7 +41,8 @@ router.get('/', authenticate, async (req: AuthRequest, res, next) => {
       req.user!.role,
       req.user!.enterpriseId,
       req.user!.directionId,
-      req.user!.serviceId
+      req.user!.serviceId,
+      req.user!.subsidiaryId
     );
 
     res.json({

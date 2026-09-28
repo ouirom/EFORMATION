@@ -10,7 +10,8 @@
     "avatarUpdateErrorDescription": "Unable to update the picture",
     "fillAllFieldsDescription": "Please fill in all fields",
     "passwordMismatchDescription": "Passwords do not match",
-    "passwordTooShortDescription": "Password must be at least 8 characters long"
+    "passwordTooShortDescription": "Password must be at least 8 characters long",
+    "exportErrorDescription": "Your data export failed."
   },
   "defaultUserName": "User",
   "defaultRole": "Learner",
@@ -92,13 +93,29 @@
     "channels": {
       "title": "Notification channels",
       "description": "Choose the channels through which you want to receive notifications. In-app notifications always remain visible from the bell at the top of the screen, regardless of your choice here.",
-      "email": { "label": "Email", "description": "Receive notifications by email" },
-      "sms": { "label": "SMS", "description": "Receive notifications by SMS" },
-      "whatsapp": { "label": "WhatsApp", "description": "Receive notifications by WhatsApp" },
-      "pushWeb": { "label": "Push notifications (browser)", "description": "Receive push notifications in your browser" },
-      "pushMobile": { "label": "Push notifications (mobile)", "description": "Receive push notifications on the mobile app" }
+      "email": {
+        "label": "Email",
+        "description": "Receive notifications by email"
+      },
+      "sms": {
+        "label": "SMS",
+        "description": "Receive notifications by SMS"
+      },
+      "whatsapp": {
+        "label": "WhatsApp",
+        "description": "Receive notifications by WhatsApp"
+      },
+      "pushWeb": {
+        "label": "Push notifications (browser)",
+        "description": "Receive push notifications in your browser"
+      },
+      "pushMobile": {
+        "label": "Push notifications (mobile)",
+        "description": "Receive push notifications on the mobile app"
+      }
     },
     "saving": "Saving...",
     "save": "Save"
-  }
+  },
+  "exportData": "Download my data"
 }

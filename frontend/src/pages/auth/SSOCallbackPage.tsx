@@ -29,8 +29,16 @@ export default function SSOCallbackPage() {
       return
     }
 
-    completeSSOLogin(provider, code).catch((err: any) => {
-      setError(err?.response?.data?.error?.message || err.message || t('ssoCallback.loginFailed'))
+    // `state` names the organization that started the login; the server refuses a callback without it.
+    completeSSOLogin(provider, code, searchParams.get('state') || '').catch((err: any) => {
+      const apiError = err?.response?.data?.error
+      const known: Record<string, string> = {
+        SSO_INVALID_STATE: t('ssoCallback.errors.invalidState'),
+        SSO_WRONG_ORGANIZATION: t('ssoCallback.errors.wrongOrganization'),
+        EMAIL_DOMAIN_NOT_ALLOWED: t('ssoCallback.errors.domainNotAllowed'),
+        SSO_NOT_CONFIGURED: t('ssoCallback.errors.notConfigured'),
+      }
+      setError(known[apiError?.code] || apiError?.message || err.message || t('ssoCallback.loginFailed'))
     })
     // completeSSOLogin/searchParams/provider are stable for the lifetime of this one-shot callback
     // eslint-disable-next-line react-hooks/exhaustive-deps

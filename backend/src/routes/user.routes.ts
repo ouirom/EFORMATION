@@ -16,6 +16,9 @@ import { parseSpreadsheet } from '../utils/xlsx';
 import { logger } from '../utils/logger';
 import { parsePagination, buildPaginationMeta } from '../utils/pagination';
 import { isInHierarchicalScope, resolveViewableUserId } from '../utils/hierarchyScope';
+import { AuthService } from '../services/auth.service';
+import { OrgStructureService } from '../services/org-structure.service';
+import { ComplianceService } from '../services/compliance.service';
 
 const router = Router();
 const csvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -71,9 +74,10 @@ router.post(
     body('displayName').notEmpty().trim(),
     body('role').isIn(ALLOWED_ROLES),
     body('jobTitle').optional({ nullable: true }).trim(),
-    body('enterpriseId').optional().isInt(),
-    body('directionId').optional().isInt(),
-    body('serviceId').optional().isInt(),
+    body('enterpriseId').optional({ nullable: true }).isInt(),
+    body('subsidiaryId').optional({ nullable: true }).isInt(),
+    body('directionId').optional({ nullable: true }).isInt(),
+    body('serviceId').optional({ nullable: true }).isInt(),
     body('supervisorId').optional({ nullable: true }).isInt(),
   ],
   asyncHandler(async (req: AuthRequest, res) => {
@@ -87,6 +91,8 @@ router.post(
     if (req.user!.role === 'admin' && req.body.role === 'super_admin') {
       throw BadRequestError('Only a super admin can create another super admin');
     }
+
+    await AuthService.assertPasswordAllowed(req.user!.tenantId, req.body.password);
 
     // users.email/username carry a GLOBAL unique constraint (not scoped per
     // tenant), matching auth.service.ts's register() — a same-email user in a
@@ -104,6 +110,8 @@ router.post(
     }
 
     const supervisorId = await resolveSupervisorId(req.user!.tenantId, req.body.supervisorId, req.body.role);
+    // Enterprise / subsidiary / direction / service, consistent and of this tenant.
+    const placement = await OrgStructureService.resolvePlacement(req.user!.tenantId, req.body);
 
     // Generate username from email
     const username = req.body.email.split('@')[0] + '_' + Date.now().toString(36);
@@ -118,21 +126,21 @@ router.post(
         IS_PG
           ? `INSERT INTO users (
               tenant_id, email, username, password_hash, display_name, role, job_title,
-              enterprise_id, direction_id, service_id, supervisor_id, is_active
+              enterprise_id, subsidiary_id, direction_id, service_id, supervisor_id, is_active
             )
             VALUES (
               @tenantId, @email, @username, @passwordHash, @displayName, @role, @jobTitle,
-              @enterpriseId, @directionId, @serviceId, @supervisorId, @isActive
+              @enterpriseId, @subsidiaryId, @directionId, @serviceId, @supervisorId, @isActive
             )
             RETURNING id`
           : `INSERT INTO users (
               tenant_id, email, username, password_hash, display_name, role, job_title,
-              enterprise_id, direction_id, service_id, supervisor_id, is_active
+              enterprise_id, subsidiary_id, direction_id, service_id, supervisor_id, is_active
             )
             OUTPUT INSERTED.id
             VALUES (
               @tenantId, @email, @username, @passwordHash, @displayName, @role, @jobTitle,
-              @enterpriseId, @directionId, @serviceId, @supervisorId, @isActive
+              @enterpriseId, @subsidiaryId, @directionId, @serviceId, @supervisorId, @isActive
             )`,
         {
           tenantId: req.user!.tenantId,
@@ -142,9 +150,7 @@ router.post(
           displayName: req.body.displayName,
           role: req.body.role,
           jobTitle: req.body.jobTitle || 'Défaut',
-          enterpriseId: req.body.enterpriseId || null,
-          directionId: req.body.directionId || null,
-          serviceId: req.body.serviceId || null,
+          ...placement,
           supervisorId,
           isActive: true,
         }
@@ -189,11 +195,12 @@ router.post(
     // Get created user
     const users = await DatabaseService.query<any>(
       `SELECT u.id, u.email, u.username, u.display_name, u.avatar_url, u.role, u.job_title, u.is_active,
-              u.enterprise_id, u.direction_id, u.service_id, u.supervisor_id, u.created_at,
-              e.name as enterprise_name, d.name as direction_name, s.name as service_name,
+              u.enterprise_id, u.subsidiary_id, u.direction_id, u.service_id, u.supervisor_id, u.created_at,
+              e.name as enterprise_name, sub.name as subsidiary_name, d.name as direction_name, s.name as service_name,
               sup.display_name as supervisor_name
        FROM users u
        LEFT JOIN enterprises e ON u.enterprise_id = e.id
+       LEFT JOIN subsidiaries sub ON u.subsidiary_id = sub.id
        LEFT JOIN directions d ON u.direction_id = d.id
        LEFT JOIN services s ON u.service_id = s.id
        LEFT JOIN users sup ON u.supervisor_id = sup.id
@@ -221,7 +228,7 @@ const MAX_IMPORT_ROWS = 500;
 /**
  * @route POST /api/v1/users/import
  * @desc Bulk-create users from a CSV or Excel (.xlsx) file (columns: email, displayName,
- *       role, enterpriseCode, directionCode, serviceCode, supervisorEmail — all optional
+ *       role, enterpriseCode, subsidiaryCode, directionCode, serviceCode, supervisorEmail — all optional
  *       except email/displayName. supervisorEmail is matched against an already-existing
  *       user's email in this tenant (including one created earlier in the same file, if
  *       their row came first) with a strictly higher role level. A downloadable .xlsx
@@ -248,7 +255,7 @@ router.post(
     const tenantId = req.user!.tenantId;
 
     // Preload org-unit code -> id lookups so we don't run a query per row.
-    const [enterprises, directions, services] = await Promise.all([
+    const [enterprises, directions, subsidiaries, services] = await Promise.all([
       DatabaseService.query<{ id: number; code: string }>(
         'SELECT id, code FROM enterprises WHERE tenant_id = @tenantId AND code IS NOT NULL',
         { tenantId }
@@ -258,11 +265,16 @@ router.post(
         { tenantId }
       ),
       DatabaseService.query<{ id: number; code: string }>(
+        'SELECT id, code FROM subsidiaries WHERE tenant_id = @tenantId AND code IS NOT NULL',
+        { tenantId }
+      ),
+      DatabaseService.query<{ id: number; code: string }>(
         'SELECT id, code FROM services WHERE tenant_id = @tenantId AND code IS NOT NULL',
         { tenantId }
       ),
     ]);
     const enterpriseByCode = new Map(enterprises.map((e) => [e.code, e.id]));
+    const subsidiaryByCode = new Map(subsidiaries.map((s) => [s.code, s.id]));
     const directionByCode = new Map(directions.map((d) => [d.code, d.id]));
     const serviceByCode = new Map(services.map((s) => [s.code, s.id]));
 
@@ -309,8 +321,29 @@ router.post(
       }
 
       const enterpriseId = row.enterpriseCode ? enterpriseByCode.get(row.enterpriseCode.trim()) ?? null : null;
+      const subsidiaryId = row.subsidiaryCode ? subsidiaryByCode.get(row.subsidiaryCode.trim()) ?? null : null;
       const directionId = row.directionCode ? directionByCode.get(row.directionCode.trim()) ?? null : null;
       const serviceId = row.serviceCode ? serviceByCode.get(row.serviceCode.trim()) ?? null : null;
+
+      // Codes must exist and fit together (a service of another direction was
+      // silently accepted before); the lowest level fills in its parents.
+      const unknownCode = [
+        ['enterpriseCode', enterpriseId],
+        ['subsidiaryCode', subsidiaryId],
+        ['directionCode', directionId],
+        ['serviceCode', serviceId],
+      ].find(([column, id]) => row[column as string] && !id);
+      if (unknownCode) {
+        results.push({ line, email, status: 'error', message: `Unknown ${unknownCode[0]} "${row[unknownCode[0] as string]}"` });
+        continue;
+      }
+      let placement;
+      try {
+        placement = await OrgStructureService.resolvePlacement(tenantId, { enterpriseId, subsidiaryId, directionId, serviceId });
+      } catch (error: any) {
+        results.push({ line, email, status: 'error', message: error.message });
+        continue;
+      }
 
       let supervisorId: number | null = null;
       if (row.supervisorEmail) {
@@ -335,23 +368,23 @@ router.post(
           IS_PG
             ? `INSERT INTO users (
                 tenant_id, email, username, password_hash, display_name, role,
-                enterprise_id, direction_id, service_id, supervisor_id, is_active
+                enterprise_id, subsidiary_id, direction_id, service_id, supervisor_id, is_active
               )
               VALUES (
                 @tenantId, @email, @username, @passwordHash, @displayName, @role,
-                @enterpriseId, @directionId, @serviceId, @supervisorId, @isActive
+                @enterpriseId, @subsidiaryId, @directionId, @serviceId, @supervisorId, @isActive
               )
               RETURNING id`
             : `INSERT INTO users (
                 tenant_id, email, username, password_hash, display_name, role,
-                enterprise_id, direction_id, service_id, supervisor_id, is_active
+                enterprise_id, subsidiary_id, direction_id, service_id, supervisor_id, is_active
               )
               OUTPUT INSERTED.id
               VALUES (
                 @tenantId, @email, @username, @passwordHash, @displayName, @role,
-                @enterpriseId, @directionId, @serviceId, @supervisorId, @isActive
+                @enterpriseId, @subsidiaryId, @directionId, @serviceId, @supervisorId, @isActive
               )`,
-          { tenantId, email, username, passwordHash, displayName, role, enterpriseId, directionId, serviceId, supervisorId, isActive: true }
+          { tenantId, email, username, passwordHash, displayName, role, ...placement, supervisorId, isActive: true }
         );
 
         knownEmails.add(email);
@@ -409,6 +442,7 @@ router.get('/', authenticate, authorize('admin', 'director', 'manager'), asyncHa
   const directionId = req.query.directionId as string;
   const serviceId = req.query.serviceId as string;
   const supervisorId = req.query.supervisorId as string;
+  const subsidiaryId = req.query.subsidiaryId as string;
   const status = req.query.status as string;
 
   let whereClause = 'WHERE u.tenant_id = @tenantId AND u.deleted_at IS NULL';
@@ -421,6 +455,10 @@ router.get('/', authenticate, authorize('admin', 'director', 'manager'), asyncHa
   if (role) {
     whereClause += ' AND u.role = @role';
     params.role = role;
+  }
+  if (subsidiaryId) {
+    whereClause += ' AND u.subsidiary_id = @subsidiaryId';
+    params.subsidiaryId = parseInt(subsidiaryId, 10);
   }
   if (directionId) {
     whereClause += ' AND u.direction_id = @directionId';
@@ -463,11 +501,13 @@ router.get('/', authenticate, authorize('admin', 'director', 'manager'), asyncHa
     ),
     DatabaseService.query<any>(
       `SELECT u.id, u.email, u.username, u.display_name, u.avatar_url, u.role, u.job_title, u.is_active, u.status,
-              u.enterprise_id, u.direction_id, u.service_id, u.supervisor_id, u.last_login_at, u.created_at,
-              e.name as enterprise_name, d.name as direction_name, s.name as service_name,
+              u.enterprise_id, u.subsidiary_id, u.direction_id, u.service_id, u.supervisor_id, u.last_login_at, u.created_at,
+              CASE WHEN u.locked_until > ${db.now()} THEN u.locked_until ELSE NULL END as locked_until,
+              e.name as enterprise_name, sub.name as subsidiary_name, d.name as direction_name, s.name as service_name,
               sup.display_name as supervisor_name
        FROM users u
        LEFT JOIN enterprises e ON u.enterprise_id = e.id
+       LEFT JOIN subsidiaries sub ON u.subsidiary_id = sub.id
        LEFT JOIN directions d ON u.direction_id = d.id
        LEFT JOIN services s ON u.service_id = s.id
        LEFT JOIN users sup ON u.supervisor_id = sup.id
@@ -483,6 +523,38 @@ router.get('/', authenticate, authorize('admin', 'director', 'manager'), asyncHa
     data: users,
     meta: buildPaginationMeta(countResult[0].total, page, limit),
   });
+}));
+
+/**
+ * @route POST /api/v1/users/:id/unlock
+ * @desc Lift a lockout caused by too many wrong passwords (Administration >
+ *       Organisation > Accès & sécurité). Same permission as changing the
+ *       account status: admins for anyone, a manager for their subordinates.
+ */
+router.post('/:id/unlock', authenticate, asyncHandler(async (req: AuthRequest, res) => {
+  const userId = parseInt(req.params.id, 10);
+  const requester = req.user!;
+
+  const targets = await DatabaseService.query<any>(
+    `SELECT id, role, direction_id, service_id, supervisor_id
+     FROM users WHERE id = @userId AND tenant_id = @tenantId AND deleted_at IS NULL`,
+    { userId, tenantId: requester.tenantId }
+  );
+  if (targets.length === 0) throw NotFoundError('User');
+
+  const isAdminLike = requester.role === 'admin' || requester.role === 'super_admin';
+  if (!isAdminLike && !isInHierarchicalScope(requester, targets[0])) {
+    throw ForbiddenError('Insufficient permissions to unlock this user');
+  }
+
+  await DatabaseService.execute(
+    `UPDATE users SET failed_login_attempts = 0, locked_until = NULL, updated_at = ${db.now()}
+     WHERE id = @userId AND tenant_id = @tenantId`,
+    { userId, tenantId: requester.tenantId }
+  );
+  await AuditService.log(requester.tenantId, requester.id, 'ACCOUNT_UNLOCKED', 'users', userId);
+
+  res.json({ success: true, message: 'Account unlocked' });
 }));
 
 /**
@@ -554,11 +626,12 @@ router.get('/:id', authenticate, asyncHandler(async (req: AuthRequest, res) => {
 
   const users = await DatabaseService.query<any>(
     `SELECT u.id, u.email, u.username, u.display_name, u.avatar_url, u.role, u.job_title, u.is_active, u.status,
-            u.enterprise_id, u.direction_id, u.service_id, u.supervisor_id, u.last_login_at, u.created_at, u.updated_at,
-            e.name as enterprise_name, d.name as direction_name, s.name as service_name,
+            u.enterprise_id, u.subsidiary_id, u.direction_id, u.service_id, u.supervisor_id, u.last_login_at, u.created_at, u.updated_at,
+            e.name as enterprise_name, sub.name as subsidiary_name, d.name as direction_name, s.name as service_name,
             sup.display_name as supervisor_name
      FROM users u
      LEFT JOIN enterprises e ON u.enterprise_id = e.id
+       LEFT JOIN subsidiaries sub ON u.subsidiary_id = sub.id
      LEFT JOIN directions d ON u.direction_id = d.id
      LEFT JOIN services s ON u.service_id = s.id
      LEFT JOIN users sup ON u.supervisor_id = sup.id
@@ -600,9 +673,10 @@ router.put(
     body('role').optional().isIn(ALLOWED_ROLES),
     body('jobTitle').optional({ nullable: true }).trim(),
     body('isActive').optional().isBoolean(),
-    body('enterpriseId').optional().isInt(),
-    body('directionId').optional().isInt(),
-    body('serviceId').optional().isInt(),
+    body('enterpriseId').optional({ nullable: true }).isInt(),
+    body('subsidiaryId').optional({ nullable: true }).isInt(),
+    body('directionId').optional({ nullable: true }).isInt(),
+    body('serviceId').optional({ nullable: true }).isInt(),
     body('supervisorId').optional({ nullable: true }).isInt(),
   ],
   asyncHandler(async (req: AuthRequest, res) => {
@@ -650,17 +724,50 @@ router.put(
       updateFields.push('status = @statusFromIsActive');
       params.statusFromIsActive = req.body.isActive ? 'active' : 'deactivated';
     }
-    if (req.body.enterpriseId !== undefined) {
-      updateFields.push('enterprise_id = @enterpriseId');
-      params.enterpriseId = req.body.enterpriseId;
-    }
-    if (req.body.directionId !== undefined) {
-      updateFields.push('direction_id = @directionId');
-      params.directionId = req.body.directionId;
-    }
-    if (req.body.serviceId !== undefined) {
-      updateFields.push('service_id = @serviceId');
-      params.serviceId = req.body.serviceId;
+    // Enterprise / subsidiary / direction / service: an organizational decision
+    // (a user could move themselves into another manager's scope via PUT /users/me),
+    // so admins and directors only, and always a consistent placement of this tenant.
+    const placementKeys = ['enterpriseId', 'subsidiaryId', 'directionId', 'serviceId'] as const;
+    if (placementKeys.some((key) => req.body[key] !== undefined)) {
+      if (!isAdminLike && req.user!.role !== 'director') {
+        throw ForbiddenError('Only an administrator can change the organizational placement');
+      }
+      const current = (
+        await DatabaseService.query<any>(
+          'SELECT enterprise_id, subsidiary_id, direction_id, service_id FROM users WHERE id = @userId AND tenant_id = @tenantId',
+          { userId, tenantId: req.user!.tenantId }
+        )
+      )[0];
+      if (!current) throw NotFoundError('User');
+      // Fields left out keep their value; null clears them. The lowest level given
+      // then decides its parents (OrgStructureService.resolvePlacement).
+      const requested: Record<string, unknown> = {
+        enterpriseId: current.enterprise_id,
+        subsidiaryId: current.subsidiary_id,
+        directionId: current.direction_id,
+        serviceId: current.service_id,
+      };
+      for (const key of placementKeys) {
+        if (req.body[key] !== undefined) requested[key] = req.body[key];
+      }
+      // Changing an upper level without its children drops the children.
+      if (req.body.enterpriseId !== undefined && req.body.subsidiaryId === undefined && req.body.directionId === undefined) {
+        requested.subsidiaryId = null;
+        requested.directionId = null;
+        requested.serviceId = null;
+      }
+      if (req.body.directionId !== undefined && req.body.serviceId === undefined) requested.serviceId = null;
+      if (req.body.serviceId && req.body.directionId === undefined) requested.directionId = null;
+      if (req.body.directionId !== undefined && req.body.subsidiaryId === undefined) requested.subsidiaryId = null;
+      if (req.body.directionId !== undefined && req.body.enterpriseId === undefined) requested.enterpriseId = null;
+      const placement = await OrgStructureService.resolvePlacement(req.user!.tenantId, requested);
+      updateFields.push(
+        'enterprise_id = @enterpriseId',
+        'subsidiary_id = @subsidiaryId',
+        'direction_id = @directionId',
+        'service_id = @serviceId'
+      );
+      Object.assign(params, placement);
     }
     // Assigning a direct supervisor is an organizational decision, not personal
     // profile data — only admins/directors may set it (never the user themselves).
@@ -689,7 +796,7 @@ router.put(
       // Only the fields actually changed, not the whole body — keeps the trail readable
       // and avoids ever writing a password/token into a log by accident.
       const changedFields = Object.keys(req.body).filter((k) =>
-        ['displayName', 'role', 'jobTitle', 'isActive', 'enterpriseId', 'directionId', 'serviceId', 'avatarUrl', 'supervisorId'].includes(k)
+        ['displayName', 'role', 'jobTitle', 'isActive', 'enterpriseId', 'subsidiaryId', 'directionId', 'serviceId', 'avatarUrl', 'supervisorId'].includes(k)
       );
       await AuditService.log(req.user!.tenantId, req.user!.id, 'USER_UPDATED', 'users', userId, {
         fields: changedFields,
@@ -698,7 +805,7 @@ router.put(
 
     const users = await DatabaseService.query<any>(
       `SELECT u.id, u.email, u.username, u.display_name, u.avatar_url, u.role, u.job_title, u.is_active, u.status,
-              u.enterprise_id, u.direction_id, u.service_id, u.supervisor_id,
+              u.enterprise_id, u.subsidiary_id, u.direction_id, u.service_id, u.supervisor_id,
               sup.display_name as supervisor_name
        FROM users u
        LEFT JOIN users sup ON u.supervisor_id = sup.id
@@ -828,6 +935,14 @@ router.delete('/:id', authenticate, authorize('admin'), asyncHandler(async (req:
     throw BadRequestError('Cannot delete your own account');
   }
 
+  // Organization setting (Conformité): deleting also erases the personal data.
+  // Done first, so a failure leaves the account untouched rather than deleted
+  // but still carrying its personal data.
+  const anonymized = await ComplianceService.shouldAnonymizeOnDelete(req.user!.tenantId);
+  if (anonymized) {
+    await ComplianceService.anonymizeUser(req.user!.tenantId, userId, req.user!.id);
+  }
+
   await DatabaseService.execute(
     `UPDATE users SET deleted_at = ${db.now()}, is_active = ${db.bool(false)}
      WHERE id = @userId AND tenant_id = @tenantId`,
@@ -839,7 +954,48 @@ router.delete('/:id', authenticate, authorize('admin'), asyncHandler(async (req:
   res.json({
     success: true,
     message: 'User deleted successfully',
+    anonymized,
   });
+}));
+
+/**
+ * @route POST /api/v1/users/:id/anonymize
+ * @desc Erase the personal data of an already deleted account (GDPR erasure
+ *       request, or accounts deleted before anonymization was turned on).
+ */
+router.post('/:id/anonymize', authenticate, authorize('admin'), asyncHandler(async (req: AuthRequest, res) => {
+  const userId = parseInt(req.params.id, 10);
+  const rows = await DatabaseService.query<{ id: number; deleted_at: string | null; anonymized_at: string | null }>(
+    'SELECT id, deleted_at, anonymized_at FROM users WHERE id = @userId AND tenant_id = @tenantId',
+    { userId, tenantId: req.user!.tenantId }
+  );
+  if (rows.length === 0) throw NotFoundError('User');
+  if (!rows[0].deleted_at) {
+    throw BadRequestError('Delete the account before anonymizing it', 'USER_NOT_DELETED');
+  }
+  if (!rows[0].anonymized_at) {
+    await ComplianceService.anonymizeUser(req.user!.tenantId, userId, req.user!.id);
+  }
+  res.json({ success: true, message: 'User anonymized' });
+}));
+
+/**
+ * @route GET /api/v1/users/:id/export
+ * @desc Everything stored about a person, as a JSON file (GDPR access /
+ *       portability). "me" for oneself; admins for anyone of their organization.
+ */
+router.get('/:id/export', authenticate, asyncHandler(async (req: AuthRequest, res) => {
+  const userId = req.params.id === 'me' ? req.user!.id : parseInt(req.params.id, 10);
+  const isAdminLike = req.user!.role === 'admin' || req.user!.role === 'super_admin';
+  if (userId !== req.user!.id && !isAdminLike) {
+    throw ForbiddenError('You can only export your own data');
+  }
+  const data = await ComplianceService.exportUserData(req.user!.tenantId, userId);
+  if (!data.profile) throw NotFoundError('User');
+
+  await AuditService.log(req.user!.tenantId, req.user!.id, 'USER_DATA_EXPORTED', 'users', userId);
+  res.setHeader('Content-Disposition', `attachment; filename="donnees-personnelles-${userId}.json"`);
+  res.json(data);
 }));
 
 /**

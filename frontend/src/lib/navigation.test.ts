@@ -10,15 +10,21 @@ describe('navigation module switches', () => {
   });
 
   it('hides the chat tab when the chat is off', () => {
-    const items = paths(userSpaceNavItems('agent', { chat: false, liveSessions: true }));
+    const items = paths(userSpaceNavItems('agent', { chat: false, liveSessions: true, badges: true }));
     expect(items).not.toContain('/chat');
     expect(items).toContain('/live');
   });
 
   it('hides live sessions in both the personal space and administration when off', () => {
-    const modules = { chat: true, liveSessions: false };
+    const modules = { chat: true, liveSessions: false, badges: true };
     expect(paths(userSpaceNavItems('manager', modules))).not.toContain('/live');
     expect(paths(adminSectionNavItems('admin', modules))).not.toContain('/admin/live-sessions');
     expect(paths(userSpaceNavItems('manager', modules))).toContain('/my-team');
+  });
+
+  it('hides the badges tab for learners but keeps badge administration', () => {
+    const modules = { chat: true, liveSessions: true, badges: false };
+    expect(paths(userSpaceNavItems('agent', modules))).not.toContain('/badges');
+    expect(paths(adminSectionNavItems('admin', modules))).toContain('/admin/badges');
   });
 });

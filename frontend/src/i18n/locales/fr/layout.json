@@ -32,7 +32,8 @@
     "videoConferencing": "Visioconférence",
     "recording": "Enregistrement",
     "logs": "Journaux d'audit",
-    "platform": "Plateforme"
+    "platform": "Plateforme",
+    "sso": "SSO & annuaire"
   },
   "sectionToggle": {
     "userSpace": "Espace utilisateur",
@@ -45,6 +46,7 @@
   "userMenu": {
     "profile": "Mon profil",
     "settings": "Paramètres",
-    "logout": "Déconnexion"
+    "logout": "Déconnexion",
+    "legal": "Mentions légales & confidentialité"
   }
 }

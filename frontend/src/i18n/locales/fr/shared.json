@@ -58,9 +58,17 @@
   "moduleDisabled": {
     "title": {
       "chat": "Le chat est désactivé",
-      "liveSessions": "Les sessions live sont désactivées"
+      "liveSessions": "Les sessions live sont désactivées",
+      "badges": "Les badges sont désactivés"
     },
     "description": "Votre organisation a désactivé ce module. Contactez un administrateur si vous en avez besoin.",
     "back": "Retour au tableau de bord"
+  },
+  "legal": {
+    "title": "Mentions légales",
+    "none": "Votre organisation n'a pas encore renseigné ses mentions légales.",
+    "privacyPolicy": "Politique de confidentialité",
+    "contact": "Protection des données : {{email}}",
+    "back": "Retour"
   }
 }

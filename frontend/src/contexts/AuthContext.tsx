@@ -21,7 +21,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   register: (data: RegisterData) => Promise<{ pending: boolean; message?: string }>;
   loginWithLdap: (username: string, password: string) => Promise<void>;
-  completeSSOLogin: (provider: 'google' | 'azure', code: string) => Promise<void>;
+  completeSSOLogin: (provider: 'google' | 'azure', code: string, state: string) => Promise<void>;
   logout: () => void;
   updateUser: (data: Partial<User>) => void;
   switchTenant: (tenantId: number) => Promise<void>;
@@ -79,9 +79,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (email: string, password: string) => {
     const response = await api.post('/auth/login', { email, password });
+    // Password older than the organization allows: no session yet, the user
+    // chooses a new password first (the short-lived token travels in router
+    // state, not in the URL).
+    if (response.data.data.passwordExpired) {
+      navigate('/reset-password', {
+        replace: true,
+        state: { resetToken: response.data.data.resetToken, passwordExpired: true },
+      });
+      return;
+    }
     const { user: userData, accessToken, refreshToken } = response.data.data;
     applySession(userData, accessToken, refreshToken);
-  }, [applySession]);
+  }, [applySession, navigate]);
 
   // Self-registered accounts start 'pending' — no session is issued until an
   // n+1 activates the account, so there's nothing to applySession() with here.
@@ -97,8 +107,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     applySession(userData, accessToken, refreshToken);
   }, [applySession]);
 
-  const completeSSOLogin = useCallback(async (provider: 'google' | 'azure', code: string) => {
-    const response = await api.post(`/auth/sso/${provider}/callback`, { code });
+  const completeSSOLogin = useCallback(async (provider: 'google' | 'azure', code: string, state: string) => {
+    const response = await api.post(`/auth/sso/${provider}/callback`, { code, state });
     const { user: userData, accessToken, refreshToken } = response.data.data;
     applySession(userData, accessToken, refreshToken);
   }, [applySession]);

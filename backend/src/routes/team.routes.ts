@@ -7,7 +7,7 @@ import { db, IS_PG } from '../database/db-helpers';
 
 const router = Router();
 
-const MEMBER_TYPES = ['user', 'enterprise', 'direction', 'service'];
+const MEMBER_TYPES = ['user', 'enterprise', 'subsidiary', 'direction', 'service'];
 
 const validate = (req: any) => {
   const errors = validationResult(req);
@@ -24,6 +24,7 @@ const resolvedUsersJoin = (userAlias = 'u') => `
   JOIN users ${userAlias} ON (
     (tm.member_type = 'user' AND ${userAlias}.id = tm.target_id)
     OR (tm.member_type = 'enterprise' AND ${userAlias}.enterprise_id = tm.target_id)
+    OR (tm.member_type = 'subsidiary' AND ${userAlias}.subsidiary_id = tm.target_id)
     OR (tm.member_type = 'direction' AND ${userAlias}.direction_id = tm.target_id)
     OR (tm.member_type = 'service' AND ${userAlias}.service_id = tm.target_id)
   )
@@ -140,6 +141,7 @@ router.get('/:id', authenticate, authorize('admin', 'director', 'manager'), asyn
               CASE
                 WHEN tm.member_type = 'user' THEN (SELECT display_name FROM users WHERE id = tm.target_id)
                 WHEN tm.member_type = 'enterprise' THEN (SELECT name FROM enterprises WHERE id = tm.target_id)
+                WHEN tm.member_type = 'subsidiary' THEN (SELECT name FROM subsidiaries WHERE id = tm.target_id)
                 WHEN tm.member_type = 'direction' THEN (SELECT name FROM directions WHERE id = tm.target_id)
                 WHEN tm.member_type = 'service' THEN (SELECT name FROM services WHERE id = tm.target_id)
                 ELSE NULL

@@ -1,7 +1,7 @@
 import axios from 'axios';
-import { config } from '../config';
 import { ApiError, BadRequestError } from '../middleware/error.middleware';
 import { logger } from '../utils/logger';
+import { AzureConfig, GoogleConfig, SsoConfigService } from './sso-config.service';
 
 export interface OAuthProfile {
   externalId: string;
@@ -15,17 +15,18 @@ export interface OAuthProfile {
  * identity claims directly — only the provider's response is trusted.
  */
 export class OAuthService {
-  static async exchangeAzureCode(code: string): Promise<OAuthProfile> {
-    const { tenantId, clientId, clientSecret } = config.azureAd;
-    if (!clientId || !clientSecret) {
-      throw BadRequestError('Azure AD SSO is not configured on this server', 'SSO_NOT_CONFIGURED');
+  /** `azure`: the organization's Azure AD app (SsoConfigService), null when it has none. */
+  static async exchangeAzureCode(code: string, azure: AzureConfig | null): Promise<OAuthProfile> {
+    if (!azure) {
+      throw BadRequestError('Azure AD SSO is not configured for this organization', 'SSO_NOT_CONFIGURED');
     }
+    const { directoryId, clientId, clientSecret } = azure;
 
     try {
-      const redirectUri = `${config.frontendUrl}/auth/callback/azure`;
+      const redirectUri = SsoConfigService.redirectUri('azure');
 
       const tokenResponse = await axios.post(
-        `https://login.microsoftonline.com/${tenantId || 'common'}/oauth2/v2.0/token`,
+        `https://login.microsoftonline.com/${encodeURIComponent(directoryId || 'common')}/oauth2/v2.0/token`,
         new URLSearchParams({
           client_id: clientId,
           client_secret: clientSecret,
@@ -61,14 +62,15 @@ export class OAuthService {
     }
   }
 
-  static async exchangeGoogleCode(code: string): Promise<OAuthProfile> {
-    const { clientId, clientSecret } = config.google;
-    if (!clientId || !clientSecret) {
-      throw BadRequestError('Google SSO is not configured on this server', 'SSO_NOT_CONFIGURED');
+  /** `google`: the organization's Google OAuth client (SsoConfigService), null when it has none. */
+  static async exchangeGoogleCode(code: string, google: GoogleConfig | null): Promise<OAuthProfile> {
+    if (!google) {
+      throw BadRequestError('Google SSO is not configured for this organization', 'SSO_NOT_CONFIGURED');
     }
+    const { clientId, clientSecret } = google;
 
     try {
-      const redirectUri = `${config.frontendUrl}/auth/callback/google`;
+      const redirectUri = SsoConfigService.redirectUri('google');
 
       const tokenResponse = await axios.post(
         'https://oauth2.googleapis.com/token',

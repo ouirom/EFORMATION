@@ -210,7 +210,8 @@
       "importCompleteTitle": "Import terminé",
       "importCompleteDescription": "{{count}} utilisateur(s) créé(s)",
       "importErrorDescription": "Impossible d'importer le fichier",
-      "fillRequiredFields": "Veuillez remplir tous les champs obligatoires"
+      "fillRequiredFields": "Veuillez remplir tous les champs obligatoires",
+      "unlockedTitle": "Compte déverrouillé"
     },
     "confirmDelete": "Êtes-vous sûr de vouloir supprimer {{name}} ?",
     "loadError": "Impossible de charger la liste des utilisateurs. Veuillez réessayer.",
@@ -242,7 +243,10 @@
       "none": "Aucun",
       "cancel": "Annuler",
       "creating": "Création...",
-      "create": "Créer"
+      "create": "Créer",
+      "subsidiary": "Filiale",
+      "subsidiaryPlaceholder": "Choisir une filiale",
+      "noSubsidiary": "Aucune (directement sous l'entreprise)"
     },
     "filters": {
       "searchPlaceholder": "Rechercher par nom ou email...",
@@ -269,7 +273,8 @@
       "reactivate": "Réactiver",
       "suspend": "Suspendre",
       "deactivate": "Désactiver",
-      "delete": "Supprimer"
+      "delete": "Supprimer",
+      "unlock": "Déverrouiller"
     },
     "pagination": {
       "pageOf": "Page {{page}} sur {{totalPages}} ({{total}} utilisateurs)",
@@ -322,7 +327,9 @@
         "deletedDescription": "Libellé supprimé",
         "deleteErrorDescription": "Erreur lors de la suppression"
       }
-    }
+    },
+    "locked": "Verrouillé",
+    "lockedUntil": "Trop de mots de passe erronés — verrouillé jusqu'à {{time}}"
   },
   "courses": {
     "categories": {
@@ -343,7 +350,8 @@
         "enterprise": "Entreprise",
         "direction": "Direction",
         "service": "Service",
-        "role": "Rôle"
+        "role": "Rôle",
+        "subsidiary": "Filiale"
       }
     },
     "statuses": {
@@ -540,7 +548,7 @@
       "timeLimit": "Durée limite (minutes)",
       "timeLimitPlaceholder": "Ex: 30",
       "maxAttempts": "Nombre d'essais max",
-      "maxAttemptsPlaceholder": "Ex: 3",
+      "maxAttemptsPlaceholder": "Vide ou 0 = illimité",
       "questionsToDraw": "Questions tirées au hasard (sur la banque de questions)",
       "questionsToDrawPlaceholder": "Laisser vide pour utiliser toutes les questions",
       "questionsToDrawHint": "Chaque tentative tirera aléatoirement ce nombre de questions parmi celles du quiz.",
@@ -636,7 +644,8 @@
         "direction": "Direction",
         "service": "Service",
         "role": "Rôle",
-        "team": "Équipe"
+        "team": "Équipe",
+        "subsidiary": "Filiale"
       },
       "mandatory": "Obligatoire",
       "idFallback": "ID: {{id}}"
@@ -664,7 +673,8 @@
         "enterprise": "Entreprise",
         "direction": "Direction",
         "service": "Service",
-        "team": "Équipe"
+        "team": "Équipe",
+        "subsidiary": "Filiale"
       },
       "searchUsers": "Rechercher des utilisateurs",
       "searchPlaceholder": "Rechercher par nom ou email...",
@@ -718,7 +728,8 @@
         "user": "Utilisateur",
         "direction": "Direction",
         "service": "Service",
-        "enterprise": "Entreprise"
+        "enterprise": "Entreprise",
+        "subsidiary": "Filiale"
       }
     },
     "createDialog": {
@@ -1320,6 +1331,216 @@
         "languageTimezone": "La langue s'applique aux utilisateurs qui n'en ont pas choisi une. Le fuseau sert aux rapports, aux séries de jours et aux horaires.",
         "maxUsersPerGroup": "S'applique à la création des conversations de groupe du chat (créateur compris).",
         "certificateValidity": "Appliquée quand aucune durée n'est précisée à la délivrance d'un certificat."
+      },
+      "security": {
+        "title": "Accès & sécurité",
+        "requireRegistrationApproval": "Valider les nouveaux inscrits",
+        "passwordRequireComplexity": "Mot de passe complexe",
+        "passwordMinLength": "Longueur minimale du mot de passe",
+        "passwordExpiryDays": "Renouveler le mot de passe tous les (jours)",
+        "maxLoginAttempts": "Échecs avant verrouillage",
+        "lockoutMinutes": "Durée du verrouillage (minutes)",
+        "sessionIdleMinutes": "Déconnexion après inactivité (minutes)",
+        "sessionMaxDays": "Durée maximale de connexion (jours)",
+        "allowedEmailDomains": "Domaines e-mail autorisés",
+        "invalidDomains": "Un des domaines e-mail est invalide (exemple attendu : belife.ci).",
+        "hints": {
+          "requireRegistrationApproval": "Si activé, un compte créé par inscription libre attend l'activation de son responsable. Sinon il est actif immédiatement.",
+          "passwordRequireComplexity": "Exige une majuscule, une minuscule, un chiffre et un caractère spécial.",
+          "passwordMinLength": "Entre 8 et 64 caractères. S’applique aux nouveaux mots de passe.",
+          "passwordExpiryDays": "0 = jamais. À l’échéance, l’utilisateur doit en choisir un nouveau à la connexion.",
+          "maxLoginAttempts": "0 = pas de verrouillage. Le compte est bloqué après ce nombre de mots de passe erronés consécutifs.",
+          "lockoutMinutes": "Un administrateur peut aussi déverrouiller le compte depuis la liste des utilisateurs.",
+          "sessionIdleMinutes": "Un avertissement s’affiche une minute avant la déconnexion.",
+          "sessionMaxDays": "Au-delà, il faut se reconnecter, même en restant actif.",
+          "allowedEmailDomains": "Séparés par des virgules. Vide = tous. S’applique à l’inscription libre et aux premiers accès SSO/LDAP ; les comptes créés par un administrateur ne sont pas concernés."
+        }
+      },
+      "learning": {
+        "title": "Apprentissage & gamification",
+        "quizDefaultPassingScore": "Seuil de réussite des quiz (%)",
+        "quizDefaultMaxAttempts": "Tentatives par quiz",
+        "assignmentReminderDays": "Premier rappel (jours avant l’échéance)",
+        "assignmentUrgentDays": "Dernier rappel (jours avant l’échéance)",
+        "escalationDaysOverdue": "Relance du responsable (jours de retard)",
+        "certificateReminderDays": "Rappel d’expiration des certificats (jours avant)",
+        "enableBadges": "Badges",
+        "enableXp": "Points d’expérience, niveaux et classement",
+        "leaderboardScope": "Portée du classement",
+        "xpPerCourse": "XP par cours terminé",
+        "xpPerQuiz": "XP par quiz réussi",
+        "xpPerLesson": "XP par leçon terminée",
+        "xpPerLevel": "XP par niveau",
+        "hints": {
+          "quizDefaultPassingScore": "Proposé à la création d’un quiz ; chaque quiz reste modifiable.",
+          "quizDefaultMaxAttempts": "0 = illimité. Proposé à la création d’un quiz.",
+          "assignmentReminderDays": "Formations obligatoires avec échéance. 0 = pas de premier rappel.",
+          "assignmentUrgentDays": "0 = pas de dernier rappel.",
+          "escalationDaysOverdue": "Le responsable est prévenu si la formation n’est pas terminée. 0 = jamais.",
+          "certificateReminderDays": "0 = pas de rappel.",
+          "enableBadges": "Si désactivé, plus aucun badge n’est attribué automatiquement et la page Badges disparaît du menu.",
+          "enableXp": "Si désactivé, le niveau, les XP et le classement disparaissent du tableau de bord et du profil.",
+          "leaderboardScope": "Avec qui chacun est comparé sur le tableau de bord."
+        }
+      },
+      "compliance": {
+        "auditLogRetentionDays": "Conservation du journal d’activité (jours)",
+        "anonymizeDeletedUsers": "Anonymiser les comptes supprimés",
+        "privacyPolicyUrl": "Lien vers la politique de confidentialité",
+        "privacyContactEmail": "Contact protection des données (DPO)",
+        "legalNotice": "Mentions légales",
+        "hints": {
+          "auditLogRetentionDays": "0 = conservé indéfiniment. Les entrées plus anciennes sont supprimées chaque nuit.",
+          "anonymizeDeletedUsers": "À la suppression d’un compte, son nom, son e-mail, son téléphone, sa photo, ses notifications et ses messages sont effacés. Ses résultats de formation restent, sans lien avec la personne.",
+          "privacyPolicyUrl": "Affiché à l’inscription et dans le menu du compte.",
+          "privacyContactEmail": "Adresse à laquelle les utilisateurs exercent leurs droits (accès, rectification, effacement).",
+          "legalNotice": "Affichées sur la page publique « Mentions légales »."
+        }
+      }
+    },
+    "security": {
+      "title": "Accès & sécurité",
+      "password": "Mot de passe",
+      "passwordComplex": "{{count}} caractères min., majuscule, minuscule, chiffre et caractère spécial",
+      "passwordLength": "{{count}} caractères minimum",
+      "expiry": "Renouvellement du mot de passe",
+      "everyDays_one": "Tous les {{count}} jour",
+      "everyDays_other": "Tous les {{count}} jours",
+      "never": "Jamais",
+      "lockout": "Verrouillage du compte",
+      "lockoutValue_one": "Après {{count}} échec, pendant {{minutes}} min",
+      "lockoutValue_other": "Après {{count}} échecs, pendant {{minutes}} min",
+      "none": "Aucun",
+      "idle": "Déconnexion après inactivité",
+      "minutes_one": "{{count}} minute",
+      "minutes_other": "{{count}} minutes",
+      "sessionMax": "Durée maximale de connexion",
+      "days_one": "{{count}} jour",
+      "days_other": "{{count}} jours",
+      "domains": "Domaines e-mail autorisés",
+      "anyDomain": "Tous les domaines",
+      "approval": "Nouveaux inscrits",
+      "approvalOn": "Activés par leur responsable",
+      "approvalOff": "Actifs immédiatement"
+    },
+    "learning": {
+      "title": "Apprentissage & gamification",
+      "quiz": "Quiz (valeurs par défaut)",
+      "quizValue": "Réussite à {{score}} %, {{attempts}}",
+      "attempts_one": "{{count}} tentative",
+      "attempts_other": "{{count}} tentatives",
+      "unlimited": "tentatives illimitées",
+      "reminders": "Rappels avant échéance",
+      "escalation": "Relance du responsable",
+      "escalationValue_one": "{{count}} jour après l’échéance",
+      "escalationValue_other": "{{count}} jours après l’échéance",
+      "certificateReminder": "Rappel avant expiration des certificats",
+      "off": "Désactivé",
+      "badges": "Badges",
+      "xp": "Points d’expérience",
+      "xpValue": "Cours {{course}}, quiz {{quiz}}, leçon {{lesson}} — {{level}} XP par niveau",
+      "leaderboard": "Classement",
+      "leaderboardScope": {
+        "organization": "Toute l’organisation",
+        "direction": "Par direction",
+        "service": "Par service",
+        "hidden": "Masqué"
+      }
+    },
+    "tabs": {
+      "general": "Général",
+      "platform": "Plateforme",
+      "security": "Accès & sécurité",
+      "learning": "Apprentissage",
+      "structure": "Structure",
+      "integrations": "Intégrations",
+      "compliance": "Conformité",
+      "history": "Historique",
+      "groups": {
+        "modules": "Modules",
+        "localization": "Langue et fuseau horaire",
+        "passwords": "Mots de passe",
+        "sessions": "Connexion et session",
+        "registration": "Inscription",
+        "quizzes": "Quiz",
+        "reminders": "Rappels et relances",
+        "gamification": "Gamification",
+        "personalData": "Données personnelles",
+        "legal": "Informations légales"
+      },
+      "defaultValue": "Par défaut : {{value}}",
+      "reset": "Rétablir",
+      "empty": "vide",
+      "forever": "Conservé indéfiniment",
+      "unsaved": "Modifications non enregistrées",
+      "cancel": "Annuler",
+      "save": "Enregistrer",
+      "invalidFields": "Valeur invalide : {{fields}}"
+    },
+    "structure": {
+      "intro": "Entreprise → filiale → direction → service. La filiale est facultative : une direction peut dépendre d'une filiale ou directement de l'entreprise.",
+      "empty": "Aucune entreprise pour le moment. Commencez par en créer une.",
+      "addEnterprise": "Ajouter une entreprise",
+      "addSubsidiary": "Filiale",
+      "addDirection": "Direction",
+      "addService": "Service",
+      "edit": "Modifier",
+      "delete": "Supprimer",
+      "members": "Membres",
+      "levels": {
+        "enterprise": "Entreprise",
+        "subsidiary": "Filiale",
+        "direction": "Direction",
+        "service": "Service"
+      },
+      "createTitle": "Nouvel élément : {{level}}",
+      "editTitle": "Modifier : {{level}}",
+      "name": "Nom",
+      "code": "Code",
+      "codeHint": "Facultatif. Sert à rattacher les utilisateurs lors des imports Excel.",
+      "attachment": "Rattachement",
+      "directlyUnderEnterprise": "Directement sous l'entreprise",
+      "inSubsidiary": "Filiale : {{name}}",
+      "moveHint": "Déplacer la direction met aussi à jour la filiale de ses membres.",
+      "saved": "Structure mise à jour.",
+      "deleted": "Élément supprimé.",
+      "deleteTitle": "Supprimer « {{name}} » ?",
+      "deleteDescription": "La suppression n'est possible que si l'élément n'a plus de sous-éléments, de membres, d'affectations ni d'équipes.",
+      "inUse": "Impossible de supprimer : cet élément contient encore des sous-éléments, des membres, ou il est utilisé par des affectations ou des équipes.",
+      "error": "L'opération a échoué."
+    },
+    "integrations": {
+      "email": {
+        "title": "E-mail (SMTP)",
+        "description": "Serveur d'envoi des e-mails de la plateforme."
+      },
+      "sso": {
+        "title": "SSO & annuaire",
+        "description": "Connexion avec Microsoft, Google ou votre annuaire LDAP."
+      },
+      "video": {
+        "title": "Visioconférence",
+        "description": "Serveur LiveKit des sessions live."
+      },
+      "recording": {
+        "title": "Enregistrement",
+        "description": "Stockage des enregistrements des sessions live."
+      },
+      "import": {
+        "title": "Import",
+        "description": "Import Excel de la structure, des utilisateurs et des cours."
+      }
+    },
+    "history": {
+      "empty": "Aucune modification enregistrée pour le moment.",
+      "system": "Système",
+      "actions": {
+        "SETTINGS_UPDATED": "Paramètres modifiés",
+        "SSO_SETTINGS_UPDATED": "SSO modifié",
+        "ORG_UNIT_DELETED": "Structure : suppression",
+        "ORGANIZATION_IMPORTED": "Structure importée",
+        "USER_ANONYMIZED": "Compte anonymisé",
+        "USER_DATA_EXPORTED": "Données personnelles exportées"
       }
     }
   },
@@ -1510,6 +1731,59 @@
       "lastAccess": "Dernier accès",
       "durationMinutes": "{{count}} min",
       "durationHoursMinutes": "{{hours}}h {{minutes}}min"
+    }
+  },
+  "ssoSettings": {
+    "title": "SSO & annuaire",
+    "subtitle": "Connectez votre fournisseur d'identité : vos collaborateurs se connectent avec leur compte d'entreprise.",
+    "status": {
+      "active": "Actif",
+      "platform": "Plateforme (par défaut)",
+      "inactive": "Inactif"
+    },
+    "azure": {
+      "title": "Microsoft Entra ID (Azure AD)",
+      "description": "Application enregistrée dans le portail Azure de votre organisation.",
+      "enable": "Proposer la connexion Microsoft"
+    },
+    "google": {
+      "title": "Google Workspace",
+      "description": "Client OAuth créé dans la Google Cloud Console.",
+      "enable": "Proposer la connexion Google"
+    },
+    "ldap": {
+      "title": "Annuaire LDAP / Active Directory",
+      "description": "Les utilisateurs se connectent avec leur identifiant et mot de passe de l'annuaire.",
+      "enable": "Proposer la connexion LDAP",
+      "filterHint": "{{username}} est remplacé par l’identifiant saisi.",
+      "test": "Tester la connexion"
+    },
+    "fields": {
+      "azureDirectoryId": "ID du locataire (tenant)",
+      "azureClientId": "ID de l'application (client)",
+      "azureClientSecret": "Secret client",
+      "googleClientId": "ID client",
+      "googleClientSecret": "Secret client",
+      "ldapUrl": "URL du serveur",
+      "ldapBindDn": "Compte de service (DN)",
+      "ldapBindPassword": "Mot de passe du compte de service",
+      "ldapSearchBase": "Base de recherche",
+      "ldapSearchFilter": "Filtre de recherche",
+      "ldapEmailAttribute": "Attribut e-mail",
+      "ldapNameAttribute": "Attribut nom affiché"
+    },
+    "redirectUri": "URI de redirection à déclarer",
+    "redirectUriHint": "À renseigner à l'identique dans la configuration de l'application chez le fournisseur.",
+    "copy": "Copier",
+    "provisioningHint": "À la première connexion, un compte apprenant est créé dans votre organisation (dans la limite des domaines e-mail autorisés). Un compte existant d'une autre organisation ne peut pas se connecter par votre fournisseur.",
+    "save": "Enregistrer",
+    "toasts": {
+      "saved": "Configuration SSO enregistrée.",
+      "saveError": "Impossible d'enregistrer la configuration.",
+      "incomplete": "Configuration incomplète pour : {{providers}}.",
+      "ldapOk": "Connexion à l’annuaire réussie.",
+      "ldapError": "Connexion à l’annuaire impossible.",
+      "copied": "URI copiée."
     }
   }
 }

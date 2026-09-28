@@ -59,6 +59,8 @@ const AdminReportsPage = lazy(() => import('@/pages/admin/AdminReportsPage'));
 const AdminOrganizationPage = lazy(() => import('@/pages/admin/AdminOrganizationPage'));
 const AdminImportPage = lazy(() => import('@/pages/admin/AdminImportPage'));
 const AdminEmailSettingsPage = lazy(() => import('@/pages/admin/AdminEmailSettingsPage'));
+const AdminSsoSettingsPage = lazy(() => import('@/pages/admin/AdminSsoSettingsPage'));
+const LegalPage = lazy(() => import('@/pages/LegalPage'));
 const AdminLiveKitSettingsPage = lazy(() => import('@/pages/admin/AdminLiveKitSettingsPage'));
 const AdminRecordingSettingsPage = lazy(() => import('@/pages/admin/AdminRecordingSettingsPage'));
 const AdminLogsPage = lazy(() => import('@/pages/admin/AdminLogsPage'));
@@ -114,6 +116,7 @@ function App() {
             <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/auth/callback/:provider" element={<SSOCallbackPage />} />
             <Route path="/verify-certificate/:serial" element={<VerifyCertificatePage />} />
+            <Route path="/legal" element={<LegalPage />} />
           </Route>
 
           {/* Main App Routes */}
@@ -134,7 +137,7 @@ function App() {
             <Route path="/lessons/:lessonId/quiz/create" element={<QuizCreatePage />} />
             <Route path="/quizzes/:quizId" element={<QuizPage />} />
             <Route path="/quizzes/:quizId/manage-questions" element={<QuizManageQuestionsPage />} />
-            <Route path="/badges" element={<BadgesPage />} />
+            <Route path="/badges" element={<FeatureGate feature="badges"><BadgesPage /></FeatureGate>} />
             <Route path="/certificates" element={<CertificatesPage />} />
             <Route path="/notifications" element={<NotificationsPage />} />
             <Route path="/search" element={<SearchPage />} />
@@ -176,6 +179,7 @@ function App() {
             <Route path="organization" element={<AdminOrganizationPage />} />
             <Route path="import" element={<AdminImportPage />} />
             <Route path="email-settings" element={<AdminEmailSettingsPage />} />
+            <Route path="sso-settings" element={<AdminSsoSettingsPage />} />
             <Route path="livekit-settings" element={<AdminLiveKitSettingsPage />} />
             <Route path="recording-settings" element={<AdminRecordingSettingsPage />} />
             <Route path="logs" element={<AdminLogsPage />} />
