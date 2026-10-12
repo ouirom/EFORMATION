@@ -90,6 +90,7 @@
         "COURSE_STARTED": "Cours démarré",
         "COURSE_COMPLETED": "Cours terminé",
         "ORGANIZATION_IMPORTED": "Organisation importée",
+        "ORG_STRUCTURE_COPIED": "Structure copiée",
         "COURSES_IMPORTED": "Cours importés",
         "LESSONS_IMPORTED": "Leçons importées",
         "QUIZZES_IMPORTED": "Quiz importés",
@@ -1605,7 +1606,40 @@
       "deleteTitle": "Supprimer « {{name}} » ?",
       "deleteDescription": "La suppression n'est possible que si l'élément n'a plus de sous-éléments, de membres, d'affectations ni d'équipes.",
       "inUse": "Impossible de supprimer : cet élément contient encore des sous-éléments, des membres, ou il est utilisé par des affectations ou des équipes.",
-      "error": "L'opération a échoué."
+      "error": "L'opération a échoué.",
+      "copy": {
+        "action": "Copier la structure vers…",
+        "title": "Copier la structure de « {{name}} »",
+        "description": "Copie les directions et leurs services vers une autre filiale. Seule la structure est copiée : ni membres, ni responsables, ni affectations, ni équipes.",
+        "target": "Filiale cible",
+        "chooseTarget": "Choisir une filiale…",
+        "selection": "Éléments à copier",
+        "selectAll": "Tout cocher",
+        "selectNone": "Tout décocher",
+        "serviceCount_one": "{{count}} service",
+        "serviceCount_other": "{{count}} services",
+        "preview": "Aperçu",
+        "summary": {
+          "directionsCreated_one": "{{count}} direction créée",
+          "directionsCreated_other": "{{count}} directions créées",
+          "directionsMerged_one": "{{count}} direction fusionnée",
+          "directionsMerged_other": "{{count}} directions fusionnées",
+          "servicesCreated_one": "{{count}} service créé",
+          "servicesCreated_other": "{{count}} services créés",
+          "servicesSkipped_one": "{{count}} service ignoré (déjà présent)",
+          "servicesSkipped_other": "{{count}} services ignorés (déjà présents)"
+        },
+        "mergedInto": "« {{name}} » existe déjà dans la cible : ses services manquants y seront ajoutés.",
+        "skipped": "« {{name}} » ({{direction}}) existe déjà : ignoré.",
+        "codeChanged": "« {{name}} » : code déjà utilisé, la copie aura le code {{code}}.",
+        "nothing": "Rien à copier.",
+        "nothingSelected": "Cochez au moins une direction.",
+        "nothingToCreate": "Tout ce qui est coché existe déjà dans la filiale cible.",
+        "noDirections": "Cette filiale n'a encore aucune direction à copier.",
+        "noTarget": "Aucune autre filiale disponible. Créez d'abord la filiale cible.",
+        "confirm": "Copier",
+        "done": "Structure copiée : {{summary}}."
+      }
     },
     "integrations": {
       "email": {
@@ -1636,6 +1670,7 @@
         "SETTINGS_UPDATED": "Paramètres modifiés",
         "SSO_SETTINGS_UPDATED": "SSO modifié",
         "ORG_UNIT_DELETED": "Structure : suppression",
+        "ORG_STRUCTURE_COPIED": "Structure : copie",
         "ORGANIZATION_IMPORTED": "Structure importée",
         "USER_ANONYMIZED": "Compte anonymisé",
         "USER_DATA_EXPORTED": "Données personnelles exportées"

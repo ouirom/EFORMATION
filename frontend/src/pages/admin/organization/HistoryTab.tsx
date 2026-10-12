@@ -45,6 +45,7 @@ export function HistoryTab() {
       return keys.map((key) => (FIELD_LABELS.has(key) ? t(FIELD_LABELS.get(key)!) : key)).join(', ')
     }
     if (entry.action === 'ORG_UNIT_DELETED') return String(entry.changes?.name ?? '')
+    if (entry.action === 'ORG_STRUCTURE_COPIED') return `${entry.changes?.source ?? ''} → ${entry.changes?.target ?? ''}`
     return ''
   }
 

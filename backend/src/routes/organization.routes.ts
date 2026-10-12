@@ -15,7 +15,7 @@ import {
   settingToColumn,
 } from '../services/tenant-settings.service';
 import { AuditService } from '../services/audit.service';
-import { OrgLevel, OrgStructureService } from '../services/org-structure.service';
+import { OrgLevel, OrgStructureService, copySubsidiaryStructure } from '../services/org-structure.service';
 import { effectiveExternalTheme, effectiveSidebarColor, externalColorParam, isHexColor } from '../utils/externalTheme';
 
 const router = Router();
@@ -292,6 +292,7 @@ const HISTORY_ACTIONS = [
   'SETTINGS_UPDATED',
   'SSO_SETTINGS_UPDATED',
   'ORG_UNIT_DELETED',
+  'ORG_STRUCTURE_COPIED',
   'ORGANIZATION_IMPORTED',
   'USER_ANONYMIZED',
   'USER_DATA_EXPORTED',
@@ -506,6 +507,51 @@ router.put('/subsidiaries/:id', authenticate, authorize('admin'), unitBody, asyn
 });
 
 deleteRoute('subsidiary', 'subsidiaries', ['admin']);
+
+/**
+ * @route POST /api/v1/organizations/subsidiaries/:id/copy-structure
+ * @desc Copies the selected directions of this subsidiary, with their services,
+ *       into another subsidiary of the tenant (structure only: no members, heads,
+ *       assignments or teams). Same-name directions are merged and services the
+ *       target already has are skipped. `dryRun: true` only returns the plan.
+ */
+router.post(
+  '/subsidiaries/:id/copy-structure',
+  authenticate,
+  authorize('admin'),
+  [
+    body('targetSubsidiaryId').isInt({ min: 1 }),
+    body('directionIds').optional().isArray({ max: 1000 }),
+    body('directionIds.*').isInt({ min: 1 }).toInt(),
+    body('serviceIds').optional().isArray({ max: 5000 }),
+    body('serviceIds.*').isInt({ min: 1 }).toInt(),
+    body('dryRun').optional().isBoolean().toBoolean(),
+  ],
+  async (req: AuthRequest, res, next) => {
+    try {
+      validate(req);
+      const tenantId = req.user!.tenantId;
+      const result = await copySubsidiaryStructure(tenantId, req.params.id, {
+        targetSubsidiaryId: req.body.targetSubsidiaryId,
+        directionIds: req.body.directionIds,
+        serviceIds: req.body.serviceIds,
+        dryRun: req.body.dryRun === true,
+      });
+      if (!result.dryRun) {
+        await AuditService.log(tenantId, req.user!.id, 'ORG_STRUCTURE_COPIED', 'subsidiaries', result.target.id, {
+          sourceId: result.source.id,
+          source: result.source.name,
+          targetId: result.target.id,
+          target: result.target.name,
+          ...result.summary,
+        });
+      }
+      res.status(result.dryRun ? 200 : 201).json({ success: true, data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 // ---------- directions
 router.get('/directions', authenticate, async (req: AuthRequest, res, next) => {

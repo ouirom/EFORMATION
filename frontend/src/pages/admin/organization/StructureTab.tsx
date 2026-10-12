@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Building2, Network, FolderTree, Layers, Plus, Pencil, Trash2, Users, Loader2 } from 'lucide-react'
+import { Building2, Network, FolderTree, Layers, Plus, Pencil, Trash2, Users, Loader2, Copy } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -12,6 +12,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { PageLoading } from '@/components/ui/loading'
 import { useToast } from '@/components/ui/use-toast'
 import { api } from '@/services/api'
+import { CopyStructureDialog } from './CopyStructureDialog'
 
 type Level = 'enterprise' | 'subsidiary' | 'direction' | 'service'
 
@@ -65,6 +66,7 @@ export function StructureTab() {
   const [editing, setEditing] = useState<Editing | null>(null)
   const [form, setForm] = useState({ name: '', code: '', subsidiaryId: '' })
   const [deleting, setDeleting] = useState<{ level: Level; unit: Unit } | null>(null)
+  const [copying, setCopying] = useState<SubsidiaryNode | null>(null)
 
   const { data: tree = [], isLoading } = useQuery<EnterpriseNode[]>({
     queryKey: ['organization-tree'],
@@ -74,7 +76,7 @@ export function StructureTab() {
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ['organization-tree'] })
     // Pickers elsewhere (users, assignments, teams...) list these units too.
-    for (const key of ['enterprises', 'subsidiaries', 'directions', 'services', 'organization-history']) {
+    for (const key of ['enterprises', 'subsidiaries', 'directions', 'services', 'organization-history', 'organization-copy-preview']) {
       queryClient.invalidateQueries({ queryKey: [key] })
     }
   }
@@ -221,9 +223,21 @@ export function StructureTab() {
                       actions(
                         'subsidiary',
                         subsidiary,
-                        addButton(t('organization.structure.addDirection'), () =>
-                          openEditor({ level: 'direction', parent: { enterpriseId: enterprise.id, subsidiaryId: subsidiary.id }, subsidiaries: enterprise.subsidiaries })
-                        ),
+                        <>
+                          {addButton(t('organization.structure.addDirection'), () =>
+                            openEditor({ level: 'direction', parent: { enterpriseId: enterprise.id, subsidiaryId: subsidiary.id }, subsidiaries: enterprise.subsidiaries })
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            aria-label={t('organization.structure.copy.action')}
+                            title={t('organization.structure.copy.action')}
+                            onClick={() => setCopying(subsidiary)}
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </Button>
+                        </>,
                         { level: 'subsidiary', unit: subsidiary }
                       )
                     )}
@@ -291,6 +305,13 @@ export function StructureTab() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <CopyStructureDialog
+        source={copying}
+        targets={tree.map((e) => ({ enterprise: { id: e.id, name: e.name }, subsidiaries: e.subsidiaries }))}
+        onClose={() => setCopying(null)}
+        onCopied={refresh}
+      />
 
       <ConfirmDialog
         open={!!deleting}

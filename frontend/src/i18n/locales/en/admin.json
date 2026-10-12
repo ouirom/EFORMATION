@@ -90,6 +90,7 @@
         "COURSE_STARTED": "Course started",
         "COURSE_COMPLETED": "Course completed",
         "ORGANIZATION_IMPORTED": "Organization imported",
+        "ORG_STRUCTURE_COPIED": "Structure copied",
         "COURSES_IMPORTED": "Courses imported",
         "LESSONS_IMPORTED": "Lessons imported",
         "QUIZZES_IMPORTED": "Quizzes imported",
@@ -1605,7 +1606,40 @@
       "deleteTitle": "Delete \"{{name}}\"?",
       "deleteDescription": "Only possible once it has no sub-units, members, assignments or teams left.",
       "inUse": "Cannot delete: it still has sub-units or members, or assignments or teams use it.",
-      "error": "The operation failed."
+      "error": "The operation failed.",
+      "copy": {
+        "action": "Copy structure to…",
+        "title": "Copy the structure of “{{name}}”",
+        "description": "Copies the directions and their services to another subsidiary. Only the structure is copied: no members, heads, assignments or teams.",
+        "target": "Target subsidiary",
+        "chooseTarget": "Choose a subsidiary…",
+        "selection": "Units to copy",
+        "selectAll": "Select all",
+        "selectNone": "Select none",
+        "serviceCount_one": "{{count}} service",
+        "serviceCount_other": "{{count}} services",
+        "preview": "Preview",
+        "summary": {
+          "directionsCreated_one": "{{count}} direction created",
+          "directionsCreated_other": "{{count}} directions created",
+          "directionsMerged_one": "{{count}} direction merged",
+          "directionsMerged_other": "{{count}} directions merged",
+          "servicesCreated_one": "{{count}} service created",
+          "servicesCreated_other": "{{count}} services created",
+          "servicesSkipped_one": "{{count}} service skipped (already there)",
+          "servicesSkipped_other": "{{count}} services skipped (already there)"
+        },
+        "mergedInto": "“{{name}}” already exists in the target: its missing services will be added to it.",
+        "skipped": "“{{name}}” ({{direction}}) already exists: skipped.",
+        "codeChanged": "“{{name}}”: code already in use, the copy gets code {{code}}.",
+        "nothing": "Nothing to copy.",
+        "nothingSelected": "Tick at least one direction.",
+        "nothingToCreate": "Everything ticked already exists in the target subsidiary.",
+        "noDirections": "This subsidiary has no direction to copy yet.",
+        "noTarget": "No other subsidiary available. Create the target subsidiary first.",
+        "confirm": "Copy",
+        "done": "Structure copied: {{summary}}."
+      }
     },
     "integrations": {
       "email": {
@@ -1636,6 +1670,7 @@
         "SETTINGS_UPDATED": "Settings changed",
         "SSO_SETTINGS_UPDATED": "SSO changed",
         "ORG_UNIT_DELETED": "Structure: deletion",
+        "ORG_STRUCTURE_COPIED": "Structure: copy",
         "ORGANIZATION_IMPORTED": "Structure imported",
         "USER_ANONYMIZED": "Account anonymized",
         "USER_DATA_EXPORTED": "Personal data exported"

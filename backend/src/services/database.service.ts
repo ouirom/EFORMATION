@@ -53,6 +53,12 @@ function bindMssqlParams(request: MssqlRequest, params?: Record<string, any>): v
   });
 }
 
+/** query()/execute() bound to one transaction (see DatabaseService.withTransaction). */
+export interface DbExecutor {
+  query<T = any>(queryString: string, params?: Record<string, any>): Promise<T[]>;
+  execute(queryString: string, params?: Record<string, any>): Promise<{ rowsAffected: number; insertedId?: number }>;
+}
+
 export class DatabaseService {
   private static pool: ConnectionPool | null = null;
 
@@ -174,6 +180,58 @@ export class DatabaseService {
     try {
       await transaction.begin();
       const result = await callback(transaction);
+      await transaction.commit();
+      return result;
+    } catch (error) {
+      await transaction.rollback();
+      throw error;
+    }
+  }
+
+  /**
+   * Runs `callback` in one transaction on either backend: everything it does
+   * through the given `tx` (same query()/execute() contract as this class) is
+   * committed together, or rolled back if it throws. Calls made through
+   * DatabaseService itself inside the callback are NOT part of it.
+   */
+  public static async withTransaction<T>(callback: (tx: DbExecutor) => Promise<T>): Promise<T> {
+    if (IS_PG) {
+      return getKnex().transaction(async (trx) => {
+        const raw = (queryString: string, params?: Record<string, any>) =>
+          trx.raw(toKnexNamedParams(queryString), params || {});
+        return callback({
+          query: async <R = any>(queryString: string, params?: Record<string, any>) => {
+            const result = await raw(queryString, params);
+            return (result.rows ?? result) as R[];
+          },
+          execute: async (queryString: string, params?: Record<string, any>) => {
+            const result = await raw(queryString, params);
+            return { rowsAffected: result.rowCount ?? 0, insertedId: result.rows?.[0]?.id };
+          },
+        });
+      });
+    }
+
+    const pool = await this.getPool();
+    const transaction = new sql.Transaction(pool);
+    const run = async (queryString: string, params?: Record<string, any>) => {
+      const request = new sql.Request(transaction);
+      bindMssqlParams(request, params);
+      return request.query(queryString);
+    };
+    await transaction.begin();
+    try {
+      const result = await callback({
+        query: async <R = any>(queryString: string, params?: Record<string, any>) =>
+          (await run(queryString, params)).recordset as R[],
+        execute: async (queryString: string, params?: Record<string, any>) => {
+          const result = await run(queryString, params);
+          return {
+            rowsAffected: result.rowsAffected.reduce((a, b) => a + b, 0),
+            insertedId: result.recordset?.[0]?.id,
+          };
+        },
+      });
       await transaction.commit();
       return result;
     } catch (error) {
