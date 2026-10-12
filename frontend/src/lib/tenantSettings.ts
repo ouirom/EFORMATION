@@ -58,6 +58,8 @@ export interface Organization {
   /** Partner theme of external participants (#RRGGBB, defaults applied by the server). */
   externalAccentColor?: string
   externalSurfaceColor?: string
+  /** Staff side menu color (#RRGGBB); null = default look, which follows light/dark mode. */
+  sidebarColor?: string | null
   settings?: TenantPlatformSettings
   [key: string]: any
 }

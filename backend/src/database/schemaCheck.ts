@@ -23,6 +23,7 @@ const REQUIRED_COLUMNS: { table: string; column: string; migration: string }[] =
   { table: 'two_factor_challenges', column: 'code_hash', migration: '043_two_factor' },
   { table: 'tenant_settings', column: 'new_device_alerts', migration: '044_login_alerts' },
   { table: 'tenant_settings', column: 'single_session_per_user', migration: '045_single_session' },
+  { table: 'tenant_settings', column: 'sidebar_color', migration: '046_tenant_sidebar_color' },
 ];
 
 /** Returns the migrations that still need to run (empty when the schema is up to date). */

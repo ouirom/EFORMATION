@@ -32,6 +32,7 @@ import { StructureTab } from './organization/StructureTab'
 import { IntegrationsTab } from './organization/IntegrationsTab'
 import { HistoryTab } from './organization/HistoryTab'
 import { ExternalThemeContrastWarnings, ExternalThemeFields, ExternalThemePreview } from './organization/ExternalThemeFields'
+import { SidebarColorFields, SidebarColorPreview, SidebarContrastWarnings } from './organization/SidebarColorFields'
 import { COMPLIANCE_GROUPS, LEARNING_GROUPS, PLATFORM_GROUPS, SECURITY_GROUPS } from './organization/settingsFields'
 
 // Tabs of the organization settings page; the active one is kept in ?tab= so it
@@ -53,6 +54,8 @@ interface Organization {
   /** Partner theme of external participants (defaults applied by the server). */
   externalAccentColor: string
   externalSurfaceColor: string
+  /** Staff side menu color; null = default look (follows light/dark mode). */
+  sidebarColor: string | null
   contactEmail: string
   contactPhone: string
   address: string
@@ -94,6 +97,8 @@ export default function AdminOrganizationPage() {
     secondaryColor: '#10B981',
     externalAccentColor: DEFAULT_EXTERNAL_ACCENT_COLOR,
     externalSurfaceColor: DEFAULT_EXTERNAL_SURFACE_COLOR,
+    // '' = default look (stored as null).
+    sidebarColor: '',
     contactEmail: '',
     contactPhone: '',
     address: '',
@@ -116,9 +121,11 @@ export default function AdminOrganizationPage() {
         ...data,
         externalAccentColor: asStored(data.externalAccentColor, DEFAULT_EXTERNAL_ACCENT_COLOR),
         externalSurfaceColor: asStored(data.externalSurfaceColor, DEFAULT_EXTERNAL_SURFACE_COLOR),
+        sidebarColor: data.sidebarColor ? data.sidebarColor.toUpperCase() : null,
       })
     },
     onSuccess: () => {
+      // Also repaints the real side menu (MainLayout reads the same query).
       queryClient.invalidateQueries({ queryKey: ['organization'] })
       // The public branding carries the partner theme of /external/login.
       queryClient.invalidateQueries({ queryKey: ['branding'] })
@@ -173,6 +180,7 @@ export default function AdminOrganizationPage() {
         secondaryColor: organization.secondaryColor,
         externalAccentColor: organization.externalAccentColor || DEFAULT_EXTERNAL_ACCENT_COLOR,
         externalSurfaceColor: organization.externalSurfaceColor || DEFAULT_EXTERNAL_SURFACE_COLOR,
+        sidebarColor: organization.sidebarColor || '',
         contactEmail: organization.contactEmail,
         contactPhone: organization.contactPhone,
         address: organization.address,
@@ -362,6 +370,21 @@ export default function AdminOrganizationPage() {
                 </Button>
               </div>
             </div>
+            <div className="pt-4 border-t space-y-3" data-testid="sidebar-color-summary">
+              <h4 className="font-medium">{t('organization.customization.sidebar.title')}</h4>
+              <div className="flex items-center gap-3">
+                {organization.sidebarColor ? (
+                  <>
+                    <div className="h-10 w-10 rounded-lg border" style={{ backgroundColor: organization.sidebarColor }} />
+                    <span className="font-mono text-sm">{organization.sidebarColor}</span>
+                  </>
+                ) : (
+                  <span className="text-sm text-muted-foreground">{t('organization.customization.sidebar.modeDefault')}</span>
+                )}
+              </div>
+              <SidebarContrastWarnings sidebar={organization.sidebarColor} primary={organization.primaryColor} />
+              <SidebarColorPreview sidebar={organization.sidebarColor} primary={organization.primaryColor} />
+            </div>
             <div className="pt-4 border-t space-y-3" data-testid="external-theme-summary">
               <h4 className="font-medium">{t('organization.customization.externalTheme.title')}</h4>
               <div className="grid grid-cols-2 gap-3">
@@ -539,6 +562,12 @@ export default function AdminOrganizationPage() {
                 </div>
               </div>
             </div>
+            <SidebarColorFields
+              value={formData.sidebarColor}
+              primary={formData.primaryColor}
+              secondary={formData.secondaryColor}
+              onChange={(sidebarColor) => setFormData((prev) => ({ ...prev, sidebarColor }))}
+            />
             <ExternalThemeFields
               accent={formData.externalAccentColor}
               surface={formData.externalSurfaceColor}
@@ -554,7 +583,8 @@ export default function AdminOrganizationPage() {
               disabled={
                 updateMutation.isPending ||
                 !isHexColor(formData.externalAccentColor) ||
-                !isHexColor(formData.externalSurfaceColor)
+                !isHexColor(formData.externalSurfaceColor) ||
+                (formData.sidebarColor !== '' && !isHexColor(formData.sidebarColor))
               }
             >
               {updateMutation.isPending ? t('organization.editDialog.saving') : t('organization.editDialog.save')}

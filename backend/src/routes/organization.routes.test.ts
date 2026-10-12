@@ -190,4 +190,77 @@ describe('Partner theme (external participants)', () => {
     expect(sql).toContain('external_surface_color');
     expect(params).toMatchObject({ externalAccentColor: null, externalSurfaceColor: '#111827' });
   });
+  it('GET returns sidebarColor null when no side menu color was chosen', async () => {
+    mockAdminWithSettings({ primary_color: '#3B82F6', sidebar_color: null });
+    const response = await request(makeApp()).get('/organizations/current').set('Authorization', `Bearer ${adminToken}`);
+    expect(response.status).toBe(200);
+    expect(response.body.data.sidebarColor).toBeNull();
+  });
+
+  it('GET returns sidebarColor null for a tenant without a settings row', async () => {
+    mockAdminWithSettings(null);
+    const response = await request(makeApp()).get('/organizations/current').set('Authorization', `Bearer ${adminToken}`);
+    expect(response.body.data.sidebarColor).toBeNull();
+  });
+
+  it('GET returns the stored side menu color', async () => {
+    mockAdminWithSettings({ primary_color: '#3B82F6', sidebar_color: '#8b1e1e' });
+    const response = await request(makeApp()).get('/organizations/current').set('Authorization', `Bearer ${adminToken}`);
+    expect(response.body.data.sidebarColor).toBe('#8B1E1E');
+  });
+
+  it.each(['navy', '#FFF', '#12345G', '0F172A', '#0F172A00', 7])('PUT rejects %p as a side menu color', async (value) => {
+    mockAdminWithSettings({ id: 1 });
+    const response = await request(makeApp())
+      .put('/organizations/current')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ sidebarColor: value });
+    expect(response.status).toBe(400);
+    expect(mockedExecute).not.toHaveBeenCalled();
+  });
+
+  it('PUT stores a valid side menu color', async () => {
+    mockAdminWithSettings({ id: 1 });
+    const response = await request(makeApp())
+      .put('/organizations/current')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ name: 'Acme', sidebarColor: '#0f172a' });
+    expect(response.status).toBe(200);
+    const [sql, params] = mockedExecute.mock.calls.find(([q]) => q.includes('UPDATE tenant_settings'))!;
+    expect(sql).toContain('sidebar_color = @sidebarColor');
+    expect(params).toMatchObject({ sidebarColor: '#0F172A' });
+  });
+
+  it.each([null, ''])('PUT resets the side menu color to the default with %p', async (value) => {
+    mockAdminWithSettings({ id: 1 });
+    const response = await request(makeApp())
+      .put('/organizations/current')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ sidebarColor: value });
+    expect(response.status).toBe(200);
+    const [sql, params] = mockedExecute.mock.calls.find(([q]) => q.includes('UPDATE tenant_settings'))!;
+    expect(sql).toContain('sidebar_color = @sidebarColor');
+    expect(params).toMatchObject({ sidebarColor: null });
+  });
+
+  it('PUT leaves the side menu color alone when it is not sent', async () => {
+    mockAdminWithSettings({ id: 1 });
+    await request(makeApp())
+      .put('/organizations/current')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ description: 'Hello', externalAccentColor: '#0E7490' });
+    const [sql] = mockedExecute.mock.calls.find(([q]) => q.includes('UPDATE tenant_settings'))!;
+    expect(sql).not.toContain('sidebar_color');
+  });
+
+  it('PUT creates the settings row with the side menu color', async () => {
+    mockAdminWithSettings(null);
+    await request(makeApp())
+      .put('/organizations/current')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ sidebarColor: '#8B1E1E' });
+    const [sql, params] = mockedExecute.mock.calls.find(([q]) => q.includes('INSERT INTO tenant_settings'))!;
+    expect(sql).toContain('sidebar_color');
+    expect(params).toMatchObject({ sidebarColor: '#8B1E1E' });
+  });
 });

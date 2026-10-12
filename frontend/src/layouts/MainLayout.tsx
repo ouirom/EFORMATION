@@ -27,6 +27,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { cn, getInitials, hexToHslTriplet } from '@/lib/utils'
 import { useExternalTheme } from '@/lib/externalTheme'
+import { useSidebarTheme } from '@/lib/sidebarTheme'
 import {
   Bell,
   Settings,
@@ -113,6 +114,10 @@ export default function MainLayout() {
     { asPrimary: true }
   )
 
+  // Side menu color chosen in Personnalisation (staff only; null = default look,
+  // which follows light/dark mode). Sets the --sb-* variables used below.
+  const customSidebar = !!useSidebarTheme(isExternal ? null : organization?.sidebarColor, organization?.primaryColor)
+
   const { idleLimitOverrideMs } = useSessionTimeoutContext()
   // The organization's inactivity limit (Administration > Organisation) is the
   // total until logout: the warning takes its last minute. A long lesson may
@@ -179,12 +184,13 @@ export default function MainLayout() {
         className={cn(
           "fixed left-0 top-0 z-40 h-screen border-r bg-card transition-all duration-300",
           isExternal && EXTERNAL_SIDEBAR_CLASS,
+          customSidebar && CUSTOM_SIDEBAR_CLASS,
           sidebarCollapsed ? "w-16" : "w-64",
           mobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         )}
       >
         {/* Logo */}
-        <div className={cn("flex h-16 items-center justify-between px-4 border-b", isExternal && "border-[color:var(--ext-surface-border)]")}>
+        <div className={cn("flex h-16 items-center justify-between px-4 border-b", isExternal && "border-[color:var(--ext-surface-border)]", customSidebar && "border-[color:var(--sb-border)]")}>
           {!sidebarCollapsed && (
             <Link to="/" className="flex min-w-0 items-center gap-2" data-tour="logo">
               <BrandLogo name={organization?.name} logo={organization?.logo} />
@@ -203,7 +209,7 @@ export default function MainLayout() {
           <Button
             variant="ghost"
             size="icon"
-            className={cn("hidden md:flex", isExternal && EXTERNAL_GHOST_CLASS)}
+            className={cn("hidden md:flex", isExternal && EXTERNAL_GHOST_CLASS, customSidebar && CUSTOM_GHOST_CLASS)}
             onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
           >
             {sidebarCollapsed ? (
@@ -222,7 +228,11 @@ export default function MainLayout() {
               <Button
                 variant={isAdminSection ? "default" : "outline"}
                 size="sm"
-                className={cn("w-full justify-start", sidebarCollapsed && "justify-center px-2")}
+                className={cn(
+                  "w-full justify-start",
+                  sidebarCollapsed && "justify-center px-2",
+                  customSidebar && !isAdminSection && cn(CUSTOM_GHOST_CLASS, "border-[color:var(--sb-border)] bg-transparent")
+                )}
                 onClick={() => navigate(isAdminSection ? '/dashboard' : '/admin/users')}
                 data-tour="section-toggle"
               >
@@ -249,7 +259,8 @@ export default function MainLayout() {
                     "w-full justify-start gap-3",
                     sidebarCollapsed && "justify-center px-2",
                     isActive && "bg-primary/10 text-primary",
-                    isExternal && (isActive ? EXTERNAL_ACTIVE_NAV_CLASS : EXTERNAL_GHOST_CLASS)
+                    isExternal && (isActive ? EXTERNAL_ACTIVE_NAV_CLASS : EXTERNAL_GHOST_CLASS),
+                    customSidebar && (isActive ? CUSTOM_ACTIVE_NAV_CLASS : CUSTOM_GHOST_CLASS)
                   )}
                 >
                   <item.icon className="h-5 w-5 shrink-0" />
@@ -261,7 +272,7 @@ export default function MainLayout() {
         </nav>
 
         {/* User Section */}
-        <div className={cn("absolute bottom-0 left-0 right-0 border-t p-2 bg-card", isExternal && "border-[color:var(--ext-surface-border)] bg-[color:var(--ext-surface)]")}>
+        <div className={cn("absolute bottom-0 left-0 right-0 border-t p-2 bg-card", isExternal && "border-[color:var(--ext-surface-border)] bg-[color:var(--ext-surface)]", customSidebar && "border-[color:var(--sb-border)] bg-[color:var(--sb-bg)]")}>
           {sidebarCollapsed ? (
             <UserMenu user={user} onLogout={handleLogout} />
           ) : (
@@ -276,12 +287,12 @@ export default function MainLayout() {
                 <p className="text-sm font-medium truncate">
                   {user?.displayName}
                 </p>
-                <p className={cn("text-xs text-muted-foreground truncate", isExternal && "text-[color:var(--ext-surface-muted)]")}>
+                <p className={cn("text-xs text-muted-foreground truncate", isExternal && "text-[color:var(--ext-surface-muted)]", customSidebar && "text-[color:var(--sb-muted)]")}>
                   {user?.email}
                 </p>
                 <ExternalProfileBadge user={user} className="mt-1" />
               </div>
-              <Button variant="ghost" size="icon" onClick={handleLogout} className={cn(isExternal && EXTERNAL_GHOST_CLASS)}>
+              <Button variant="ghost" size="icon" onClick={handleLogout} className={cn(isExternal && EXTERNAL_GHOST_CLASS, customSidebar && CUSTOM_GHOST_CLASS)}>
                 <LogOut className="h-4 w-4" />
               </Button>
             </div>
@@ -375,6 +386,13 @@ const EXTERNAL_GHOST_CLASS =
   'text-[color:var(--ext-surface-foreground)] hover:bg-[color:var(--ext-surface-raised)] hover:text-[color:var(--ext-surface-foreground)]'
 const EXTERNAL_ACTIVE_NAV_CLASS =
   'bg-[color:var(--ext-accent)] text-[color:var(--ext-accent-foreground)] hover:bg-[color:var(--ext-accent-hover)] hover:text-[color:var(--ext-accent-foreground)]'
+
+// Organization's side menu color (staff), from useSidebarTheme's --sb-* variables.
+const CUSTOM_SIDEBAR_CLASS = 'border-[color:var(--sb-border)] bg-[color:var(--sb-bg)] text-[color:var(--sb-fg)]'
+const CUSTOM_GHOST_CLASS =
+  'text-[color:var(--sb-fg)] hover:bg-[color:var(--sb-hover)] hover:text-[color:var(--sb-fg)]'
+const CUSTOM_ACTIVE_NAV_CLASS =
+  'bg-[color:var(--sb-active-bg)] text-[color:var(--sb-active-fg)] hover:bg-[color:var(--sb-active-hover)] hover:text-[color:var(--sb-active-fg)]'
 
 /** Thin strip above the header reminding an external participant which space they are in. */
 function ExternalRibbon({ company }: { company?: string | null }) {

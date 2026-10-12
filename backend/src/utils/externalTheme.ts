@@ -24,3 +24,12 @@ export function effectiveExternalTheme(row: { external_accent_color?: string | n
 export function externalColorParam(value: unknown): string | null {
   return isHexColor(value) ? value.toUpperCase() : null;
 }
+
+/**
+ * Side menu color of the staff interface (tenant_settings.sidebar_color), also set
+ * in Personnalisation. Unlike the partner theme there is no fixed default: null
+ * means "the default look", which follows the light/dark theme on the client.
+ */
+export function effectiveSidebarColor(row: { sidebar_color?: string | null } | undefined): string | null {
+  return isHexColor(row?.sidebar_color) ? row!.sidebar_color!.toUpperCase() : null;
+}

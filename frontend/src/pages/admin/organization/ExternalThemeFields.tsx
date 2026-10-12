@@ -104,7 +104,7 @@ export function ExternalThemeContrastWarnings({ accent, surface }: { accent: str
   )
 }
 
-function ColorField({
+export function ColorField({
   id,
   label,
   value,
