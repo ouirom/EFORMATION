@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Badge } from '@/components/ui/badge'
 import { cn, getInitials, hexToHslTriplet } from '@/lib/utils'
+import { useExternalTheme } from '@/lib/externalTheme'
 import {
   Bell,
   Settings,
@@ -37,6 +38,7 @@ import {
   HelpCircle,
   LifeBuoy,
   Scale,
+  Briefcase,
 } from 'lucide-react'
 
 function tourSeenKey(section: 'main' | 'admin') {
@@ -53,6 +55,9 @@ export default function MainLayout() {
   const [tourOpen, setTourOpen] = useState(false)
 
   const isAdmin = canAccessAdmin(user?.role)
+  // External participants get the partner theme (Administration > Organisation >
+  // Personnalisation): dark sidebar, their own accent, a ribbon. Staff UI is unchanged.
+  const isExternal = user?.role === 'externe'
   const isAdminSection = location.pathname.startsWith('/admin')
   const modules = useTenantFeatures()
   const navItems = isAdminSection ? adminSectionNavItems(user?.role, modules) : userSpaceNavItems(user?.role, modules)
@@ -71,9 +76,9 @@ export default function MainLayout() {
     setTourOpen(false)
   }
 
+  // logout() itself sends external participants back to their own portal.
   const handleLogout = () => {
     logout()
-    navigate('/login')
   }
 
   const { data: unreadCount = 0 } = useQuery({
@@ -90,6 +95,8 @@ export default function MainLayout() {
   useTenantDefaultLanguage(organization?.settings?.defaultLanguage)
 
   useEffect(() => {
+    // For external participants useExternalTheme() sets --primary to their accent.
+    if (isExternal) return
     const hsl = organization?.primaryColor ? hexToHslTriplet(organization.primaryColor) : null
     if (hsl) {
       document.documentElement.style.setProperty('--primary', hsl)
@@ -99,7 +106,12 @@ export default function MainLayout() {
       document.documentElement.style.removeProperty('--primary')
       document.documentElement.style.removeProperty('--ring')
     }
-  }, [organization?.primaryColor])
+  }, [organization?.primaryColor, isExternal])
+
+  useExternalTheme(
+    isExternal ? { accent: organization?.externalAccentColor, surface: organization?.externalSurfaceColor } : null,
+    { asPrimary: true }
+  )
 
   const { idleLimitOverrideMs } = useSessionTimeoutContext()
   // The organization's inactivity limit (Administration > Organisation) is the
@@ -120,7 +132,7 @@ export default function MainLayout() {
       // generic dashboard — read by AuthContext's applySession().
       sessionStorage.setItem('postLoginRedirect', location.pathname + location.search)
       logout()
-      navigate('/login?timeout=1')
+      navigate(user?.role === 'externe' ? '/external/login' : '/login?timeout=1')
     },
     {
       idleLimitMs,
@@ -166,22 +178,32 @@ export default function MainLayout() {
       <aside
         className={cn(
           "fixed left-0 top-0 z-40 h-screen border-r bg-card transition-all duration-300",
+          isExternal && EXTERNAL_SIDEBAR_CLASS,
           sidebarCollapsed ? "w-16" : "w-64",
           mobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         )}
       >
         {/* Logo */}
-        <div className="flex h-16 items-center justify-between px-4 border-b">
+        <div className={cn("flex h-16 items-center justify-between px-4 border-b", isExternal && "border-[color:var(--ext-surface-border)]")}>
           {!sidebarCollapsed && (
-            <Link to="/" className="flex items-center gap-2" data-tour="logo">
+            <Link to="/" className="flex min-w-0 items-center gap-2" data-tour="logo">
               <BrandLogo name={organization?.name} logo={organization?.logo} />
-              <span className="text-xl font-bold">{organization?.name || 'E-Formation'}</span>
+              {isExternal ? (
+                <span className="flex min-w-0 flex-col leading-tight">
+                  <span className="truncate text-lg font-bold">{organization?.name || 'E-Formation'}</span>
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-[color:var(--ext-surface-accent-text)]">
+                    {t('externalSpace.label')}
+                  </span>
+                </span>
+              ) : (
+                <span className="text-xl font-bold">{organization?.name || 'E-Formation'}</span>
+              )}
             </Link>
           )}
           <Button
             variant="ghost"
             size="icon"
-            className="hidden md:flex"
+            className={cn("hidden md:flex", isExternal && EXTERNAL_GHOST_CLASS)}
             onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
           >
             {sidebarCollapsed ? (
@@ -226,7 +248,8 @@ export default function MainLayout() {
                   className={cn(
                     "w-full justify-start gap-3",
                     sidebarCollapsed && "justify-center px-2",
-                    isActive && "bg-primary/10 text-primary"
+                    isActive && "bg-primary/10 text-primary",
+                    isExternal && (isActive ? EXTERNAL_ACTIVE_NAV_CLASS : EXTERNAL_GHOST_CLASS)
                   )}
                 >
                   <item.icon className="h-5 w-5 shrink-0" />
@@ -238,7 +261,7 @@ export default function MainLayout() {
         </nav>
 
         {/* User Section */}
-        <div className="absolute bottom-0 left-0 right-0 border-t p-2 bg-card">
+        <div className={cn("absolute bottom-0 left-0 right-0 border-t p-2 bg-card", isExternal && "border-[color:var(--ext-surface-border)] bg-[color:var(--ext-surface)]")}>
           {sidebarCollapsed ? (
             <UserMenu user={user} onLogout={handleLogout} />
           ) : (
@@ -253,11 +276,12 @@ export default function MainLayout() {
                 <p className="text-sm font-medium truncate">
                   {user?.displayName}
                 </p>
-                <p className="text-xs text-muted-foreground truncate">
+                <p className={cn("text-xs text-muted-foreground truncate", isExternal && "text-[color:var(--ext-surface-muted)]")}>
                   {user?.email}
                 </p>
+                <ExternalProfileBadge user={user} className="mt-1" />
               </div>
-              <Button variant="ghost" size="icon" onClick={handleLogout}>
+              <Button variant="ghost" size="icon" onClick={handleLogout} className={cn(isExternal && EXTERNAL_GHOST_CLASS)}>
                 <LogOut className="h-4 w-4" />
               </Button>
             </div>
@@ -270,6 +294,8 @@ export default function MainLayout() {
         "transition-all duration-300",
         sidebarCollapsed ? "md:ml-16" : "md:ml-64"
       )}>
+        {isExternal && <ExternalRibbon company={user?.externalCompany} />}
+
         {/* Desktop Header */}
         <header className="sticky top-0 z-30 hidden md:flex h-16 items-center gap-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 px-6">
           {/* Search */}
@@ -342,6 +368,55 @@ function BrandLogo({ name, logo }: { name?: string | null; logo?: string | null 
   )
 }
 
+// Partner theme of the sidebar (colors come from useExternalTheme's --ext-* variables).
+const EXTERNAL_SIDEBAR_CLASS =
+  'border-[color:var(--ext-surface-border)] bg-[color:var(--ext-surface)] text-[color:var(--ext-surface-foreground)]'
+const EXTERNAL_GHOST_CLASS =
+  'text-[color:var(--ext-surface-foreground)] hover:bg-[color:var(--ext-surface-raised)] hover:text-[color:var(--ext-surface-foreground)]'
+const EXTERNAL_ACTIVE_NAV_CLASS =
+  'bg-[color:var(--ext-accent)] text-[color:var(--ext-accent-foreground)] hover:bg-[color:var(--ext-accent-hover)] hover:text-[color:var(--ext-accent-foreground)]'
+
+/** Thin strip above the header reminding an external participant which space they are in. */
+function ExternalRibbon({ company }: { company?: string | null }) {
+  const { t } = useTranslation('layout')
+  return (
+    <div
+      className="flex h-7 items-center justify-between gap-3 bg-[color:var(--ext-accent)] px-4 text-xs font-medium text-[color:var(--ext-accent-foreground)] md:px-6"
+      data-testid="external-ribbon"
+    >
+      <span className="flex min-w-0 items-center gap-1.5">
+        <Briefcase className="h-3.5 w-3.5 shrink-0" />
+        <span className="truncate">
+          {t('userMenu.externalBadge')}
+          {company ? ` · ${company}` : ''}
+        </span>
+      </span>
+      <span className="hidden shrink-0 uppercase tracking-wider opacity-80 sm:inline">{t('externalSpace.label')}</span>
+    </div>
+  )
+}
+
+/** Makes an external participant's profile stand out: a badge in the partner accent color, with their company. */
+function ExternalProfileBadge({ user, className }: { user: any; className?: string }) {
+  const { t } = useTranslation('layout')
+  if (user?.role !== 'externe') return null
+  return (
+    <span
+      className={cn(
+        'inline-flex max-w-full items-center gap-1 rounded-full bg-[color:var(--ext-accent)] px-2 py-0.5 text-[11px] font-semibold text-[color:var(--ext-accent-foreground)]',
+        className
+      )}
+      title={user.externalCompany ? `${t('userMenu.externalBadge')} · ${user.externalCompany}` : t('userMenu.externalBadge')}
+    >
+      <Briefcase className="h-3 w-3 shrink-0" />
+      <span className="truncate">
+        {t('userMenu.externalBadge')}
+        {user.externalCompany ? ` · ${user.externalCompany}` : ''}
+      </span>
+    </span>
+  )
+}
+
 function UserMenu({ user, onLogout, dataTour }: { user: any; onLogout: () => void; dataTour?: string }) {
   const { t } = useTranslation('layout')
   return (
@@ -363,6 +438,7 @@ function UserMenu({ user, onLogout, dataTour }: { user: any; onLogout: () => voi
               {user?.displayName}
             </p>
             <p className="text-xs text-muted-foreground">{user?.email}</p>
+            <ExternalProfileBadge user={user} className="mt-1" />
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />

@@ -14,7 +14,8 @@ const mockedExecute = DatabaseService.execute as jest.Mock;
 const mockedQueue = PendingNotificationService.queue as jest.Mock;
 const mockedBcrypt = bcrypt as jest.Mocked<typeof bcrypt>;
 
-type LoginSuccess = Exclude<Awaited<ReturnType<typeof AuthService.login>>, { passwordExpired: true }>;
+type LoginSuccess = Exclude<Awaited<ReturnType<typeof AuthService.login>>, { passwordExpired: true } | { twoFactorRequired: true }>;
+type LdapSuccess = Exclude<Awaited<ReturnType<typeof AuthService.handleLdapLogin>>, { twoFactorRequired: true }>;
 
 describe('AuthService.login', () => {
   beforeEach(() => {
@@ -57,6 +58,58 @@ describe('AuthService.login', () => {
 
     // last_login_at should be stamped on successful login.
     expect(mockedExecute).toHaveBeenCalledWith(expect.stringContaining('last_login_at'), { id: 42 });
+  });
+
+  it('opens a session for the device and binds both tokens to it', async () => {
+    mockedQuery.mockResolvedValue([userRow()]);
+    mockedBcrypt.compare.mockResolvedValue(true as never);
+
+    const result = (await AuthService.login({
+      email: 'jane@test.com',
+      password: 'correct-password',
+      ip: '192.168.1.20',
+      userAgent: 'Mozilla/5.0 Chrome/129.0',
+    })) as LoginSuccess;
+
+    const access = jwt.verify(result.tokens.accessToken, config.jwt.secret) as any;
+    const refresh = jwt.verify(result.tokens.refreshToken, config.jwt.refreshSecret) as any;
+    expect(access.sid).toEqual(expect.any(String));
+    expect(refresh).toMatchObject({ sid: access.sid, jti: expect.any(String) });
+
+    const insert = mockedExecute.mock.calls.find(([q]: [string]) => q.includes('INSERT INTO user_sessions'));
+    expect(insert[1]).toMatchObject({ sid: access.sid, userId: 42, tenantId: 10, authMethod: 'password', ip: '192.168.1.20' });
+  });
+
+  it('refuses staff on the external portal once the password is right', async () => {
+    mockedQuery.mockResolvedValue([userRow({ role: 'agent' })]);
+    mockedBcrypt.compare.mockResolvedValue(true as never);
+
+    await expect(
+      AuthService.login({ email: 'jane@test.com', password: 'correct-password', portal: 'external' })
+    ).rejects.toMatchObject({ statusCode: 403, code: 'WRONG_PORTAL' });
+    expect(mockedExecute).not.toHaveBeenCalledWith(expect.stringContaining('last_login_at'), expect.anything());
+  });
+
+  it('does not reveal the portal rule to someone with a wrong password', async () => {
+    mockedQuery.mockResolvedValue([userRow({ role: 'agent' })]);
+    mockedBcrypt.compare.mockResolvedValue(false as never);
+
+    await expect(
+      AuthService.login({ email: 'jane@test.com', password: 'wrong', portal: 'external' })
+    ).rejects.toMatchObject({ statusCode: 401, message: 'Invalid email or password' });
+  });
+
+  it('lets an external participant in through the external portal, with their company', async () => {
+    mockedQuery.mockResolvedValue([userRow({ role: 'externe', external_company: 'Cabinet Conseil' })]);
+    mockedBcrypt.compare.mockResolvedValue(true as never);
+
+    const result = (await AuthService.login({
+      email: 'jane@test.com',
+      password: 'correct-password',
+      portal: 'external',
+    })) as LoginSuccess;
+
+    expect(result.user).toMatchObject({ role: 'externe', externalCompany: 'Cabinet Conseil' });
   });
 
   it('rejects an invalid password without revealing which part was wrong', async () => {
@@ -116,7 +169,7 @@ describe('AuthService.handleLdapLogin', () => {
       return Promise.resolve([]);
     });
 
-    const result = await AuthService.handleLdapLogin(profile);
+    const result = (await AuthService.handleLdapLogin(profile)) as LdapSuccess;
 
     expect(result.isNewUser).toBe(true);
     expect(result.user).toMatchObject({ id: 77, tenantId: config.defaultTenantId, email: profile.email, role: 'agent' });
@@ -139,7 +192,7 @@ describe('AuthService.handleLdapLogin', () => {
       return Promise.resolve([]);
     });
 
-    const result = await AuthService.handleLdapLogin(profile);
+    const result = (await AuthService.handleLdapLogin(profile)) as LdapSuccess;
 
     expect(result.isNewUser).toBe(false);
     expect(result.user).toMatchObject({ id: 55, tenantId: 10 });
@@ -199,6 +252,18 @@ describe('AuthService.changePassword', () => {
       { passwordHash: 'new-hash', userId: 42 }
     );
     expect(result).toMatchObject({ id: 1, recipientEmail: 'jane@test.com' });
+  });
+
+  it('signs every other session out but keeps the one the change was made from', async () => {
+    mockedQuery.mockResolvedValue([{ password_hash: 'old-hash', tenant_id: 10 }]);
+    mockedBcrypt.compare.mockResolvedValueOnce(true as never).mockResolvedValueOnce(false as never);
+    mockedBcrypt.hash.mockResolvedValue('new-hash' as never);
+
+    await AuthService.changePassword(42, 'current-pw', 'New-Passw0rd', 'sid-here');
+
+    const revoke = mockedExecute.mock.calls.find(([q]: [string]) => q.includes('UPDATE user_sessions SET revoked_at'));
+    expect(revoke[0]).toContain('sid <> @exceptSid');
+    expect(revoke[1]).toMatchObject({ userId: 42, reason: 'password_changed', exceptSid: 'sid-here' });
   });
 
   it('rejects when the current password is incorrect', async () => {

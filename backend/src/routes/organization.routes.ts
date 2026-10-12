@@ -16,6 +16,7 @@ import {
 } from '../services/tenant-settings.service';
 import { AuditService } from '../services/audit.service';
 import { OrgLevel, OrgStructureService } from '../services/org-structure.service';
+import { effectiveExternalTheme, externalColorParam, isHexColor } from '../utils/externalTheme';
 
 const router = Router();
 
@@ -121,6 +122,7 @@ router.get('/current', authenticate, async (req: AuthRequest, res, next) => {
         logo: settings.logo_url,
         primaryColor: settings.primary_color,
         secondaryColor: settings.secondary_color,
+        ...effectiveExternalTheme(settings),
         contactEmail: settings.contact_email || '',
         contactPhone: settings.contact_phone || '',
         address: settings.address || '',
@@ -152,6 +154,13 @@ router.put(
     body('logo').optional({ nullable: true }).isString(),
     body('primaryColor').optional().isString(),
     body('secondaryColor').optional().isString(),
+    // Partner theme: strictly #RRGGBB; null or '' resets to the default.
+    ...['externalAccentColor', 'externalSurfaceColor'].map((field) =>
+      body(field)
+        .optional({ nullable: true })
+        .custom((value) => value === '' || isHexColor(value))
+        .withMessage('Expected a #RRGGBB color')
+    ),
     body('contactEmail').optional({ nullable: true }).isString(),
     body('contactPhone').optional({ nullable: true }).isString(),
     body('address').optional({ nullable: true }).isString(),
@@ -184,12 +193,20 @@ router.put(
         contactPhone: req.body.contactPhone ?? '',
         address: req.body.address ?? '',
         website: req.body.website ?? '',
+        externalAccentColor: externalColorParam(req.body.externalAccentColor),
+        externalSurfaceColor: externalColorParam(req.body.externalSurfaceColor),
       };
+      // The partner colors are only touched when sent, so an older client saving
+      // the profile doesn't reset them.
+      const themeAssignments = [
+        'externalAccentColor' in req.body ? 'external_accent_color = @externalAccentColor' : null,
+        'externalSurfaceColor' in req.body ? 'external_surface_color = @externalSurfaceColor' : null,
+      ].filter(Boolean).map((assignment) => `${assignment}, `).join('');
 
       if (existing.length === 0) {
         await DatabaseService.execute(
-          `INSERT INTO tenant_settings (tenant_id, description, logo_url, primary_color, secondary_color, contact_email, contact_phone, address, website)
-           VALUES (@tenantId, @description, @logoUrl, @primaryColor, @secondaryColor, @contactEmail, @contactPhone, @address, @website)`,
+          `INSERT INTO tenant_settings (tenant_id, description, logo_url, primary_color, secondary_color, contact_email, contact_phone, address, website, external_accent_color, external_surface_color)
+           VALUES (@tenantId, @description, @logoUrl, @primaryColor, @secondaryColor, @contactEmail, @contactPhone, @address, @website, @externalAccentColor, @externalSurfaceColor)`,
           params
         );
       } else {
@@ -198,7 +215,7 @@ router.put(
              description = @description, logo_url = @logoUrl,
              primary_color = @primaryColor, secondary_color = @secondaryColor,
              contact_email = @contactEmail, contact_phone = @contactPhone,
-             address = @address, website = @website, updated_at = ${db.now()}
+             address = @address, website = @website, ${themeAssignments}updated_at = ${db.now()}
            WHERE tenant_id = @tenantId`,
           params
         );

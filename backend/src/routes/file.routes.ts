@@ -5,8 +5,7 @@ import sharp from 'sharp';
 import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
-import jwt from 'jsonwebtoken';
-import { authenticate, authorize, AuthRequest, UserPayload, ROLE_HIERARCHY } from '../middleware/auth.middleware';
+import { authenticate, authorize, AuthRequest, UserPayload, ROLE_HIERARCHY, verifyAccessToken } from '../middleware/auth.middleware';
 import { DatabaseService } from '../services/database.service';
 import { BadRequestError, NotFoundError, UnauthorizedError, ForbiddenError } from '../middleware/error.middleware';
 import { config } from '../config';
@@ -449,7 +448,7 @@ router.get('/:id/stream', async (req: AuthRequest, res, next) => {
     if (authHeader?.startsWith('Bearer ')) {
       let payload: UserPayload;
       try {
-        payload = jwt.verify(authHeader.slice(7), config.jwt.secret) as UserPayload;
+        payload = await verifyAccessToken(authHeader.slice(7));
       } catch {
         throw UnauthorizedError('Invalid or expired token');
       }

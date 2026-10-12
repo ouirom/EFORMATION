@@ -180,3 +180,74 @@ describe('POST /auth/login status handling', () => {
     );
   });
 });
+
+describe('POST /auth/register/external', () => {
+  beforeEach(() => {
+    mockedQuery.mockReset();
+    mockedExecute.mockResolvedValue({ rowsAffected: 1 });
+    mockedSend.mockResolvedValue({ id: 1, status: 'sent', channel: 'email' });
+    mockedQuery.mockImplementation((query: string) => {
+      if (query.includes('INSERT INTO users')) return Promise.resolve([{ id: 60 }]);
+      if (query.includes("role = 'admin'")) return Promise.resolve([{ id: 7 }]);
+      return Promise.resolve([]);
+    });
+  });
+
+  const valid = {
+    email: 'consultant@cabinet.com',
+    password: 'Password123!',
+    displayName: 'Awa Konan',
+    company: 'Cabinet Conseil',
+    jobTitle: 'Consultante',
+    phone: '+225 07 00 00 00',
+  };
+
+  it('creates a pending external account with the company, outside the org structure', async () => {
+    const response = await request(makeApp()).post('/auth/register/external').set('X-Tenant-Id', '10').send(valid);
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.pending).toBe(true);
+    expect(response.body.data.accessToken).toBeUndefined();
+    const insertCall = mockedQuery.mock.calls.find(([q]: [string]) => q.includes('INSERT INTO users'));
+    expect(insertCall[1]).toMatchObject({
+      role: 'externe',
+      status: 'pending',
+      isActive: false,
+      externalCompany: 'Cabinet Conseil',
+      jobTitle: 'Consultante',
+      phone: '+225 07 00 00 00',
+      enterpriseId: null,
+      directionId: null,
+      serviceId: null,
+    });
+  });
+
+  it('ignores any role or org unit sent by the client', async () => {
+    await request(makeApp())
+      .post('/auth/register/external')
+      .set('X-Tenant-Id', '10')
+      .send({ ...valid, role: 'admin', serviceId: 3, directionId: 2 });
+
+    const insertCall = mockedQuery.mock.calls.find(([q]: [string]) => q.includes('INSERT INTO users'));
+    expect(insertCall[1]).toMatchObject({ role: 'externe', serviceId: null, directionId: null });
+  });
+
+  it('tells the admins the request comes from an external participant', async () => {
+    await request(makeApp()).post('/auth/register/external').set('X-Tenant-Id', '10').send(valid);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(mockedSend).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 7, channel: 'in_app', body: expect.stringContaining('intervenant externe de Cabinet Conseil') })
+    );
+  });
+
+  it('requires the company', async () => {
+    const response = await request(makeApp())
+      .post('/auth/register/external')
+      .set('X-Tenant-Id', '10')
+      .send({ ...valid, company: '  ' });
+
+    expect(response.status).toBe(400);
+    expect(mockedQuery).not.toHaveBeenCalledWith(expect.stringContaining('INSERT INTO users'), expect.anything());
+  });
+});

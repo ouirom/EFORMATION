@@ -500,7 +500,7 @@ router.get('/', authenticate, authorize('admin', 'director', 'manager'), asyncHa
       params
     ),
     DatabaseService.query<any>(
-      `SELECT u.id, u.email, u.username, u.display_name, u.avatar_url, u.role, u.job_title, u.is_active, u.status,
+      `SELECT u.id, u.email, u.username, u.display_name, u.avatar_url, u.role, u.job_title, u.external_company, u.is_active, u.status,
               u.enterprise_id, u.subsidiary_id, u.direction_id, u.service_id, u.supervisor_id, u.last_login_at, u.created_at,
               CASE WHEN u.locked_until > ${db.now()} THEN u.locked_until ELSE NULL END as locked_until,
               e.name as enterprise_name, sub.name as subsidiary_name, d.name as direction_name, s.name as service_name,
@@ -555,6 +555,36 @@ router.post('/:id/unlock', authenticate, asyncHandler(async (req: AuthRequest, r
   await AuditService.log(requester.tenantId, requester.id, 'ACCOUNT_UNLOCKED', 'users', userId);
 
   res.json({ success: true, message: 'Account unlocked' });
+}));
+
+/**
+ * @route POST /api/v1/users/:id/force-logout
+ * @desc "Forcer la déconnexion": closes every session of the account right away
+ *       (stolen device, departure...). Same permission as unlocking: admins for
+ *       anyone of their organization at or below their own level, a manager for
+ *       their subordinates.
+ */
+router.post('/:id/force-logout', authenticate, asyncHandler(async (req: AuthRequest, res) => {
+  const userId = parseInt(req.params.id, 10);
+  const requester = req.user!;
+
+  const targets = await DatabaseService.query<any>(
+    `SELECT id, role, direction_id, service_id, supervisor_id
+     FROM users WHERE id = @userId AND tenant_id = @tenantId AND deleted_at IS NULL`,
+    { userId, tenantId: requester.tenantId }
+  );
+  if (targets.length === 0) throw NotFoundError('User');
+  const target = targets[0];
+
+  const isAdminLike = requester.role === 'admin' || requester.role === 'super_admin';
+  const outranked = (ROLE_HIERARCHY[target.role] || 0) > (ROLE_HIERARCHY[requester.role] || 0);
+  if (outranked || (!isAdminLike && !isInHierarchicalScope(requester, target))) {
+    throw ForbiddenError('Insufficient permissions to sign this user out');
+  }
+
+  const closedSessions = await AuthService.forceLogout(userId, requester.tenantId, requester.id);
+
+  res.json({ success: true, data: { closedSessions } });
 }));
 
 /**
@@ -804,7 +834,7 @@ router.put(
     }
 
     const users = await DatabaseService.query<any>(
-      `SELECT u.id, u.email, u.username, u.display_name, u.avatar_url, u.role, u.job_title, u.is_active, u.status,
+      `SELECT u.id, u.email, u.username, u.display_name, u.avatar_url, u.role, u.job_title, u.external_company, u.is_active, u.status,
               u.enterprise_id, u.subsidiary_id, u.direction_id, u.service_id, u.supervisor_id,
               sup.display_name as supervisor_name
        FROM users u

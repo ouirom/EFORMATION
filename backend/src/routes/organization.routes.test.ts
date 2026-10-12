@@ -104,3 +104,90 @@ describe('DELETE /organizations/enterprises/:id', () => {
     expect(mockedExecute).not.toHaveBeenCalled();
   });
 });
+
+describe('Partner theme (external participants)', () => {
+  function mockAdminWithSettings(settings: Record<string, any> | null) {
+    mockedQuery.mockImplementation((query: string) => {
+      if (query.includes('FROM users WHERE id = @id')) return Promise.resolve([mockAuthLookup({ id: 1, role: 'admin' })]);
+      if (query.startsWith('SELECT id, name, slug')) return Promise.resolve([{ id: 10, name: 'Acme', slug: 'acme' }]);
+      if (query.startsWith('SELECT * FROM tenant_settings')) return Promise.resolve(settings ? [settings] : []);
+      if (query.startsWith('SELECT id FROM tenant_settings')) return Promise.resolve(settings ? [{ id: 1 }] : []);
+      if (query.includes('COUNT(*)')) return Promise.resolve([{ total_users: 0, total_courses: 0, total_enrollments: 0, active_users: 0 }]);
+      return Promise.resolve([]);
+    });
+    mockedExecute.mockResolvedValue(1);
+  }
+
+  beforeEach(() => {
+    mockedQuery.mockReset();
+    mockedExecute.mockReset();
+  });
+
+  it('GET returns the defaults when no partner colors were chosen', async () => {
+    mockAdminWithSettings({ primary_color: '#3B82F6', external_accent_color: null, external_surface_color: null });
+    const response = await request(makeApp()).get('/organizations/current').set('Authorization', `Bearer ${adminToken}`);
+    expect(response.status).toBe(200);
+    expect(response.body.data).toMatchObject({ externalAccentColor: '#D97706', externalSurfaceColor: '#0F172A' });
+  });
+
+  it('GET returns the stored partner colors', async () => {
+    mockAdminWithSettings({ primary_color: '#3B82F6', external_accent_color: '#0E7490', external_surface_color: '#1E293B' });
+    const response = await request(makeApp()).get('/organizations/current').set('Authorization', `Bearer ${adminToken}`);
+    expect(response.body.data).toMatchObject({ externalAccentColor: '#0E7490', externalSurfaceColor: '#1E293B' });
+  });
+
+  it.each(['red', '#FFF', '#12345G', '0E7490', '#0E749000', 42])('PUT rejects %p as a partner color', async (value) => {
+    mockAdminWithSettings({ id: 1 });
+    const response = await request(makeApp())
+      .put('/organizations/current')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ externalAccentColor: value });
+    expect(response.status).toBe(400);
+    expect(mockedExecute).not.toHaveBeenCalled();
+  });
+
+  it('PUT stores valid partner colors', async () => {
+    mockAdminWithSettings({ id: 1 });
+    const response = await request(makeApp())
+      .put('/organizations/current')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ name: 'Acme', externalAccentColor: '#0e7490', externalSurfaceColor: '#1E293B' });
+    expect(response.status).toBe(200);
+    const [sql, params] = mockedExecute.mock.calls.find(([q]) => q.includes('UPDATE tenant_settings'))!;
+    expect(sql).toContain('external_accent_color = @externalAccentColor');
+    expect(sql).toContain('external_surface_color = @externalSurfaceColor');
+    expect(params).toMatchObject({ externalAccentColor: '#0E7490', externalSurfaceColor: '#1E293B' });
+  });
+
+  it('PUT resets the partner colors to the defaults with null or an empty string', async () => {
+    mockAdminWithSettings({ id: 1 });
+    const response = await request(makeApp())
+      .put('/organizations/current')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ externalAccentColor: null, externalSurfaceColor: '' });
+    expect(response.status).toBe(200);
+    const [, params] = mockedExecute.mock.calls.find(([q]) => q.includes('UPDATE tenant_settings'))!;
+    expect(params).toMatchObject({ externalAccentColor: null, externalSurfaceColor: null });
+  });
+
+  it('PUT leaves the partner colors alone when they are not sent', async () => {
+    mockAdminWithSettings({ id: 1 });
+    await request(makeApp())
+      .put('/organizations/current')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ description: 'Hello' });
+    const [sql] = mockedExecute.mock.calls.find(([q]) => q.includes('UPDATE tenant_settings'))!;
+    expect(sql).not.toContain('external_accent_color');
+  });
+
+  it('PUT creates the settings row with the partner colors', async () => {
+    mockAdminWithSettings(null);
+    await request(makeApp())
+      .put('/organizations/current')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ externalSurfaceColor: '#111827' });
+    const [sql, params] = mockedExecute.mock.calls.find(([q]) => q.includes('INSERT INTO tenant_settings'))!;
+    expect(sql).toContain('external_surface_color');
+    expect(params).toMatchObject({ externalAccentColor: null, externalSurfaceColor: '#111827' });
+  });
+});

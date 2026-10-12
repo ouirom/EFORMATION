@@ -46,6 +46,8 @@ import {
   Check,
   Lock,
   Unlock,
+  LogOut,
+  Building2,
 } from 'lucide-react'
 import {
   DropdownMenu,
@@ -172,6 +174,7 @@ export default function AdminUsersPage() {
   const [importResult, setImportResult] = useState<any>(null)
   const [selectedUser, setSelectedUser] = useState<any>(null)
   const [userPendingDelete, setUserPendingDelete] = useState<any>(null)
+  const [userPendingLogout, setUserPendingLogout] = useState<any>(null)
   const [jobTitlePendingDelete, setJobTitlePendingDelete] = useState<any>(null)
   const [isJobTitlesDialogOpen, setIsJobTitlesDialogOpen] = useState(false)
   const [newJobTitleLabel, setNewJobTitleLabel] = useState('')
@@ -365,6 +368,24 @@ export default function AdminUsersPage() {
       if (response.data.pendingNotification) {
         setPendingNotification(response.data.pendingNotification)
       }
+    },
+    onError: (error: any) => {
+      toast({
+        title: tCommon('status.error'),
+        description: error.response?.data?.error?.message || t('users.toasts.statusUpdateErrorDescription'),
+        variant: 'destructive',
+      })
+    },
+  })
+
+  // Closes every session of the account at once (lost device, departure...).
+  const forceLogoutMutation = useMutation({
+    mutationFn: (userId: number) => api.post(`/users/${userId}/force-logout`),
+    onSuccess: (response) => {
+      toast({
+        title: t('users.toasts.forcedLogoutTitle'),
+        description: t('users.toasts.forcedLogoutDescription', { count: response.data.data.closedSessions }),
+      })
     },
     onError: (error: any) => {
       toast({
@@ -867,6 +888,12 @@ export default function AdminUsersPage() {
                             {user.display_name || `${user.firstName} ${user.lastName}`}
                           </p>
                           <p className="text-xs text-muted-foreground">{user.job_title || t('users.table.defaultJobTitle')}</p>
+                          {user.role === 'externe' && user.external_company && (
+                            <p className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 dark:text-amber-400">
+                              <Building2 className="h-3 w-3" />
+                              {user.external_company}
+                            </p>
+                          )}
                           <p className="text-sm text-muted-foreground">{user.email}</p>
                         </div>
                       </div>
@@ -925,6 +952,10 @@ export default function AdminUsersPage() {
                             {t('users.rowActions.sendEmail')}
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={() => setUserPendingLogout(user)}>
+                            <LogOut className="h-4 w-4 mr-2" />
+                            {t('users.rowActions.forceLogout')}
+                          </DropdownMenuItem>
                           {user.locked_until && (
                             <DropdownMenuItem onClick={() => unlockMutation.mutate(user.id)}>
                               <Unlock className="h-4 w-4 mr-2" />
@@ -1342,6 +1373,20 @@ export default function AdminUsersPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!userPendingLogout}
+        onOpenChange={(open) => !open && setUserPendingLogout(null)}
+        title={t('users.forceLogoutDialog.title')}
+        description={t('users.forceLogoutDialog.description', { name: userPendingLogout?.display_name || userPendingLogout?.email })}
+        confirmLabel={t('users.rowActions.forceLogout')}
+        onConfirm={() => {
+          if (userPendingLogout) {
+            forceLogoutMutation.mutate(userPendingLogout.id)
+          }
+          setUserPendingLogout(null)
+        }}
+      />
 
       <ConfirmDialog
         open={!!userPendingDelete}

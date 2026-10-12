@@ -6,6 +6,8 @@ import { InactivitySuspensionService } from '../services/inactivity.service';
 import { LiveSessionReminderService } from '../services/live-session-reminder.service';
 import { logger } from '../utils/logger';
 import { ComplianceService } from '../services/compliance.service';
+import { SessionService } from '../services/session.service';
+import { TwoFactorService } from '../services/two-factor.service';
 
 /**
  * node-cron fires a new run on schedule regardless of whether the previous run of
@@ -52,10 +54,17 @@ export function startScheduledJobs(): void {
   // 03:30: purge activity-log rows older than each organization's retention (Conformité).
   cron.schedule('30 3 * * *', withLock('Activity log retention', () => ComplianceService.purgeAuditLogs()));
 
+  // 03:45: forget login sessions that ended (expired or revoked) over 90 days ago,
+  // and sign-in codes (two-step verification) older than a day.
+  cron.schedule(
+    '45 3 * * *',
+    withLock('Login session purge', () => Promise.all([SessionService.purgeOld(), TwoFactorService.purgeOld()]))
+  );
+
   // Hourly, on the hour: upcoming live-session reminders. Sessions are
   // time-sensitive (unlike the once-daily jobs above), so this needs a
   // tighter cadence to reliably land within its 2-hour lookahead window.
   cron.schedule('0 * * * *', withLock('Live session reminder', () => LiveSessionReminderService.runUpcomingReminders()));
 
-  logger.info('Scheduled jobs registered (assignment reminders, certificate expiry, team reports, inactivity suspension, live session reminders)');
+  logger.info('Scheduled jobs registered (assignment reminders, certificate expiry, team reports, inactivity suspension, live session reminders, session purge)');
 }

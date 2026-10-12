@@ -74,6 +74,20 @@ export const SECURITY_GROUPS: FieldGroup[] = [
       { key: 'lockoutMinutes', type: 'int', min: 1, max: 1440, labelKey: `${S}.lockoutMinutes`, hintKey: `${S}.hints.lockoutMinutes`, disabledWhen: (v) => Number(v.maxLoginAttempts) === 0 },
       { key: 'sessionIdleMinutes', type: 'int', min: 2, max: 480, labelKey: `${S}.sessionIdleMinutes`, hintKey: `${S}.hints.sessionIdleMinutes` },
       { key: 'sessionMaxDays', type: 'int', min: 1, max: 365, labelKey: `${S}.sessionMaxDays`, hintKey: `${S}.hints.sessionMaxDays` },
+      { key: 'singleSessionPerUser', type: 'bool', labelKey: `${S}.singleSessionPerUser`, hintKey: `${S}.hints.singleSessionPerUser` },
+    ],
+  },
+  {
+    titleKey: 'organization.tabs.groups.signInProtection',
+    fields: [
+      {
+        key: 'twoFactorMode',
+        type: 'select',
+        labelKey: `${S}.twoFactorMode`,
+        hintKey: `${S}.hints.twoFactorMode`,
+        options: ['off', 'optional', 'required'].map((value) => ({ value, labelKey: `organization.security.twoFactorMode.${value}` })),
+      },
+      { key: 'newDeviceAlerts', type: 'bool', labelKey: `${S}.newDeviceAlerts`, hintKey: `${S}.hints.newDeviceAlerts` },
     ],
   },
   {

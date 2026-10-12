@@ -24,6 +24,20 @@ if (!LOCAL_ENVS.includes(process.env.NODE_ENV || '')) {
   }
 }
 
+/**
+ * TRUST_PROXY -> Express's 'trust proxy' setting, so req.ip (sessions, audit
+ * log, rate limits) is the real client behind IIS/Nginx instead of the proxy:
+ * a hop count ("1"), "true", or Express's names/subnets ("loopback",
+ * "10.0.0.0/8, loopback"). Unset/empty/"false": not trusted (direct exposure).
+ */
+export function parseTrustProxy(value: string | undefined): boolean | number | string | undefined {
+  const raw = (value || '').trim();
+  if (!raw || raw.toLowerCase() === 'false') return undefined;
+  if (raw.toLowerCase() === 'true') return true;
+  if (/^\d+$/.test(raw)) return parseInt(raw, 10);
+  return raw;
+}
+
 export const config = {
   // Server
   nodeEnv: process.env.NODE_ENV || 'development',
@@ -172,6 +186,8 @@ export const config = {
   rateLimitWindow: parseInt(process.env.RATE_LIMIT_WINDOW || '900000', 10), // 15 minutes
   rateLimitMax: parseInt(process.env.RATE_LIMIT_MAX || '1500', 10),
   corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:3001,http://localhost:3000,http://localhost:3001').split(','),
+  // Express 'trust proxy' (see parseTrustProxy): unset = the direct peer is the client.
+  trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
 
   // Default tenant for development
   defaultTenantId: parseInt(process.env.DEFAULT_TENANT_ID || '1', 10),

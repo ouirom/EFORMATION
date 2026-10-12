@@ -14,6 +14,15 @@ const REQUIRED_COLUMNS: { table: string; column: string; migration: string }[] =
   { table: 'tenant_sso_settings', column: 'ldap_url', migration: '036_tenant_sso_settings' },
   { table: 'tenant_settings', column: 'xp_per_level', migration: '037_tenant_learning_settings' },
   { table: 'users', column: 'subsidiary_id', migration: '038_subsidiaries' },
+  { table: 'users', column: 'external_company', migration: '040_external_users' },
+  { table: 'tenant_settings', column: 'external_accent_color', migration: '041_tenant_external_theme' },
+  { table: 'tenant_settings', column: 'external_surface_color', migration: '041_tenant_external_theme' },
+  { table: 'user_sessions', column: 'refresh_jti_hash', migration: '042_user_sessions' },
+  { table: 'tenant_settings', column: 'two_factor_mode', migration: '043_two_factor' },
+  { table: 'users', column: 'two_factor_enabled', migration: '043_two_factor' },
+  { table: 'two_factor_challenges', column: 'code_hash', migration: '043_two_factor' },
+  { table: 'tenant_settings', column: 'new_device_alerts', migration: '044_login_alerts' },
+  { table: 'tenant_settings', column: 'single_session_per_user', migration: '045_single_session' },
 ];
 
 /** Returns the migrations that still need to run (empty when the schema is up to date). */

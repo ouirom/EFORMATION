@@ -2,15 +2,18 @@ import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { useAuth } from '@/contexts/AuthContext'
+import { useAuth, TwoFactorChallenge } from '@/contexts/AuthContext'
+import { TwoFactorStep } from '@/components/auth/TwoFactorStep'
 import { api } from '@/services/api'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Loader2, Eye, EyeOff, Zap, AlarmClock, KeyRound, ShieldCheck } from 'lucide-react'
+import { Loader2, Eye, EyeOff, Zap, AlarmClock, KeyRound, ShieldCheck, ShieldAlert, Briefcase, ArrowRight } from 'lucide-react'
 import { useToast } from '@/components/ui/use-toast'
+import { useBranding, useBrandPrimaryColor } from '@/lib/branding'
+import { SessionReplacedBanner } from '@/components/auth/SessionReplacedBanner'
 
 // Comptes de démonstration — connexion en un clic
 const TEST_ACCOUNTS = [
@@ -57,7 +60,7 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1'
 export default function LoginPage() {
   const { t } = useTranslation('auth')
   const { t: tCommon } = useTranslation('common')
-  const { login, loginWithLdap, isLoading } = useAuth()
+  const { login, loginWithLdap, verifyTwoFactor, resendTwoFactor, isLoading } = useAuth()
   const { toast } = useToast()
   const [searchParams] = useSearchParams()
   const [timedOut] = useState(() => {
@@ -65,11 +68,20 @@ export default function LoginPage() {
     sessionStorage.removeItem('sessionTimeout')
     return flagged
   })
+  // Set by api.ts when the session was closed elsewhere (logout from another
+  // device, admin force-logout, stolen token detected).
+  const [sessionRevoked] = useState(() => {
+    const flagged = sessionStorage.getItem('sessionRevoked') === '1'
+    sessionStorage.removeItem('sessionRevoked')
+    return flagged
+  })
   const [showPassword, setShowPassword] = useState(false)
   const [quickLoading, setQuickLoading] = useState<string | null>(null)
   const [formData, setFormData] = useState({ email: '', password: '' })
   const [ldapData, setLdapData] = useState({ username: '', password: '' })
   const [ldapSubmitting, setLdapSubmitting] = useState(false)
+  // Two-step sign-in: set once the password (or LDAP) step passed and a code was emailed.
+  const [twoFactor, setTwoFactor] = useState<TwoFactorChallenge | null>(null)
 
   const { data: providers } = useQuery({
     queryKey: ['sso-providers'],
@@ -79,6 +91,15 @@ export default function LoginPage() {
     },
     staleTime: Infinity,
   })
+
+  // Identité de l'organisation (Administration > Organisation > Personnalisation)
+  const { data: branding } = useBranding()
+  useBrandPrimaryColor(branding?.primaryColor)
+  const [logoFailed, setLogoFailed] = useState(false)
+  const logoUrl = branding?.logoUrl && !logoFailed ? branding.logoUrl : null
+  const orgName = branding?.name || 'E-Formation'
+  const accent = branding?.primaryColor || 'hsl(var(--primary))'
+  const accentSoft = branding?.secondaryColor || accent
 
   const busy = isLoading || quickLoading !== null
 
@@ -90,7 +111,8 @@ export default function LoginPage() {
       return
     }
     try {
-      await login(formData.email, formData.password)
+      const outcome = await login(formData.email, formData.password)
+      if (outcome?.twoFactor) setTwoFactor(outcome.twoFactor)
     } catch (error: any) {
       toast({
         title: t('login.errors.loginFailedTitle'),
@@ -104,7 +126,8 @@ export default function LoginPage() {
     setQuickLoading(label)
     setFormData({ email, password })
     try {
-      await login(email, password)
+      const outcome = await login(email, password)
+      if (outcome?.twoFactor) setTwoFactor(outcome.twoFactor)
     } catch (error: any) {
       toast({
         title: t('login.errors.loginFailedTitle'),
@@ -124,7 +147,8 @@ export default function LoginPage() {
     }
     setLdapSubmitting(true)
     try {
-      await loginWithLdap(ldapData.username, ldapData.password)
+      const outcome = await loginWithLdap(ldapData.username, ldapData.password)
+      if (outcome?.twoFactor) setTwoFactor(outcome.twoFactor)
     } catch (error: any) {
       toast({
         title: t('login.errors.ldapLoginFailedTitle'),
@@ -142,23 +166,63 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen grid lg:grid-cols-2">
-      {/* Bloc gauche — bienvenue, description, logo, copyright */}
-      <div className="hidden lg:flex flex-col justify-between bg-gradient-to-br from-primary to-primary/70 text-primary-foreground p-12">
-        <Link to="/" className="flex items-center gap-2 w-fit">
-          <div className="h-12 w-12 rounded-xl bg-white/15 flex items-center justify-center backdrop-blur">
-            <span className="text-2xl font-bold">E</span>
-          </div>
-          <span className="text-2xl font-bold">E-Formation</span>
+      {/* Bloc gauche — logo de l'organisation, bienvenue, description, copyright.
+          Fond clair : les logos sont en général prévus pour un fond blanc. */}
+      <div className="hidden lg:flex relative overflow-hidden flex-col justify-between bg-gradient-to-br from-white via-slate-50 to-primary/10 border-r border-slate-200 p-12 text-slate-900">
+        {/* Arcs décoratifs aux couleurs de l'organisation */}
+        <svg
+          aria-hidden="true"
+          className="pointer-events-none absolute -top-24 -right-32 h-[30rem] w-[30rem]"
+          viewBox="0 0 200 200"
+          fill="none"
+        >
+          <path d="M 20 110 A 80 80 0 0 1 180 110" style={{ stroke: accent }} strokeOpacity={0.14} strokeWidth={14} strokeLinecap="round" />
+          <path d="M 44 110 A 56 56 0 0 1 156 110" style={{ stroke: accentSoft }} strokeOpacity={0.3} strokeWidth={4} strokeLinecap="round" />
+        </svg>
+        <svg
+          aria-hidden="true"
+          className="pointer-events-none absolute -bottom-40 -left-40 h-[26rem] w-[26rem]"
+          viewBox="0 0 200 200"
+          fill="none"
+        >
+          <circle cx="100" cy="100" r="80" style={{ stroke: accent }} strokeOpacity={0.08} strokeWidth={20} />
+        </svg>
+
+        <Link to="/" className="relative w-fit">
+          {logoUrl ? (
+            <div className="rounded-2xl bg-white px-8 py-6 shadow-sm ring-1 ring-slate-200/80">
+              <img
+                src={logoUrl}
+                alt={orgName}
+                className="h-28 w-auto max-w-[18rem] object-contain"
+                onError={() => setLogoFailed(true)}
+              />
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <div className="h-12 w-12 rounded-xl bg-primary flex items-center justify-center">
+                <span className="text-2xl font-bold text-primary-foreground">E</span>
+              </div>
+              <span className="text-2xl font-bold text-primary">E-Formation</span>
+            </div>
+          )}
         </Link>
 
-        <div className="max-w-md">
-          <h1 className="text-4xl font-bold mb-4">{t('brand.welcomeTitle')}</h1>
-          <p className="text-lg text-primary-foreground/90 leading-relaxed">
+        <div className="relative max-w-md">
+          <div
+            aria-hidden="true"
+            className="mb-6 h-1.5 w-16 rounded-full"
+            style={{ background: `linear-gradient(90deg, ${accent}, ${accentSoft})` }}
+          />
+          <h1 className="text-4xl font-bold leading-tight mb-4 text-slate-900">
+            {branding?.name ? t('brand.welcomeTitleOrg', { name: branding.name }) : t('brand.welcomeTitle')}
+          </h1>
+          <p className="text-lg text-slate-600 leading-relaxed">
             {t('brand.welcomeDescription')}
           </p>
         </div>
 
-        <p className="text-sm text-primary-foreground/70">
+        <p className="relative text-sm text-slate-500">
           {t('brand.copyright', { year: new Date().getFullYear() })}
         </p>
       </div>
@@ -166,14 +230,20 @@ export default function LoginPage() {
       {/* Bloc droite — formulaire de connexion */}
       <div className="flex flex-col items-center justify-center p-4 py-10 sm:p-8">
         {/* Logo compact, visible uniquement quand le bloc gauche est masqué (mobile) */}
-        <Link to="/" className="lg:hidden flex items-center gap-2 mb-8">
-          <div className="h-10 w-10 rounded-xl bg-primary flex items-center justify-center">
-            <span className="text-xl font-bold text-primary-foreground">E</span>
-          </div>
-          <span className="text-2xl font-bold bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">
-            E-Formation
-          </span>
-        </Link>
+        {logoUrl ? (
+          <Link to="/" className="lg:hidden mb-8 rounded-xl bg-white px-5 py-3 shadow-sm ring-1 ring-slate-200/80">
+            <img src={logoUrl} alt={orgName} className="h-16 w-auto max-w-[14rem] object-contain" onError={() => setLogoFailed(true)} />
+          </Link>
+        ) : (
+          <Link to="/" className="lg:hidden flex items-center gap-2 mb-8">
+            <div className="h-10 w-10 rounded-xl bg-primary flex items-center justify-center">
+              <span className="text-xl font-bold text-primary-foreground">E</span>
+            </div>
+            <span className="text-2xl font-bold text-primary">
+              E-Formation
+            </span>
+          </Link>
+        )}
 
         <div className="w-full max-w-md space-y-4">
           {timedOut && (
@@ -182,6 +252,13 @@ export default function LoginPage() {
               {t('login.timedOut')}
             </div>
           )}
+          {sessionRevoked && !timedOut && (
+            <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              <ShieldAlert className="h-4 w-4 shrink-0" />
+              {t('login.sessionRevoked')}
+            </div>
+          )}
+          <SessionReplacedBanner />
 
           {/* Connexion rapide — comptes de démo */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
@@ -195,7 +272,7 @@ export default function LoginPage() {
                 <button
                   key={account.email}
                   type="button"
-                  disabled={busy}
+                  disabled={busy || !!twoFactor}
                   onClick={() => handleQuickLogin(account.email, account.password, account.label)}
                   title={`${account.email} — ${account.password}`}
                   className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 cursor-pointer ${account.color}`}
@@ -213,6 +290,26 @@ export default function LoginPage() {
             </p> */}
           </div>
 
+          {twoFactor ? (
+            <Card className="shadow-lg">
+              <CardHeader className="space-y-1">
+                <CardTitle className="text-2xl text-center">{t('twoFactor.title')}</CardTitle>
+                <CardDescription className="text-center">{t('twoFactor.subtitle')}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <TwoFactorStep
+                  challenge={twoFactor}
+                  onSubmit={(code) => verifyTwoFactor(twoFactor.challengeToken, code)}
+                  onResend={() => resendTwoFactor(twoFactor.challengeToken)}
+                  onCancel={() => {
+                    setTwoFactor(null)
+                    setFormData((current) => ({ ...current, password: '' }))
+                    setLdapData((current) => ({ ...current, password: '' }))
+                  }}
+                />
+              </CardContent>
+            </Card>
+          ) : (
           <Card className="shadow-lg">
             <CardHeader className="space-y-1">
               <CardTitle className="text-2xl text-center">{t('login.title')}</CardTitle>
@@ -369,6 +466,22 @@ export default function LoginPage() {
               </p>
             </CardFooter>
           </Card>
+          )}
+
+          {/* Entrée de l'espace dédié aux intervenants externes */}
+          <Link
+            to="/external/login"
+            className="group flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm transition-colors hover:border-amber-300 hover:bg-amber-100"
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-slate-950 text-amber-300">
+              <Briefcase className="h-4 w-4" />
+            </span>
+            <span className="flex-1">
+              <span className="block text-amber-900">{t('login.externalPrompt')}</span>
+              <span className="font-semibold text-amber-800">{t('login.externalLink')}</span>
+            </span>
+            <ArrowRight className="h-4 w-4 text-amber-700 transition-transform group-hover:translate-x-0.5" />
+          </Link>
         </div>
 
         <p className="lg:hidden mt-8 text-center text-sm text-muted-foreground">

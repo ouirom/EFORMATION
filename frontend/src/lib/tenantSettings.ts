@@ -27,6 +27,12 @@ export interface TenantPlatformSettings {
   sessionMaxDays: number
   allowedEmailDomains: string[]
   requireRegistrationApproval: boolean
+  /** Code emailed at sign-in: off, each user's choice (Profil > Sécurité), or required. */
+  twoFactorMode: 'off' | 'optional' | 'required'
+  /** Email "Nouvelle connexion à votre compte" for a device not seen in 90 days. */
+  newDeviceAlerts: boolean
+  /** A new login signs the account's other devices out (one active session per user). */
+  singleSessionPerUser: boolean
   quizDefaultPassingScore: number
   quizDefaultMaxAttempts: number
   certificateReminderDays: number
@@ -49,6 +55,9 @@ export interface Organization {
   name: string
   logo: string | null
   primaryColor: string
+  /** Partner theme of external participants (#RRGGBB, defaults applied by the server). */
+  externalAccentColor?: string
+  externalSurfaceColor?: string
   settings?: TenantPlatformSettings
   [key: string]: any
 }

@@ -25,6 +25,7 @@ import {
   UsersRound,
   Library,
   KeyRound,
+  ShieldAlert,
 } from 'lucide-react'
 
 /**
@@ -75,7 +76,11 @@ export const adminNavItems: NavItem[] = [
   { icon: PlugZap, labelKey: 'adminNav.videoConferencing', path: '/admin/livekit-settings' },
   { icon: Disc, labelKey: 'adminNav.recording', path: '/admin/recording-settings' },
   { icon: ScrollText, labelKey: 'adminNav.logs', path: '/admin/logs', tourId: 'logs' },
+  { icon: ShieldAlert, labelKey: 'adminNav.connections', path: '/admin/connections' },
 ]
+
+// Administration tabs reserved to admins (directors and managers don't see them).
+const ADMIN_ONLY_PATHS = ['/admin/connections']
 
 const platformNavItem: NavItem = { icon: Globe, labelKey: 'adminNav.platform', path: '/admin/platform' }
 
@@ -121,5 +126,7 @@ export function userSpaceNavItems(role?: string, modules: EnabledModules = ALL_M
 /** Tabs of the administration section for this role (empty if it has no access). */
 export function adminSectionNavItems(role?: string, modules: EnabledModules = ALL_MODULES): NavItem[] {
   if (!canAccessAdmin(role)) return []
-  return withoutDisabledModules(role === 'super_admin' ? [...adminNavItems, platformNavItem] : adminNavItems, modules)
+  const isAdmin = role === 'admin' || role === 'super_admin'
+  const items = adminNavItems.filter((item) => isAdmin || !ADMIN_ONLY_PATHS.includes(item.path))
+  return withoutDisabledModules(role === 'super_admin' ? [...items, platformNavItem] : items, modules)
 }

@@ -209,7 +209,7 @@ describe('maximum session length', () => {
       q.includes('FROM users WHERE id = @id AND deleted_at IS NULL') ? [{ ...authRow('agent', 42), token_version: 0 }] : undefined
     );
     const authTime = Math.floor(Date.now() / 1000) - 23 * 3600; // logged in 23 h ago
-    const refreshToken = jwt.sign({ id: 42, type: 'refresh', tokenVersion: 0, authTime }, config.jwt.refreshSecret);
+    const refreshToken = jwt.sign({ id: 42, type: 'refresh', tokenVersion: 0, authTime, sid: 'sid-1', jti: 'jti-1' }, config.jwt.refreshSecret);
     const tokens = await AuthService.refreshToken(refreshToken);
     expect(tokens.expiresIn).toBeLessThanOrEqual(3600);
     expect(tokens.expiresIn).toBeGreaterThan(3500);
@@ -222,7 +222,7 @@ describe('maximum session length', () => {
       q.includes('FROM users WHERE id = @id AND deleted_at IS NULL') ? [{ ...authRow('agent', 42), token_version: 0 }] : undefined
     );
     const authTime = Math.floor(Date.now() / 1000) - 25 * 3600;
-    const refreshToken = jwt.sign({ id: 42, type: 'refresh', tokenVersion: 0, authTime }, config.jwt.refreshSecret);
+    const refreshToken = jwt.sign({ id: 42, type: 'refresh', tokenVersion: 0, authTime, sid: 'sid-1', jti: 'jti-1' }, config.jwt.refreshSecret);
     await expect(AuthService.refreshToken(refreshToken)).rejects.toMatchObject({ statusCode: 401 });
   });
 });

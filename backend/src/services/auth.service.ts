@@ -9,6 +9,10 @@ import { PendingNotificationService } from './pending-notification.service';
 import { TenantSettingsService, isEmailDomainAllowed, passwordPolicyViolation } from './tenant-settings.service';
 import { User, SSOIdentity, SSOProvider } from '../types';
 import { logger } from '../utils/logger';
+import { SessionService, AuthMethod, SessionContext } from './session.service';
+import { TwoFactorService, TwoFactorChallenge, twoFactorApplies } from './two-factor.service';
+import { LoginAlertService, alertInBackground } from './login-alert.service';
+import { emitSessionsRevoked } from '../socket/sessionEvents';
 import { 
   ApiError,
   BadRequestError, 
@@ -24,6 +28,29 @@ interface TokenPair {
 }
 
 /**
+ * What a refresh returns: normally a rotated pair. Within the rotation grace
+ * window (another tab of the same browser refreshed a moment earlier) only a new
+ * access token -- the caller keeps the refresh token that other tab stored.
+ */
+interface RefreshResult {
+  accessToken: string;
+  refreshToken?: string;
+  expiresIn: number;
+}
+
+/** The claims every access token carries (plus `sid`, the session it belongs to). */
+interface TokenSubject {
+  id: number;
+  tenantId: number;
+  email: string;
+  role: string;
+  tokenVersion?: number;
+  enterpriseId?: number;
+  directionId?: number;
+  serviceId?: number;
+}
+
+/**
  * A password login whose password is older than the organization allows: no
  * session is opened, the user must first choose a new password with this
  * short-lived reset token (same flow as "forgot password").
@@ -34,6 +61,38 @@ export interface PasswordExpiredResult {
 }
 
 const EXPIRED_PASSWORD_RESET_TTL = '15m';
+
+/** The account as a password sign-in reads it (also re-read after the 2FA code). */
+interface LoginUserRow {
+  id: number;
+  tenant_id: number;
+  email: string;
+  password_hash: string;
+  display_name: string;
+  avatar_url: string | null;
+  role: string;
+  enterprise_id: number;
+  direction_id: number;
+  service_id: number;
+  is_active: boolean;
+  status: string;
+  token_version: number;
+  failed_login_attempts: number;
+  locked_until: Date | null;
+  password_set_at: Date;
+  db_now: Date;
+  external_company: string | null;
+  two_factor_enabled: boolean;
+}
+
+// db_now comes from the same clock as the stored timestamps, so the lock and
+// password-age arithmetic never depends on the app server's time zone.
+const LOGIN_USER_COLUMNS = `id, tenant_id, email, password_hash, display_name, avatar_url, role,
+              enterprise_id, direction_id, service_id, is_active, status, token_version,
+              failed_login_attempts, locked_until, external_company, two_factor_enabled,
+              COALESCE(password_changed_at, created_at) AS password_set_at, ${db.now()} AS db_now`;
+
+type LoginSuccess = { user: Partial<User>; tokens: TokenPair };
 
 interface RegisterDTO {
   tenantId: number;
@@ -48,6 +107,10 @@ interface RegisterDTO {
   serviceId?: number | null;
   /** false: the organization activates self-registered accounts right away. */
   requireApproval?: boolean;
+  /** External participants only: the company they come from. */
+  externalCompany?: string | null;
+  jobTitle?: string | null;
+  phone?: string | null;
 }
 
 interface LoginDTO {
@@ -56,6 +119,8 @@ interface LoginDTO {
   tenantId?: number;
   ip?: string;
   userAgent?: string;
+  /** 'external': the external participants' portal, which only lets role 'externe' in. */
+  portal?: 'external';
 }
 
 export class AuthService {
@@ -108,21 +173,25 @@ export class AuthService {
         IS_PG
           ? `INSERT INTO users (
               tenant_id, email, username, password_hash, display_name, role,
-              enterprise_id, subsidiary_id, direction_id, service_id, is_active, status, password_changed_at
+              enterprise_id, subsidiary_id, direction_id, service_id, is_active, status, password_changed_at,
+              external_company, job_title, phone
             )
             VALUES (
               @tenantId, @email, @username, @passwordHash, @displayName, @role,
-              @enterpriseId, @subsidiaryId, @directionId, @serviceId, @isActive, @status, ${db.now()}
+              @enterpriseId, @subsidiaryId, @directionId, @serviceId, @isActive, @status, ${db.now()},
+              @externalCompany, COALESCE(@jobTitle, 'Défaut'), @phone
             )
             RETURNING id`
           : `INSERT INTO users (
               tenant_id, email, username, password_hash, display_name, role,
-              enterprise_id, subsidiary_id, direction_id, service_id, is_active, status, password_changed_at
+              enterprise_id, subsidiary_id, direction_id, service_id, is_active, status, password_changed_at,
+              external_company, job_title, phone
             )
             OUTPUT INSERTED.id
             VALUES (
               @tenantId, @email, @username, @passwordHash, @displayName, @role,
-              @enterpriseId, @subsidiaryId, @directionId, @serviceId, @isActive, @status, ${db.now()}
+              @enterpriseId, @subsidiaryId, @directionId, @serviceId, @isActive, @status, ${db.now()},
+              @externalCompany, COALESCE(@jobTitle, 'Défaut'), @phone
             )`,
         {
           tenantId: data.tenantId,
@@ -137,6 +206,9 @@ export class AuthService {
           serviceId: data.serviceId || null,
           isActive: !pending,
           status: pending ? 'pending' : 'active',
+          externalCompany: data.externalCompany || null,
+          jobTitle: data.jobTitle || null,
+          phone: data.phone || null,
         }
       );
     } catch (error: any) {
@@ -234,7 +306,9 @@ export class AuthService {
           channel,
           subject: 'Nouvelle inscription en attente d\'activation',
           essential: true,
-          body: `${data.displayName} (${data.email}) vient de créer un compte et attend une activation.`,
+          body: data.role === 'externe'
+            ? `${data.displayName} (${data.email}), intervenant externe${data.externalCompany ? ` de ${data.externalCompany}` : ''}, a demandé un accès et attend une activation.`
+            : `${data.displayName} (${data.email}) vient de créer un compte et attend une activation.`,
           actionUrl: `${config.frontendUrl}/admin/users?status=pending`,
         }).catch(() => {});
       }
@@ -246,33 +320,10 @@ export class AuthService {
    */
   static async login(
     data: LoginDTO
-  ): Promise<{ user: Partial<User>; tokens: TokenPair } | PasswordExpiredResult> {
+  ): Promise<LoginSuccess | PasswordExpiredResult | TwoFactorChallenge> {
     // Find user
-    const users = await DatabaseService.query<{
-      id: number;
-      tenant_id: number;
-      email: string;
-      password_hash: string;
-      display_name: string;
-      avatar_url: string | null;
-      role: string;
-      enterprise_id: number;
-      direction_id: number;
-      service_id: number;
-      is_active: boolean;
-      status: string;
-      token_version: number;
-      failed_login_attempts: number;
-      locked_until: Date | null;
-      password_set_at: Date;
-      db_now: Date;
-    }>(
-      // db_now comes from the same clock as the stored timestamps, so the lock and
-      // password-age arithmetic below never depends on the app server's time zone.
-      `SELECT id, tenant_id, email, password_hash, display_name, avatar_url, role,
-              enterprise_id, direction_id, service_id, is_active, status, token_version,
-              failed_login_attempts, locked_until,
-              COALESCE(password_changed_at, created_at) AS password_set_at, ${db.now()} AS db_now
+    const users = await DatabaseService.query<LoginUserRow>(
+      `SELECT ${LOGIN_USER_COLUMNS}
        FROM users
        WHERE email = @email
        ${data.tenantId ? 'AND tenant_id = @tenantId' : ''}
@@ -281,6 +332,15 @@ export class AuthService {
     );
 
     if (users.length === 0) {
+      // No account to attach it to, but it still counts for Administration >
+      // Connexions > IP suspectes (the email itself is not recorded).
+      if (data.tenantId) {
+        await AuditService.log(data.tenantId, null, 'LOGIN_FAILED', 'users', null, {
+          reason: 'unknown_account',
+          ip: data.ip,
+          userAgent: data.userAgent,
+        });
+      }
       throw UnauthorizedError('Invalid email or password');
     }
 
@@ -288,7 +348,9 @@ export class AuthService {
 
     if (user.status !== 'active') {
       const messages: Record<string, string> = {
-        pending: "Votre compte est en attente d'activation par votre responsable.",
+        pending: user.role === 'externe'
+          ? "Votre demande d'accès est en attente de validation par un administrateur."
+          : "Votre compte est en attente d'activation par votre responsable.",
         suspended: 'Votre compte a été suspendu. Contactez votre administrateur.',
         deactivated: 'Votre compte a été désactivé.',
       };
@@ -340,6 +402,8 @@ export class AuthService {
             minutes,
             ip: data.ip,
           });
+          // The owner learns it even if it wasn't them typing.
+          alertInBackground(LoginAlertService.sendLockedAlert(user, minutes), 'account locked');
           throw this.accountLockedError(minutes * 60_000);
         }
         await DatabaseService.execute(
@@ -354,6 +418,21 @@ export class AuthService {
       await DatabaseService.execute(
         'UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE id = @id',
         { id: user.id }
+      );
+    }
+
+    // The external portal is reserved to external participants. Checked only once
+    // the password is right, so it never reveals which emails exist.
+    if (data.portal === 'external' && user.role !== 'externe') {
+      await AuditService.log(user.tenant_id, user.id, 'LOGIN_FAILED', 'users', user.id, {
+        reason: 'wrong_portal',
+        ip: data.ip,
+        userAgent: data.userAgent,
+      });
+      throw new ApiError(
+        "Cet espace est réservé aux intervenants externes. Connectez-vous depuis l'espace collaborateurs.",
+        403,
+        'WRONG_PORTAL'
       );
     }
 
@@ -372,17 +451,78 @@ export class AuthService {
       }
     }
 
-    // Generate tokens
-    const tokens = await this.issueTokens({
-      id: user.id,
-      tenantId: user.tenant_id,
-      email: user.email,
-      role: user.role,
-      tokenVersion: user.token_version,
-      enterpriseId: user.enterprise_id,
-      directionId: user.direction_id,
-      serviceId: user.service_id,
+    // Two-step sign-in (Administration > Organisation > Accès & sécurité): no
+    // session yet -- the code emailed now must be entered first (POST /auth/2fa/verify).
+    if (twoFactorApplies(settings.twoFactorMode, user.two_factor_enabled)) {
+      return TwoFactorService.start({
+        tenantId: user.tenant_id,
+        userId: user.id,
+        email: user.email,
+        displayName: user.display_name,
+        purpose: 'login',
+        authMethod: 'password',
+        portal: data.portal ?? null,
+        ip: data.ip,
+        userAgent: data.userAgent,
+      });
+    }
+
+    return this.completeLogin(user, 'password', { ip: data.ip, userAgent: data.userAgent });
+  }
+
+  /**
+   * Second step of a sign-in: the emailed code. Opens the session the first
+   * step withheld, after checking again that the account may still sign in
+   * (and through that portal).
+   */
+  static async verifyTwoFactorLogin(challengeToken: string, code: string, context: SessionContext = {}): Promise<LoginSuccess> {
+    const challenge = await TwoFactorService.verify(challengeToken, code, 'login', context);
+
+    const users = await DatabaseService.query<LoginUserRow>(
+      `SELECT ${LOGIN_USER_COLUMNS} FROM users WHERE id = @userId AND deleted_at IS NULL`,
+      { userId: challenge.user_id }
+    );
+    const user = users[0];
+    if (!user || user.status !== 'active' || !user.is_active) {
+      throw UnauthorizedError('Account is disabled');
+    }
+    if (challenge.portal === 'external' && user.role !== 'externe') {
+      throw new ApiError(
+        "Cet espace est réservé aux intervenants externes. Connectez-vous depuis l'espace collaborateurs.",
+        403,
+        'WRONG_PORTAL'
+      );
+    }
+
+    await AuditService.log(user.tenant_id, user.id, '2FA_SUCCESS', 'users', user.id, {
+      ip: context.ip,
+      userAgent: context.userAgent,
     });
+    return this.completeLogin(user, challenge.auth_method === 'ldap' ? 'ldap' : 'password', context, { twoFactor: true });
+  }
+
+  /** Last step of a password or LDAP sign-in: the session, last_login_at, the audit trail. */
+  private static async completeLogin(
+    user: Omit<LoginUserRow, 'password_hash' | 'failed_login_attempts' | 'locked_until' | 'password_set_at' | 'db_now'>,
+    method: 'password' | 'ldap',
+    context: SessionContext,
+    auditExtra: Record<string, unknown> = {}
+  ): Promise<LoginSuccess> {
+    // Generate tokens -- a new session for this device
+    const tokens = await this.startSession(
+      {
+        id: user.id,
+        tenantId: user.tenant_id,
+        email: user.email,
+        role: user.role,
+        tokenVersion: user.token_version,
+        enterpriseId: user.enterprise_id,
+        directionId: user.direction_id,
+        serviceId: user.service_id,
+      },
+      method,
+      context
+    );
 
     await DatabaseService.execute(
       `UPDATE users SET last_login_at = ${db.now()} WHERE id = @id`,
@@ -390,9 +530,10 @@ export class AuthService {
     );
 
     // Log audit
-    await AuditService.log(user.tenant_id, user.id, 'USER_LOGIN', 'users', user.id, {
-      ip: data.ip,
-      userAgent: data.userAgent,
+    await AuditService.log(user.tenant_id, user.id, method === 'ldap' ? 'LDAP_LOGIN' : 'USER_LOGIN', 'users', user.id, {
+      ip: context.ip,
+      userAgent: context.userAgent,
+      ...auditExtra,
     });
 
     return {
@@ -406,67 +547,81 @@ export class AuthService {
         enterpriseId: user.enterprise_id,
         directionId: user.direction_id,
         serviceId: user.service_id,
-      },
+        externalCompany: user.external_company,
+      } as Partial<User>,
       tokens,
     };
   }
 
   /**
-   * Refresh access token
+   * Refresh access token. The refresh token is single-use: it names its session
+   * (`sid`) and its own id (`jti`), and SessionService.rotate() swaps that jti
+   * for a new one -- presenting an already-replaced token revokes the session.
    */
-  static async refreshToken(refreshToken: string): Promise<TokenPair> {
+  static async refreshToken(refreshToken: string, context: SessionContext = {}): Promise<RefreshResult> {
+    let payload: any;
     try {
-      const payload = jwt.verify(refreshToken, config.jwt.refreshSecret) as any;
-
-      // Verify user still exists and is active
-      const users = await DatabaseService.query<{
-        id: number;
-        tenant_id: number;
-        email: string;
-        role: string;
-        enterprise_id: number;
-        direction_id: number;
-        service_id: number;
-        is_active: boolean;
-        token_version: number;
-      }>(
-        `SELECT id, tenant_id, email, role, enterprise_id, direction_id, service_id, is_active, token_version
-         FROM users WHERE id = @id AND deleted_at IS NULL`,
-        { id: payload.id }
-      );
-
-      if (users.length === 0 || !users[0].is_active) {
-        throw UnauthorizedError('User not found or inactive');
-      }
-
-      const user = users[0];
-
-      // A password reset bumps token_version, so a refresh token minted before the
-      // reset can never renew again -- closes the window where a leaked refresh
-      // token would otherwise keep working after the account owner reset their password.
-      if ((payload.tokenVersion ?? 0) !== user.token_version) {
-        throw UnauthorizedError('Invalid refresh token');
-      }
-
-      // The original login time travels with every refresh token (older tokens
-      // without it fall back to their issue time), so the organization's maximum
-      // session length counts from the real login, not from the last refresh.
-      return await this.issueTokens(
-        {
-          id: user.id,
-          tenantId: user.tenant_id,
-          email: user.email,
-          role: user.role,
-          tokenVersion: user.token_version,
-          enterpriseId: user.enterprise_id,
-          directionId: user.direction_id,
-          serviceId: user.service_id,
-        },
-        Number(payload.authTime ?? payload.iat)
-      );
-    } catch (error) {
+      payload = jwt.verify(refreshToken, config.jwt.refreshSecret);
+    } catch {
       throw UnauthorizedError('Invalid refresh token');
     }
+    // Tokens minted before sessions existed carry no sid: they can't be checked
+    // against a session, so they no longer renew (one new login).
+    if (payload?.type !== 'refresh' || !payload.sid || !payload.jti) {
+      throw UnauthorizedError('Invalid refresh token');
+    }
+
+    // Verify user still exists and is active
+    const users = await DatabaseService.query<{
+      id: number;
+      tenant_id: number;
+      email: string;
+      role: string;
+      enterprise_id: number;
+      direction_id: number;
+      service_id: number;
+      is_active: boolean;
+      token_version: number;
+    }>(
+      `SELECT id, tenant_id, email, role, enterprise_id, direction_id, service_id, is_active, token_version
+       FROM users WHERE id = @id AND deleted_at IS NULL`,
+      { id: payload.id }
+    );
+
+    if (users.length === 0 || !users[0].is_active) {
+      throw UnauthorizedError('User not found or inactive');
+    }
+
+    const user = users[0];
+
+    // A password reset or an admin force-logout bumps token_version, so a refresh
+    // token minted before it can never renew again.
+    if ((payload.tokenVersion ?? 0) !== user.token_version) {
+      throw UnauthorizedError('Invalid refresh token');
+    }
+
+    const rotation = await SessionService.rotate(payload.sid, user.id, payload.jti, context);
+
+    // The original login time travels with every refresh token, so the
+    // organization's maximum session length counts from the real login, not
+    // from the last refresh.
+    return this.signTokens(
+      {
+        id: user.id,
+        tenantId: user.tenant_id,
+        email: user.email,
+        role: user.role,
+        tokenVersion: user.token_version,
+        enterpriseId: user.enterprise_id,
+        directionId: user.direction_id,
+        serviceId: user.service_id,
+      },
+      {
+        sid: payload.sid,
+        jti: rotation.outcome === 'rotated' ? rotation.jti : null,
+        authTime: Number(payload.authTime ?? payload.iat),
+      }
+    );
   }
 
   /**
@@ -476,7 +631,13 @@ export class AuthService {
    * authenticateHandler special case in auth.middleware.ts that allows a
    * super_admin's token tenantId to differ from their stored home tenant_id.
    */
-  static async switchTenant(currentUserId: number, currentUserRole: string, targetTenantId: number): Promise<{ tokens: TokenPair; tenant: { id: number; name: string } }> {
+  static async switchTenant(
+    currentUserId: number,
+    currentUserRole: string,
+    targetTenantId: number,
+    currentSid?: string,
+    context: SessionContext = {}
+  ): Promise<{ tokens: TokenPair; tenant: { id: number; name: string } }> {
     if (currentUserRole !== 'super_admin') {
       throw UnauthorizedError('Only super_admin can switch tenant context');
     }
@@ -489,21 +650,33 @@ export class AuthService {
       throw NotFoundError('Tenant');
     }
 
-    const users = await DatabaseService.query<{ id: number; email: string; token_version: number }>(
-      `SELECT id, email, token_version FROM users WHERE id = @id AND role = 'super_admin' AND deleted_at IS NULL`,
+    const users = await DatabaseService.query<{ id: number; tenant_id: number; email: string; token_version: number }>(
+      `SELECT id, email, token_version, tenant_id FROM users WHERE id = @id AND role = 'super_admin' AND deleted_at IS NULL`,
       { id: currentUserId }
     );
     if (users.length === 0) {
       throw UnauthorizedError('Super admin account not found');
     }
 
-    const tokens = await this.issueTokens({
+    const subject = {
       id: users[0].id,
       tenantId: targetTenantId,
       email: users[0].email,
       role: 'super_admin',
       tokenVersion: users[0].token_version,
-    });
+    };
+    // Same session (same device), new token pair scoped to the target tenant; a
+    // token from before sessions existed gets a session of its own.
+    const tokens = currentSid
+      ? ((await this.signTokens(subject, {
+          sid: currentSid,
+          jti: await SessionService.reissue(currentSid, users[0].id),
+          authTime: Math.floor(Date.now() / 1000),
+        })) as TokenPair)
+      : await this.startSession(subject, 'password', context, Number(users[0].tenant_id) || targetTenantId, {
+          // Not a login: the device stays the same, so it mustn't sign the others out.
+          replaceOthers: false,
+        });
 
     await AuditService.log(targetTenantId, users[0].id, 'SUPER_ADMIN_SWITCHED_TENANT', 'tenants', targetTenantId);
 
@@ -654,16 +827,20 @@ export class AuthService {
       throw UnauthorizedError('Account is disabled');
     }
 
-    const tokens = await this.issueTokens({
-      id: user.id,
-      tenantId: user.tenant_id,
-      email: user.email,
-      role: user.role,
-      tokenVersion: user.token_version,
-      enterpriseId: user.enterprise_id,
-      directionId: user.direction_id,
-      serviceId: user.service_id,
-    });
+    const tokens = await this.startSession(
+      {
+        id: user.id,
+        tenantId: user.tenant_id,
+        email: user.email,
+        role: user.role,
+        tokenVersion: user.token_version,
+        enterpriseId: user.enterprise_id,
+        directionId: user.direction_id,
+        serviceId: user.service_id,
+      },
+      provider === 'azure_ad' ? 'sso_azure_ad' : 'sso_google',
+      { ip: profile.ip, userAgent: profile.userAgent }
+    );
 
     await AuditService.log(user.tenant_id, user.id, `SSO_LOGIN_${provider.toUpperCase()}`, 'users', user.id, {
       ip: profile.ip,
@@ -696,7 +873,7 @@ export class AuthService {
     tenantId?: number;
     ip?: string;
     userAgent?: string;
-  }): Promise<{ user: Partial<User>; tokens: TokenPair; isNewUser: boolean }> {
+  }): Promise<{ user: Partial<User>; tokens: TokenPair; isNewUser: boolean } | TwoFactorChallenge> {
     let userId: number;
     let isNewUser = false;
 
@@ -756,24 +933,45 @@ export class AuthService {
       direction_id: number;
       service_id: number;
       token_version: number;
+      two_factor_enabled: boolean;
     }>(
-      `SELECT id, tenant_id, email, display_name, role, enterprise_id, direction_id, service_id, token_version
+      `SELECT id, tenant_id, email, display_name, role, enterprise_id, direction_id, service_id, token_version, two_factor_enabled
        FROM users WHERE id = @userId`,
       { userId }
     );
 
     const user = users[0];
 
-    const tokens = await this.issueTokens({
-      id: user.id,
-      tenantId: user.tenant_id,
-      email: user.email,
-      role: user.role,
-      tokenVersion: user.token_version,
-      enterpriseId: user.enterprise_id,
-      directionId: user.direction_id,
-      serviceId: user.service_id,
-    });
+    // The directory checked the password; two-step sign-in still applies (unlike
+    // SSO, where the identity provider runs its own MFA).
+    const { twoFactorMode } = await TenantSettingsService.get(user.tenant_id);
+    if (twoFactorApplies(twoFactorMode, user.two_factor_enabled)) {
+      return TwoFactorService.start({
+        tenantId: user.tenant_id,
+        userId: user.id,
+        email: user.email,
+        displayName: user.display_name,
+        purpose: 'login',
+        authMethod: 'ldap',
+        ip: profile.ip,
+        userAgent: profile.userAgent,
+      });
+    }
+
+    const tokens = await this.startSession(
+      {
+        id: user.id,
+        tenantId: user.tenant_id,
+        email: user.email,
+        role: user.role,
+        tokenVersion: user.token_version,
+        enterpriseId: user.enterprise_id,
+        directionId: user.direction_id,
+        serviceId: user.service_id,
+      },
+      'ldap',
+      { ip: profile.ip, userAgent: profile.userAgent }
+    );
 
     await AuditService.log(user.tenant_id, user.id, 'LDAP_LOGIN', 'users', user.id, {
       ip: profile.ip,
@@ -799,7 +997,9 @@ export class AuthService {
   static async changePassword(
     userId: number,
     currentPassword: string,
-    newPassword: string
+    newPassword: string,
+    /** The session the change is made from: it stays open, every other one is closed. */
+    currentSid?: string
   ): Promise<{ id: number; subject: string; recipientEmail: string } | null> {
     const users = await DatabaseService.query<{
       password_hash: string;
@@ -831,7 +1031,10 @@ export class AuthService {
       { passwordHash: newPasswordHash, userId }
     );
 
-    await AuditService.log(user.tenant_id, userId, 'PASSWORD_CHANGED', 'users', userId);
+    // Whoever knew the old password is signed out everywhere else.
+    const closedSessions = await SessionService.revokeAllForUser(userId, 'password_changed', currentSid);
+
+    await AuditService.log(user.tenant_id, userId, 'PASSWORD_CHANGED', 'users', userId, { closedSessions });
 
     // Queue a confirmation email -- self-service, so the user confirms it
     // themselves right away (triggeredBy = the same user).
@@ -957,6 +1160,10 @@ export class AuthService {
       if (result.rowsAffected === 0) {
         throw NotFoundError('User');
       }
+
+      // token_version already stops the old refresh tokens; this also ends the
+      // sessions themselves (access tokens included) and shows it in the history.
+      await SessionService.revokeAllForUser(payload.userId, 'password_reset');
     } catch (error) {
       if (error instanceof jwt.JsonWebTokenError) {
         throw BadRequestError('Invalid or expired reset token');
@@ -966,11 +1173,99 @@ export class AuthService {
   }
 
   /**
-   * Logout (invalidate token - requires Redis/blacklist in production)
+   * Logout: ends the session the tokens belong to. Accepts either token -- the
+   * refresh token names the session even once the access token has expired --
+   * and never fails: signing out must always work on the client side.
    */
-  static async logout(userId: number, tenantId: number): Promise<void> {
-    // TODO: Add token to blacklist in Redis
-    await AuditService.log(tenantId, userId, 'USER_LOGOUT', 'users', userId);
+  static async logout(tokens: { accessToken?: string | null; refreshToken?: string | null }): Promise<void> {
+    let claims: { userId: number; tenantId?: number; sid: string } | null = null;
+    if (tokens.refreshToken) {
+      try {
+        const payload = jwt.verify(tokens.refreshToken, config.jwt.refreshSecret) as any;
+        if (payload?.type === 'refresh' && payload.sid) claims = { userId: Number(payload.id), sid: payload.sid };
+      } catch {
+        // expired/invalid: try the access token
+      }
+    }
+    if (!claims && tokens.accessToken) {
+      try {
+        const payload = jwt.verify(tokens.accessToken, config.jwt.secret) as any;
+        if (!payload?.type && payload?.sid) {
+          claims = { userId: Number(payload.id), tenantId: Number(payload.tenantId), sid: payload.sid };
+        }
+      } catch {
+        // nothing to revoke
+      }
+    }
+    if (!claims) return;
+
+    if (await SessionService.revoke(claims.sid, 'logout')) {
+      const tenantId = claims.tenantId || (await this.getUserTenantId(claims.userId));
+      if (tenantId) {
+        await AuditService.log(tenantId, claims.userId, 'USER_LOGOUT', 'users', claims.userId, { sid: claims.sid });
+      }
+    }
+  }
+
+  /**
+   * « Ce n'était pas moi » (link of the new sign-in alert): closes every session
+   * of the account and bumps token_version (which also voids the link itself),
+   * then hands out a short-lived reset token so the owner picks a new password
+   * right away -- whoever signed in knows the current one.
+   */
+  static async reportNotMe(token: string, context: SessionContext = {}): Promise<{ resetToken: string }> {
+    let payload: any;
+    try {
+      payload = jwt.verify(token, config.jwt.secret);
+    } catch {
+      throw BadRequestError('Ce lien a expiré ou n’est plus valide.', 'NOT_ME_INVALID');
+    }
+    if (payload?.type !== 'not_me' || !payload.userId) {
+      throw BadRequestError('Ce lien a expiré ou n’est plus valide.', 'NOT_ME_INVALID');
+    }
+
+    const users = await DatabaseService.query<{ id: number; tenant_id: number; token_version: number }>(
+      'SELECT id, tenant_id, token_version FROM users WHERE id = @userId AND deleted_at IS NULL',
+      { userId: payload.userId }
+    );
+    const user = users[0];
+    if (!user || Number(payload.tokenVersion ?? -1) !== Number(user.token_version)) {
+      throw BadRequestError('Ce lien a expiré ou n’est plus valide.', 'NOT_ME_INVALID');
+    }
+
+    // Conditional on the version read above: two clicks can't both succeed.
+    const bumped = await DatabaseService.execute(
+      `UPDATE users SET token_version = token_version + 1, updated_at = ${db.now()}
+       WHERE id = @userId AND token_version = @tokenVersion`,
+      { userId: user.id, tokenVersion: user.token_version }
+    );
+    if (Number(bumped?.rowsAffected) !== 1) {
+      throw BadRequestError('Ce lien a expiré ou n’est plus valide.', 'NOT_ME_INVALID');
+    }
+    const closedSessions = await SessionService.revokeAllForUser(user.id, 'not_me');
+    await AuditService.log(Number(user.tenant_id), user.id, 'NOT_ME_REPORTED', 'users', user.id, {
+      closedSessions,
+      ip: context.ip,
+      userAgent: context.userAgent,
+    });
+
+    return { resetToken: this.signPasswordResetToken(user.id, Number(user.token_version) + 1, EXPIRED_PASSWORD_RESET_TTL) };
+  }
+
+  /**
+   * Administration > Utilisateurs > "Forcer la déconnexion": closes every session
+   * of the account and bumps token_version, so no token issued before (refresh
+   * token, password-reset link) works any more. Permission is checked by the route.
+   */
+  static async forceLogout(targetUserId: number, tenantId: number, actorId: number): Promise<number> {
+    const closedSessions = await SessionService.revokeAllForUser(targetUserId, 'admin_force_logout');
+    await DatabaseService.execute(
+      `UPDATE users SET token_version = token_version + 1, updated_at = ${db.now()}
+       WHERE id = @userId AND tenant_id = @tenantId`,
+      { userId: targetUserId, tenantId }
+    );
+    await AuditService.log(tenantId, actorId, 'USER_FORCE_LOGOUT', 'users', targetUserId, { closedSessions });
+    return closedSessions;
   }
 
   /** The organization an account belongs to (null if it doesn't exist). */
@@ -1045,38 +1340,117 @@ export class AuthService {
   }
 
   /**
-   * Access and refresh tokens, capped by the organization's maximum session
-   * length (Administration > Organisation): `authTime` is when the user actually
-   * logged in, and it is carried over by every refresh, so refreshing never
-   * extends a session past that limit.
+   * Opens a session for a successful login (every login path ends here: password,
+   * external portal, LDAP, SSO, 2FA code) and signs its first token pair.
+   * `sessionTenantId`: the account's own organization, when the tokens are scoped
+   * to another one (super_admin acting in a tenant).
+   * When the organization allows one session per user (the default), the
+   * account's other sessions are closed: the most recent login wins.
+   * `replaceOthers: false` for a session that isn't a login (switch-tenant).
    */
-  private static async issueTokens(
-    payload: {
-      id: number;
-      tenantId: number;
-      email: string;
-      role: string;
-      tokenVersion?: number;
-      enterpriseId?: number;
-      directionId?: number;
-      serviceId?: number;
-    },
-    authTime: number = Math.floor(Date.now() / 1000)
+  private static async startSession(
+    subject: TokenSubject,
+    method: AuthMethod,
+    context: SessionContext,
+    sessionTenantId: number = subject.tenantId,
+    options: { replaceOthers?: boolean } = {}
   ): Promise<TokenPair> {
-    const { tokenVersion, ...accessPayload } = payload;
+    const authTime = Math.floor(Date.now() / 1000);
+    const { refreshExpiresIn } = await this.tokenLifetimes(subject.tenantId, authTime);
+    // Compared with the sessions that exist before this one opens.
+    const newDevice = await LoginAlertService.isNewDevice(sessionTenantId, subject.id, context).catch((error) => {
+      logger.warn('New-device check failed', { error: (error as Error)?.message });
+      return false;
+    });
+    if (newDevice) {
+      alertInBackground(LoginAlertService.sendNewDeviceAlert(subject.id, context), 'new sign-in');
+    }
+    const { sid, jti } = await SessionService.create({
+      tenantId: sessionTenantId,
+      userId: subject.id,
+      authMethod: method,
+      expiresInSeconds: refreshExpiresIn,
+      ...context,
+    });
+    const tokens = (await this.signTokens(subject, { sid, jti, authTime })) as TokenPair;
+    if (options.replaceOthers !== false) {
+      await this.replaceOtherSessions(sessionTenantId, subject.id, sid, context);
+    }
+    return tokens;
+  }
 
-    const { sessionMaxDays } = await TenantSettingsService.get(payload.tenantId);
+  /**
+   * One session per user (organization setting, on by default): closes the
+   * account's sessions opened before `sid`, audits it, and tells their open tabs
+   * over the socket so they sign out at once (otherwise their next API call gets
+   * 401 SESSION_REPLACED).
+   */
+  private static async replaceOtherSessions(
+    tenantId: number,
+    userId: number,
+    sid: string,
+    context: SessionContext
+  ): Promise<void> {
+    const { singleSessionPerUser } = await TenantSettingsService.get(tenantId);
+    if (!singleSessionPerUser) return;
+    const replaced = await SessionService.revokeOlderThan(userId, sid);
+    if (replaced.length === 0) return;
+    await AuditService.log(tenantId, userId, 'SESSION_REPLACED', 'users', userId, {
+      ip: context.ip ?? null,
+      userAgent: context.userAgent ?? null,
+      closedSessions: replaced.length,
+      closed: replaced.map((s) => ({ deviceIp: s.ip, deviceUserAgent: s.user_agent })),
+    });
+    emitSessionsRevoked(
+      replaced.map((s) => s.sid),
+      { reason: 'replaced_by_new_login' }
+    );
+  }
+
+  /**
+   * Token lifetimes, capped by the organization's maximum session length
+   * (Administration > Organisation): `authTime` is when the user actually logged
+   * in, carried over by every refresh, so refreshing never extends a session
+   * past that limit.
+   */
+  private static async tokenLifetimes(tenantId: number, authTime: number): Promise<{ expiresIn: number; refreshExpiresIn: number }> {
+    const { sessionMaxDays } = await TenantSettingsService.get(tenantId);
     const remaining = authTime + sessionMaxDays * 86_400 - Math.floor(Date.now() / 1000);
     if (remaining <= 0) {
       throw UnauthorizedError('Session expired, please log in again');
     }
-    const expiresIn = Math.min(this.parseExpiresIn(config.jwt.expiresIn), remaining);
-    const refreshExpiresIn = Math.min(this.parseExpiresIn(config.jwt.refreshExpiresIn), remaining);
+    return {
+      expiresIn: Math.min(this.parseExpiresIn(config.jwt.expiresIn), remaining),
+      refreshExpiresIn: Math.min(this.parseExpiresIn(config.jwt.refreshExpiresIn), remaining),
+    };
+  }
 
-    const accessToken = jwt.sign(accessPayload, config.jwt.secret, { expiresIn });
+  /**
+   * Signs a session's access token, and its refresh token when `jti` is given.
+   * Both carry the session id: authenticate() rejects an access token whose
+   * session was revoked.
+   */
+  private static async signTokens(
+    subject: TokenSubject,
+    session: { sid: string; jti: string | null; authTime: number }
+  ): Promise<RefreshResult> {
+    const { tokenVersion, ...claims } = subject;
+    const { expiresIn, refreshExpiresIn } = await this.tokenLifetimes(subject.tenantId, session.authTime);
+
+    const accessToken = jwt.sign({ ...claims, sid: session.sid }, config.jwt.secret, { expiresIn });
+    if (!session.jti) {
+      return { accessToken, expiresIn };
+    }
 
     const refreshToken = jwt.sign(
-      { id: payload.id, type: 'refresh', tokenVersion: tokenVersion ?? 0, authTime },
+      {
+        id: subject.id,
+        type: 'refresh',
+        tokenVersion: tokenVersion ?? 0,
+        authTime: session.authTime,
+        sid: session.sid,
+        jti: session.jti,
+      },
       config.jwt.refreshSecret,
       { expiresIn: refreshExpiresIn }
     );

@@ -4,6 +4,7 @@ import { config } from '../config';
 import { DatabaseService } from '../services/database.service';
 import { UnauthorizedError, ForbiddenError } from './error.middleware';
 import { TenantRequest } from './tenant.middleware';
+import { SessionService, sessionRevokedError, sessionReplacedError } from '../services/session.service';
 
 export interface UserPayload {
   id: number;
@@ -21,6 +22,31 @@ export interface UserPayload {
 
 export interface AuthRequest extends TenantRequest {
   user?: UserPayload;
+  /** The login session the access token belongs to (claim `sid`). */
+  sessionId?: string;
+}
+
+/**
+ * Verifies an access token and, when it names a session (every token issued
+ * since sessions exist does), that the session is still live -- so logout,
+ * "déconnecter cet appareil" and an admin force-logout take effect at once
+ * instead of when the token expires. Tokens without `sid` predate sessions and
+ * stay valid until they expire. Shared with the WebSocket handshake.
+ */
+export async function verifyAccessToken(token: string): Promise<UserPayload & { sid?: string }> {
+  const payload = jwt.verify(token, config.jwt.secret) as UserPayload & { sid?: string; type?: string };
+  // Other tokens signed with the same secret (password reset, ...) all carry a
+  // `type`; an access token never does.
+  if (!payload || typeof payload !== 'object' || payload.type) {
+    throw UnauthorizedError('Invalid token');
+  }
+  if (payload.sid && !(await SessionService.isActive(payload.sid, payload.id))) {
+    // Closed by a login on another device (one session per user): say so, the
+    // web app then tells the user why they were signed out.
+    const reason = await SessionService.revokedReason(payload.sid, payload.id).catch(() => null);
+    throw reason === 'replaced_by_new_login' ? sessionReplacedError() : sessionRevokedError();
+  }
+  return payload;
 }
 
 const authenticateHandler = async (
@@ -46,7 +72,7 @@ const authenticateHandler = async (
       throw UnauthorizedError('No token provided');
     }
 
-    const payload = jwt.verify(token, config.jwt.secret) as UserPayload;
+    const payload = await verifyAccessToken(token);
 
     // A super_admin's own row lives in exactly one "home" tenant, but their JWT's
     // tenantId may point at whichever tenant they're currently acting in (set by
@@ -89,6 +115,8 @@ const authenticateHandler = async (
       directionId: isSuperAdmin ? undefined : user.direction_id,
       serviceId: isSuperAdmin ? undefined : user.service_id,
     };
+
+    req.sessionId = payload.sid;
 
     // Override tenant from token if not set
     if (!req.tenantId) {

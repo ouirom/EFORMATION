@@ -1,5 +1,6 @@
 import axios, { AxiosInstance } from 'axios';
 import i18n from '@/i18n';
+import { endReplacedSession } from '@/lib/sessionEnd';
 
 // Utilise le proxy Vite (chemin relatif) pour éviter les problèmes CORS
 // En prod, définir VITE_API_URL=https://api.example.com/api/v1
@@ -189,14 +190,34 @@ export async function refreshAccessToken(): Promise<string> {
       throw new Error('No refresh token');
     }
 
-    const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
-      refreshToken,
-    });
+    let response
+    try {
+      response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
+        refreshToken,
+      });
+    } catch (error: any) {
+      // The session was closed (logout elsewhere, "déconnecter cet appareil",
+      // admin force-logout, stolen token detected): the login page says why.
+      if (error?.response?.data?.error?.code === 'SESSION_REVOKED') {
+        sessionStorage.setItem('sessionRevoked', '1');
+      }
+      // Signed in on another device: sign out at once with the explanation
+      // (also covers the proactive refresh of MainLayout).
+      if (error?.response?.data?.error?.code === 'SESSION_REPLACED') {
+        endReplacedSession();
+      }
+      throw error;
+    }
 
     // FIX: certains backends enveloppent dans data.data, d'autres non
     const newToken =
       response.data?.data?.accessToken ?? response.data?.accessToken;
     if (!newToken) throw new Error('No access token in refresh response');
+
+    // Refresh tokens are single-use: keep the rotated one. None comes back when
+    // another tab rotated it a moment ago -- that tab already stored the new one.
+    const rotatedRefreshToken = response.data?.data?.refreshToken;
+    if (rotatedRefreshToken) localStorage.setItem('refreshToken', rotatedRefreshToken);
 
     localStorage.setItem('accessToken', newToken);
     setAuthToken(newToken);
@@ -216,11 +237,20 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
 
-    // Ne pas boucler sur /auth/refresh lui-même
+    // The account signed in on another device (one session per user): no
+    // refresh can bring this session back -- sign out with the explanation.
+    if (error.response?.status === 401 && error.response?.data?.error?.code === 'SESSION_REPLACED') {
+      endReplacedSession();
+      return Promise.reject(error);
+    }
+
+    // Ne pas boucler sur /auth/refresh lui-même, ni rafraîchir pour un échec de
+    // connexion (mauvais mot de passe, code 2FA...) : ce n'est pas une session expirée.
     if (
       error.response?.status === 401 &&
       !originalRequest._retry &&
-      !originalRequest.url?.includes('/auth/refresh')
+      !originalRequest.url?.includes('/auth/refresh') &&
+      !isSignInCall(originalRequest.url)
     ) {
       originalRequest._retry = true;
 
@@ -228,7 +258,11 @@ api.interceptors.response.use(
         const newToken = await refreshAccessToken();
         originalRequest.headers.Authorization = `Bearer ${newToken}`;
         return api(originalRequest);
-      } catch {
+      } catch (refreshError: any) {
+        if (refreshError?.response?.data?.error?.code === 'SESSION_REPLACED') {
+          endReplacedSession();
+          return Promise.reject(error);
+        }
         localStorage.removeItem('accessToken');
         localStorage.removeItem('refreshToken');
         // So the next successful login lands back where the user was — read by
@@ -243,6 +277,11 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+/** Sign-in endpoints: a 401 there is a wrong credential, never an expired session. */
+function isSignInCall(url?: string): boolean {
+  return /\/auth\/(login|ldap\/login|2fa\/(verify|resend)|sso\/|not-me)/.test(url || '')
+}
 
 export function setAuthToken(token: string) {
   api.defaults.headers.common['Authorization'] = `Bearer ${token}`;

@@ -22,6 +22,13 @@ describe('navigation module switches', () => {
     expect(paths(userSpaceNavItems('manager', modules))).toContain('/my-team');
   });
 
+  it('shows the sign-in monitoring screen to admins only', () => {
+    expect(paths(adminSectionNavItems('admin'))).toContain('/admin/connections')
+    expect(paths(adminSectionNavItems('super_admin'))).toContain('/admin/connections')
+    expect(paths(adminSectionNavItems('director'))).not.toContain('/admin/connections')
+    expect(paths(adminSectionNavItems('manager'))).not.toContain('/admin/connections')
+  })
+
   it('hides the badges tab for learners but keeps badge administration', () => {
     const modules = { chat: true, liveSessions: true, badges: false };
     expect(paths(userSpaceNavItems('agent', modules))).not.toContain('/badges');

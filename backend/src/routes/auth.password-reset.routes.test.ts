@@ -101,6 +101,11 @@ describe('POST /auth/reset-password', () => {
       expect.stringContaining('token_version = token_version + 1'),
       expect.anything()
     );
+    // Every open session of the account ends too.
+    expect(mockedExecute).toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE user_sessions SET revoked_at'),
+      expect.objectContaining({ userId: 5, reason: 'password_reset' })
+    );
   });
 
   it('rejects a token already consumed by an earlier reset (token_version no longer matches)', async () => {

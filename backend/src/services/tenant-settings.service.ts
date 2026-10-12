@@ -37,6 +37,12 @@ export interface TenantPlatformSettings {
   allowedEmailDomains: string[];
   /** Self-registered accounts wait for an n+1 to activate them. */
   requireRegistrationApproval: boolean;
+  /** Code sent by email at sign-in (password and LDAP logins; SSO relies on the identity provider). */
+  twoFactorMode: TwoFactorMode;
+  /** Email the user when their account signs in from a device not seen in 90 days. */
+  newDeviceAlerts: boolean;
+  /** A new login revokes the user's other sessions: at most one device signed in at a time. */
+  singleSessionPerUser: boolean;
 
   // Learning & gamification
   /** Pass mark (%) given to new quizzes. */
@@ -72,6 +78,10 @@ export interface TenantPlatformSettings {
 }
 
 export const LEADERBOARD_SCOPES = ['organization', 'direction', 'service', 'hidden'] as const;
+
+/** off: never; optional: each user turns it on in Profil > Sécurité; required: everyone. */
+export const TWO_FACTOR_MODES = ['off', 'optional', 'required'] as const;
+export type TwoFactorMode = (typeof TWO_FACTOR_MODES)[number];
 export type LeaderboardScope = (typeof LEADERBOARD_SCOPES)[number];
 
 export const DEFAULT_PLATFORM_SETTINGS: TenantPlatformSettings = {
@@ -92,6 +102,9 @@ export const DEFAULT_PLATFORM_SETTINGS: TenantPlatformSettings = {
   sessionMaxDays: 30,
   allowedEmailDomains: [],
   requireRegistrationApproval: true,
+  twoFactorMode: 'off',
+  newDeviceAlerts: true,
+  singleSessionPerUser: true,
   quizDefaultPassingScore: 70,
   quizDefaultMaxAttempts: 3,
   certificateReminderDays: 30,
@@ -145,6 +158,9 @@ export const SETTING_SPECS: SettingSpec[] = [
   { key: 'sessionMaxDays', column: 'session_max_days', kind: 'int', min: 1, max: 365 },
   { key: 'allowedEmailDomains', column: 'allowed_email_domains', kind: 'domains' },
   { key: 'requireRegistrationApproval', column: 'require_registration_approval', kind: 'bool' },
+  { key: 'twoFactorMode', column: 'two_factor_mode', kind: 'enum', values: TWO_FACTOR_MODES },
+  { key: 'newDeviceAlerts', column: 'new_device_alerts', kind: 'bool' },
+  { key: 'singleSessionPerUser', column: 'single_session_per_user', kind: 'bool' },
   { key: 'quizDefaultPassingScore', column: 'quiz_default_passing_score', kind: 'int', min: 0, max: 100 },
   { key: 'quizDefaultMaxAttempts', column: 'quiz_default_max_attempts', kind: 'int', min: 0, max: 100 },
   { key: 'certificateReminderDays', column: 'certificate_reminder_days', kind: 'int', min: 0, max: 365 },

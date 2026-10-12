@@ -31,6 +31,7 @@ import { SettingsTab } from './organization/SettingsTab'
 import { StructureTab } from './organization/StructureTab'
 import { IntegrationsTab } from './organization/IntegrationsTab'
 import { HistoryTab } from './organization/HistoryTab'
+import { ExternalThemeContrastWarnings, ExternalThemeFields, ExternalThemePreview } from './organization/ExternalThemeFields'
 import { COMPLIANCE_GROUPS, LEARNING_GROUPS, PLATFORM_GROUPS, SECURITY_GROUPS } from './organization/settingsFields'
 
 // Tabs of the organization settings page; the active one is kept in ?tab= so it
@@ -39,6 +40,7 @@ const TABS = ['general', 'platform', 'security', 'learning', 'structure', 'integ
 type TabKey = (typeof TABS)[number]
 import { fileService } from '@/services/file.service'
 import { formatDate } from '@/lib/utils'
+import { DEFAULT_EXTERNAL_ACCENT_COLOR, DEFAULT_EXTERNAL_SURFACE_COLOR, isHexColor } from '@/lib/externalTheme'
 
 interface Organization {
   id: number
@@ -48,6 +50,9 @@ interface Organization {
   logo: string | null
   primaryColor: string
   secondaryColor: string
+  /** Partner theme of external participants (defaults applied by the server). */
+  externalAccentColor: string
+  externalSurfaceColor: string
   contactEmail: string
   contactPhone: string
   address: string
@@ -87,6 +92,8 @@ export default function AdminOrganizationPage() {
     logo: '',
     primaryColor: '#3B82F6',
     secondaryColor: '#10B981',
+    externalAccentColor: DEFAULT_EXTERNAL_ACCENT_COLOR,
+    externalSurfaceColor: DEFAULT_EXTERNAL_SURFACE_COLOR,
     contactEmail: '',
     contactPhone: '',
     address: '',
@@ -102,10 +109,19 @@ export default function AdminOrganizationPage() {
 
   const updateMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
-      await api.put('/organizations/current', data)
+      // The default partner colors are stored as "unset" (null), so they follow
+      // any future change of the defaults.
+      const asStored = (value: string, fallback: string) => (value.toUpperCase() === fallback ? null : value.toUpperCase())
+      await api.put('/organizations/current', {
+        ...data,
+        externalAccentColor: asStored(data.externalAccentColor, DEFAULT_EXTERNAL_ACCENT_COLOR),
+        externalSurfaceColor: asStored(data.externalSurfaceColor, DEFAULT_EXTERNAL_SURFACE_COLOR),
+      })
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['organization'] })
+      // The public branding carries the partner theme of /external/login.
+      queryClient.invalidateQueries({ queryKey: ['branding'] })
       setIsEditDialogOpen(false)
       toast({ title: tCommon('status.success'), description: t('organization.toasts.updatedDescription') })
     },
@@ -155,6 +171,8 @@ export default function AdminOrganizationPage() {
         logo: organization.logo || '',
         primaryColor: organization.primaryColor,
         secondaryColor: organization.secondaryColor,
+        externalAccentColor: organization.externalAccentColor || DEFAULT_EXTERNAL_ACCENT_COLOR,
+        externalSurfaceColor: organization.externalSurfaceColor || DEFAULT_EXTERNAL_SURFACE_COLOR,
         contactEmail: organization.contactEmail,
         contactPhone: organization.contactPhone,
         address: organization.address,
@@ -344,6 +362,33 @@ export default function AdminOrganizationPage() {
                 </Button>
               </div>
             </div>
+            <div className="pt-4 border-t space-y-3" data-testid="external-theme-summary">
+              <h4 className="font-medium">{t('organization.customization.externalTheme.title')}</h4>
+              <div className="grid grid-cols-2 gap-3">
+                {(
+                  [
+                    ['accentColor', organization.externalAccentColor || DEFAULT_EXTERNAL_ACCENT_COLOR],
+                    ['surfaceColor', organization.externalSurfaceColor || DEFAULT_EXTERNAL_SURFACE_COLOR],
+                  ] as const
+                ).map(([key, color]) => (
+                  <div key={key} className="space-y-2">
+                    <Label>{t(`organization.customization.externalTheme.${key}`)}</Label>
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-lg border" style={{ backgroundColor: color }} />
+                      <span className="font-mono text-sm">{color}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <ExternalThemeContrastWarnings
+                accent={organization.externalAccentColor || DEFAULT_EXTERNAL_ACCENT_COLOR}
+                surface={organization.externalSurfaceColor || DEFAULT_EXTERNAL_SURFACE_COLOR}
+              />
+              <ExternalThemePreview
+                accent={organization.externalAccentColor || DEFAULT_EXTERNAL_ACCENT_COLOR}
+                surface={organization.externalSurfaceColor || DEFAULT_EXTERNAL_SURFACE_COLOR}
+              />
+            </div>
           </CardContent>
         </Card>
 
@@ -494,12 +539,24 @@ export default function AdminOrganizationPage() {
                 </div>
               </div>
             </div>
+            <ExternalThemeFields
+              accent={formData.externalAccentColor}
+              surface={formData.externalSurfaceColor}
+              onChange={(colors) => setFormData((prev) => ({ ...prev, ...colors }))}
+            />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
               {t('organization.editDialog.cancel')}
             </Button>
-            <Button onClick={() => updateMutation.mutate(formData)} disabled={updateMutation.isPending}>
+            <Button
+              onClick={() => updateMutation.mutate(formData)}
+              disabled={
+                updateMutation.isPending ||
+                !isHexColor(formData.externalAccentColor) ||
+                !isHexColor(formData.externalSurfaceColor)
+              }
+            >
               {updateMutation.isPending ? t('organization.editDialog.saving') : t('organization.editDialog.save')}
             </Button>
           </DialogFooter>

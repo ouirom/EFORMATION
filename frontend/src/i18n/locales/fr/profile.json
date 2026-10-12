@@ -37,7 +37,8 @@
   "tabs": {
     "badges": "Badges",
     "certificates": "Certificats",
-    "activity": "Activité"
+    "activity": "Activité",
+    "security": "Sécurité"
   },
   "recentBadges": {
     "title": "Badges récents",
@@ -117,5 +118,54 @@
     "saving": "Enregistrement...",
     "save": "Enregistrer"
   },
-  "exportData": "Télécharger mes données"
+  "exportData": "Télécharger mes données",
+  "security": {
+    "error": "Action impossible",
+    "sessions": {
+      "singleSessionNote": "Votre organisation n'autorise qu'une seule session active : une nouvelle connexion sur un autre appareil déconnecte automatiquement celui-ci.",
+      "title": "Appareils connectés",
+      "description": "Les navigateurs et appareils actuellement connectés à votre compte. Déconnectez ceux que vous ne reconnaissez pas.",
+      "deviceLabel": "{{browser}} sur {{os}}",
+      "thisDevice": "Cet appareil",
+      "ip": "IP {{ip}}",
+      "lastActivity": "Dernière activité : {{when}}",
+      "signedInAt": "Connecté le {{when}}",
+      "method": {
+        "password": "Mot de passe",
+        "ldap": "Annuaire (LDAP)",
+        "sso_azure_ad": "Microsoft",
+        "sso_google": "Google"
+      },
+      "revoke": "Déconnecter",
+      "signOutHere": "Se déconnecter",
+      "revokeOthers": "Déconnecter tous les autres appareils",
+      "revoked": "Appareil déconnecté",
+      "othersRevoked_one": "{{count}} autre appareil déconnecté",
+      "othersRevoked_other": "{{count}} autres appareils déconnectés",
+      "confirmOthersTitle": "Déconnecter les autres appareils ?",
+      "confirmOthersDescription_one": "{{count}} autre appareil sera déconnecté immédiatement. Vous restez connecté sur celui-ci.",
+      "confirmOthersDescription_other": "{{count}} autres appareils seront déconnectés immédiatement. Vous restez connecté sur celui-ci."
+    },
+    "twoFactor": {
+      "title": "Vérification en deux étapes",
+      "description": "À chaque connexion par mot de passe, un code à 6 chiffres vous est envoyé par email : connaître votre mot de passe ne suffit plus pour entrer.",
+      "on": "Activée",
+      "off": "Désactivée",
+      "enforced": "Obligatoire",
+      "enforcedHint": "Votre organisation impose la vérification en deux étapes à tous ses membres : elle ne peut pas être désactivée.",
+      "noPasswordHint": "Votre compte se connecte sans mot de passe local (annuaire ou SSO) : contactez votre administrateur pour désactiver la vérification.",
+      "ssoHint": "Les connexions Microsoft ou Google (SSO) ne demandent pas ce code : votre fournisseur d’identité gère sa propre vérification.",
+      "enable": "Activer",
+      "disable": "Désactiver",
+      "enableTitle": "Activer la vérification en deux étapes",
+      "enableDescription": "Pour vérifier que vous recevez bien les codes, saisissez celui que nous venons de vous envoyer.",
+      "confirmEnable": "Activer",
+      "enabled": "Vérification en deux étapes activée",
+      "disableTitle": "Désactiver la vérification en deux étapes ?",
+      "disableDescription": "Confirmez avec votre mot de passe actuel. Votre compte ne sera plus protégé que par votre mot de passe.",
+      "currentPassword": "Mot de passe actuel",
+      "cancel": "Annuler",
+      "disabled": "Vérification en deux étapes désactivée"
+    }
+  }
 }

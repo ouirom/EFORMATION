@@ -33,7 +33,8 @@
     "recording": "Enregistrement",
     "logs": "Journaux d'audit",
     "platform": "Plateforme",
-    "sso": "SSO & annuaire"
+    "sso": "SSO & annuaire",
+    "connections": "Connexions"
   },
   "sectionToggle": {
     "userSpace": "Espace utilisateur",
@@ -47,6 +48,10 @@
     "profile": "Mon profil",
     "settings": "Paramètres",
     "logout": "Déconnexion",
-    "legal": "Mentions légales & confidentialité"
+    "legal": "Mentions légales & confidentialité",
+    "externalBadge": "Intervenant externe"
+  },
+  "externalSpace": {
+    "label": "Espace partenaire"
   }
 }

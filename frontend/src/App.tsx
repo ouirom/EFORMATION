@@ -14,8 +14,11 @@ import AuthLayout from '@/layouts/AuthLayout';
 // Auth Pages -- kept eager: small, and needed immediately for unauthenticated users
 import LoginPage from '@/pages/auth/LoginPage';
 import RegisterPage from '@/pages/auth/RegisterPage';
+import ExternalLoginPage from '@/pages/auth/ExternalLoginPage';
+import ExternalRegisterPage from '@/pages/auth/ExternalRegisterPage';
 import ForgotPasswordPage from '@/pages/auth/ForgotPasswordPage';
 import ResetPasswordPage from '@/pages/auth/ResetPasswordPage';
+import NotMePage from '@/pages/auth/NotMePage';
 import { FeatureGate } from '@/components/FeatureGate';
 import SSOCallbackPage from '@/pages/auth/SSOCallbackPage'
 const VerifyCertificatePage = lazy(() => import('@/pages/auth/VerifyCertificatePage'));
@@ -64,6 +67,7 @@ const LegalPage = lazy(() => import('@/pages/LegalPage'));
 const AdminLiveKitSettingsPage = lazy(() => import('@/pages/admin/AdminLiveKitSettingsPage'));
 const AdminRecordingSettingsPage = lazy(() => import('@/pages/admin/AdminRecordingSettingsPage'));
 const AdminLogsPage = lazy(() => import('@/pages/admin/AdminLogsPage'));
+const AdminConnectionsPage = lazy(() => import('@/pages/admin/AdminConnectionsPage'));
 const AdminPlatformPage = lazy(() => import('@/pages/admin/AdminPlatformPage'));
 
 // Quiz Pages (named exports)
@@ -108,12 +112,16 @@ function App() {
         <Routes>
           {/* Login has its own full-page two-column layout, not the shared AuthLayout */}
           <Route path="/login" element={<LoginPage />} />
+          {/* External participants (role 'externe') have their own sign-in and access request */}
+          <Route path="/external/login" element={<ExternalLoginPage />} />
+          <Route path="/external/register" element={<ExternalRegisterPage />} />
 
           {/* Auth Routes */}
           <Route element={<AuthLayout />}>
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
+            <Route path="/security/not-me" element={<NotMePage />} />
             <Route path="/auth/callback/:provider" element={<SSOCallbackPage />} />
             <Route path="/verify-certificate/:serial" element={<VerifyCertificatePage />} />
             <Route path="/legal" element={<LegalPage />} />
@@ -183,6 +191,7 @@ function App() {
             <Route path="livekit-settings" element={<AdminLiveKitSettingsPage />} />
             <Route path="recording-settings" element={<AdminRecordingSettingsPage />} />
             <Route path="logs" element={<AdminLogsPage />} />
+            <Route path="connections" element={<ProtectedRoute roles={['super_admin', 'admin']}><AdminConnectionsPage /></ProtectedRoute>} />
             <Route path="analytics" element={<AdminAnalyticsPage />} />
             <Route path="platform" element={<AdminPlatformPage />} />
           </Route>

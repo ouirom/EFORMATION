@@ -295,6 +295,22 @@ export class NotificationService {
   }
 
   /**
+   * Security email (sign-in code, new sign-in alert, account locked) sent straight
+   * to `to`: whatever the user's notification preferences, and never stored in
+   * the notifications table -- its body can hold a one-time code or a link that
+   * acts on the account. Throws when no SMTP transport is configured.
+   */
+  static async sendSecurityEmail(
+    tenantId: number,
+    to: string,
+    subject: string,
+    body: string,
+    actionUrl?: string
+  ): Promise<string> {
+    return this.sendEmail(tenantId, to, subject, body, actionUrl);
+  }
+
+  /**
    * Send SMS notification via Twilio
    */
   private static async sendSMS(to: string, body: string): Promise<string> {

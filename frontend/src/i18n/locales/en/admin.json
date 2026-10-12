@@ -211,7 +211,10 @@
       "importCompleteDescription": "{{count}} user(s) created",
       "importErrorDescription": "Unable to import the file",
       "fillRequiredFields": "Please fill in all required fields",
-      "unlockedTitle": "Account unlocked"
+      "unlockedTitle": "Account unlocked",
+      "forcedLogoutTitle": "User signed out",
+      "forcedLogoutDescription_one": "{{count}} session closed on all their devices.",
+      "forcedLogoutDescription_other": "{{count}} sessions closed on all their devices."
     },
     "confirmDelete": "Are you sure you want to delete {{name}}?",
     "loadError": "Unable to load the user list. Please try again.",
@@ -274,7 +277,8 @@
       "suspend": "Suspend",
       "deactivate": "Deactivate",
       "delete": "Delete",
-      "unlock": "Unlock"
+      "unlock": "Unlock",
+      "forceLogout": "Force sign-out"
     },
     "pagination": {
       "pageOf": "Page {{page}} of {{totalPages}} ({{total}} users)",
@@ -329,7 +333,11 @@
       }
     },
     "locked": "Locked",
-    "lockedUntil": "Too many wrong passwords — locked until {{time}}"
+    "lockedUntil": "Too many wrong passwords — locked until {{time}}",
+    "forceLogoutDialog": {
+      "title": "Force sign-out?",
+      "description": "{{name}} will be signed out of every device right away and will have to sign in again. Pending password-reset links will stop working."
+    }
   },
   "courses": {
     "categories": {
@@ -1298,7 +1306,25 @@
       "secondaryColor": "Secondary color",
       "preview": "Preview",
       "primaryButton": "Primary button",
-      "secondaryButton": "Secondary button"
+      "secondaryButton": "Secondary button",
+      "externalTheme": {
+        "title": "External participants space",
+        "description": "Colors of the external participants' space (menu, buttons, ribbon) and of their sign-in and registration pages.",
+        "accentColor": "External accent color",
+        "surfaceColor": "Menu and panel color",
+        "reset": "Restore default colors",
+        "invalidColor": "Expected format: #RRGGBB",
+        "contrastWarning": "Poor readability: text on the {{area}} has a {{ratio}}:1 contrast (4.5:1 minimum recommended).",
+        "areaAccent": "accent color",
+        "areaSurface": "menu color",
+        "previewTitle": "Preview",
+        "previewSpace": "Partner space",
+        "previewNavActive": "Dashboard",
+        "previewNavItem1": "My courses",
+        "previewNavItem2": "Certificates",
+        "previewBadge": "External participant · Company",
+        "previewButton": "Continue"
+      }
     },
     "platformSettings": {
       "title": "Platform settings",
@@ -1389,8 +1415,14 @@
           "lockoutMinutes": "An administrator can also unlock the account from the user list.",
           "sessionIdleMinutes": "A warning shows one minute before the logout.",
           "sessionMaxDays": "Past this, users must log in again, even while active.",
-          "allowedEmailDomains": "Comma-separated. Empty = any. Applies to self-registration and first SSO/LDAP logins; accounts created by an administrator are not affected."
-        }
+          "allowedEmailDomains": "Comma-separated. Empty = any. Applies to self-registration and first SSO/LDAP logins; accounts created by an administrator are not affected.",
+          "twoFactorMode": "After the password (or LDAP directory), a 6-digit code is sent by email. Microsoft / Google (SSO) sign-ins are not affected: the identity provider handles multi-factor authentication there.",
+          "singleSessionPerUser": "A new sign-in automatically signs out the other devices.",
+          "newDeviceAlerts": "\"New sign-in to your account\" email when an account signs in with a browser, system or network not seen in 90 days, with a \"This wasn't me\" link that closes all its sessions."
+        },
+        "twoFactorMode": "Two-step verification (email code)",
+        "singleSessionPerUser": "One active session per user",
+        "newDeviceAlerts": "New device sign-in alert"
       },
       "learning": {
         "title": "Learning & gamification",
@@ -1457,7 +1489,12 @@
       "anyDomain": "Any domain",
       "approval": "New sign-ups",
       "approvalOn": "Activated by their manager",
-      "approvalOff": "Active right away"
+      "approvalOff": "Active right away",
+      "twoFactorMode": {
+        "off": "Off",
+        "optional": "Each user's choice",
+        "required": "Required for everyone"
+      }
     },
     "learning": {
       "title": "Learning & gamification",
@@ -1502,7 +1539,8 @@
         "reminders": "Reminders and follow-ups",
         "gamification": "Gamification",
         "personalData": "Personal data",
-        "legal": "Legal information"
+        "legal": "Legal information",
+        "signInProtection": "Sign-in protection"
       },
       "defaultValue": "Default: {{value}}",
       "reset": "Reset",
@@ -1820,6 +1858,94 @@
       "ldapOk": "Directory connection succeeded.",
       "ldapError": "Could not connect to the directory.",
       "copied": "URI copied."
+    }
+  },
+  "connections": {
+    "title": "Sign-ins",
+    "subtitle": "Sign-ins, failures, lockouts, two-step verification and closed sessions in your organization.",
+    "error": "Action failed",
+    "unknownAccount": "Unknown account",
+    "suspicious": {
+      "title": "Suspicious IPs",
+      "description": "IP addresses with at least 5 failed sign-ins in the last 24 hours.",
+      "none": "No suspicious address in the last 24 hours.",
+      "row_one": "{{count}} failure · {{accounts}} account(s) targeted · last failure: {{when}}",
+      "row_other": "{{count}} failures · {{accounts}} account(s) targeted · last failure: {{when}}",
+      "showFailures": "Show failures"
+    },
+    "events": {
+      "title": "Sign-in events",
+      "empty": "No event for these filters.",
+      "pageOf": "Page {{page}} of {{totalPages}} ({{total}} events)"
+    },
+    "filters": {
+      "user": "User",
+      "userPlaceholder": "Name or email",
+      "period": "Period",
+      "result": "Result"
+    },
+    "periods": {
+      "24h": "Last 24 hours",
+      "7d": "Last 7 days",
+      "30d": "Last 30 days",
+      "90d": "Last 90 days"
+    },
+    "results": {
+      "all": "All",
+      "success": "Successful sign-ins",
+      "failure": "Failures",
+      "lockout": "Lockouts",
+      "twoFactor": "Two-step verification",
+      "session": "Sessions and alerts"
+    },
+    "columns": {
+      "date": "Date",
+      "event": "Event",
+      "user": "User",
+      "details": "Details",
+      "origin": "Origin"
+    },
+    "actions": {
+      "USER_LOGIN": "Sign-in",
+      "LDAP_LOGIN": "Sign-in (directory)",
+      "SSO_LOGIN_AZURE_AD": "Microsoft sign-in",
+      "SSO_LOGIN_GOOGLE": "Google sign-in",
+      "LOGIN_FAILED": "Failed sign-in",
+      "LOGIN_PASSWORD_EXPIRED": "Password expired",
+      "ACCOUNT_LOCKED": "Account locked",
+      "ACCOUNT_UNLOCKED": "Account unlocked",
+      "2FA_CHALLENGE_SENT": "Code sent",
+      "2FA_SUCCESS": "Code accepted",
+      "2FA_FAILED": "Wrong code",
+      "2FA_ENABLED": "2-step turned on",
+      "2FA_DISABLED": "2-step turned off",
+      "USER_LOGOUT": "Sign-out",
+      "SESSION_REVOKED": "Device signed out",
+      "SESSIONS_REVOKED_OTHERS": "Other devices signed out",
+      "USER_FORCE_LOGOUT": "Forced sign-out",
+      "SESSION_REUSE_DETECTED": "Stolen token detected",
+      "SESSION_REPLACED": "Replaced by a new sign-in",
+      "NEW_DEVICE_LOGIN": "New device",
+      "NOT_ME_REPORTED": "\"This wasn't me\""
+    },
+    "reasons": {
+      "invalid_password": "Wrong password",
+      "unknown_account": "Unknown address",
+      "account_locked": "Account locked",
+      "account_pending": "Account pending",
+      "account_suspended": "Account suspended",
+      "account_deactivated": "Account deactivated",
+      "wrong_portal": "Wrong sign-in area"
+    },
+    "details": {
+      "lockedFor_one": "locked {{count}} minute",
+      "lockedFor_other": "locked {{count}} minutes",
+      "remainingAttempts_one": "{{count}} attempt left",
+      "remainingAttempts_other": "{{count}} attempts left",
+      "closedSessions_one": "{{count}} session closed",
+      "closedSessions_other": "{{count}} sessions closed",
+      "withTwoFactor": "with code",
+      "by": "by {{name}}"
     }
   }
 }

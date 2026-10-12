@@ -33,7 +33,8 @@
     "recording": "Recording",
     "logs": "Audit logs",
     "platform": "Platform",
-    "sso": "SSO & directory"
+    "sso": "SSO & directory",
+    "connections": "Sign-ins"
   },
   "sectionToggle": {
     "userSpace": "User space",
@@ -47,6 +48,10 @@
     "profile": "My profile",
     "settings": "Settings",
     "logout": "Log out",
-    "legal": "Legal & privacy"
+    "legal": "Legal & privacy",
+    "externalBadge": "External participant"
+  },
+  "externalSpace": {
+    "label": "Partner space"
   }
 }

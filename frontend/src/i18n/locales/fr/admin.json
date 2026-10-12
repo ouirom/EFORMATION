@@ -211,7 +211,10 @@
       "importCompleteDescription": "{{count}} utilisateur(s) créé(s)",
       "importErrorDescription": "Impossible d'importer le fichier",
       "fillRequiredFields": "Veuillez remplir tous les champs obligatoires",
-      "unlockedTitle": "Compte déverrouillé"
+      "unlockedTitle": "Compte déverrouillé",
+      "forcedLogoutTitle": "Utilisateur déconnecté",
+      "forcedLogoutDescription_one": "{{count}} session fermée sur tous ses appareils.",
+      "forcedLogoutDescription_other": "{{count}} sessions fermées sur tous ses appareils."
     },
     "confirmDelete": "Êtes-vous sûr de vouloir supprimer {{name}} ?",
     "loadError": "Impossible de charger la liste des utilisateurs. Veuillez réessayer.",
@@ -274,7 +277,8 @@
       "suspend": "Suspendre",
       "deactivate": "Désactiver",
       "delete": "Supprimer",
-      "unlock": "Déverrouiller"
+      "unlock": "Déverrouiller",
+      "forceLogout": "Forcer la déconnexion"
     },
     "pagination": {
       "pageOf": "Page {{page}} sur {{totalPages}} ({{total}} utilisateurs)",
@@ -329,7 +333,11 @@
       }
     },
     "locked": "Verrouillé",
-    "lockedUntil": "Trop de mots de passe erronés — verrouillé jusqu'à {{time}}"
+    "lockedUntil": "Trop de mots de passe erronés — verrouillé jusqu'à {{time}}",
+    "forceLogoutDialog": {
+      "title": "Forcer la déconnexion ?",
+      "description": "{{name}} sera déconnecté(e) immédiatement de tous ses appareils et devra se reconnecter. Les liens de réinitialisation de mot de passe en cours ne fonctionneront plus."
+    }
   },
   "courses": {
     "categories": {
@@ -1298,7 +1306,25 @@
       "secondaryColor": "Couleur secondaire",
       "preview": "Aperçu",
       "primaryButton": "Bouton principal",
-      "secondaryButton": "Bouton secondaire"
+      "secondaryButton": "Bouton secondaire",
+      "externalTheme": {
+        "title": "Espace intervenants externes",
+        "description": "Couleurs de l'espace des intervenants externes (menu, boutons, bandeau) et de leurs pages de connexion et d'inscription.",
+        "accentColor": "Couleur d'accent externe",
+        "surfaceColor": "Couleur du menu et des panneaux",
+        "reset": "Rétablir les couleurs par défaut",
+        "invalidColor": "Format attendu : #RRGGBB",
+        "contrastWarning": "Lisibilité insuffisante : le texte sur la {{area}} a un contraste de {{ratio}}:1 (minimum recommandé 4,5:1).",
+        "areaAccent": "couleur d'accent",
+        "areaSurface": "couleur du menu",
+        "previewTitle": "Aperçu",
+        "previewSpace": "Espace partenaire",
+        "previewNavActive": "Tableau de bord",
+        "previewNavItem1": "Mes formations",
+        "previewNavItem2": "Certificats",
+        "previewBadge": "Intervenant externe · Société",
+        "previewButton": "Continuer"
+      }
     },
     "platformSettings": {
       "title": "Paramètres de la plateforme",
@@ -1389,8 +1415,14 @@
           "lockoutMinutes": "Un administrateur peut aussi déverrouiller le compte depuis la liste des utilisateurs.",
           "sessionIdleMinutes": "Un avertissement s’affiche une minute avant la déconnexion.",
           "sessionMaxDays": "Au-delà, il faut se reconnecter, même en restant actif.",
-          "allowedEmailDomains": "Séparés par des virgules. Vide = tous. S’applique à l’inscription libre et aux premiers accès SSO/LDAP ; les comptes créés par un administrateur ne sont pas concernés."
-        }
+          "allowedEmailDomains": "Séparés par des virgules. Vide = tous. S’applique à l’inscription libre et aux premiers accès SSO/LDAP ; les comptes créés par un administrateur ne sont pas concernés.",
+          "twoFactorMode": "Après le mot de passe (ou l'annuaire LDAP), un code à 6 chiffres est envoyé par email. Les connexions Microsoft / Google (SSO) ne sont pas concernées : la double authentification y est gérée par le fournisseur d'identité.",
+          "singleSessionPerUser": "Une nouvelle connexion déconnecte automatiquement les autres appareils.",
+          "newDeviceAlerts": "Email « Nouvelle connexion à votre compte » quand un compte se connecte avec un navigateur, un système ou depuis un réseau inhabituels (non vus depuis 90 jours), avec un lien « Ce n'était pas moi » qui ferme toutes ses sessions."
+        },
+        "twoFactorMode": "Vérification en deux étapes (code par email)",
+        "singleSessionPerUser": "Une seule session active par utilisateur",
+        "newDeviceAlerts": "Alerte de connexion depuis un nouvel appareil"
       },
       "learning": {
         "title": "Apprentissage & gamification",
@@ -1457,7 +1489,12 @@
       "anyDomain": "Tous les domaines",
       "approval": "Nouveaux inscrits",
       "approvalOn": "Activés par leur responsable",
-      "approvalOff": "Actifs immédiatement"
+      "approvalOff": "Actifs immédiatement",
+      "twoFactorMode": {
+        "off": "Désactivée",
+        "optional": "Au choix de chaque utilisateur",
+        "required": "Obligatoire pour tous"
+      }
     },
     "learning": {
       "title": "Apprentissage & gamification",
@@ -1502,7 +1539,8 @@
         "reminders": "Rappels et relances",
         "gamification": "Gamification",
         "personalData": "Données personnelles",
-        "legal": "Informations légales"
+        "legal": "Informations légales",
+        "signInProtection": "Protection de la connexion"
       },
       "defaultValue": "Par défaut : {{value}}",
       "reset": "Rétablir",
@@ -1820,6 +1858,94 @@
       "ldapOk": "Connexion à l’annuaire réussie.",
       "ldapError": "Connexion à l’annuaire impossible.",
       "copied": "URI copiée."
+    }
+  },
+  "connections": {
+    "title": "Connexions",
+    "subtitle": "Connexions, échecs, verrouillages, vérifications en deux étapes et sessions fermées de votre organisation.",
+    "error": "Action impossible",
+    "unknownAccount": "Compte inconnu",
+    "suspicious": {
+      "title": "IP suspectes",
+      "description": "Adresses IP ayant cumulé au moins 5 échecs de connexion au cours des dernières 24 heures.",
+      "none": "Aucune adresse suspecte sur les dernières 24 heures.",
+      "row_one": "{{count}} échec · {{accounts}} compte(s) visé(s) · dernier échec : {{when}}",
+      "row_other": "{{count}} échecs · {{accounts}} compte(s) visé(s) · dernier échec : {{when}}",
+      "showFailures": "Voir les échecs"
+    },
+    "events": {
+      "title": "Événements de connexion",
+      "empty": "Aucun événement pour ces filtres.",
+      "pageOf": "Page {{page}} sur {{totalPages}} ({{total}} événements)"
+    },
+    "filters": {
+      "user": "Utilisateur",
+      "userPlaceholder": "Nom ou email",
+      "period": "Période",
+      "result": "Résultat"
+    },
+    "periods": {
+      "24h": "24 dernières heures",
+      "7d": "7 derniers jours",
+      "30d": "30 derniers jours",
+      "90d": "90 derniers jours"
+    },
+    "results": {
+      "all": "Tous",
+      "success": "Connexions réussies",
+      "failure": "Échecs",
+      "lockout": "Verrouillages",
+      "twoFactor": "Vérification en deux étapes",
+      "session": "Sessions et alertes"
+    },
+    "columns": {
+      "date": "Date",
+      "event": "Événement",
+      "user": "Utilisateur",
+      "details": "Détails",
+      "origin": "Origine"
+    },
+    "actions": {
+      "USER_LOGIN": "Connexion",
+      "LDAP_LOGIN": "Connexion (annuaire)",
+      "SSO_LOGIN_AZURE_AD": "Connexion Microsoft",
+      "SSO_LOGIN_GOOGLE": "Connexion Google",
+      "LOGIN_FAILED": "Échec de connexion",
+      "LOGIN_PASSWORD_EXPIRED": "Mot de passe expiré",
+      "ACCOUNT_LOCKED": "Compte verrouillé",
+      "ACCOUNT_UNLOCKED": "Compte déverrouillé",
+      "2FA_CHALLENGE_SENT": "Code envoyé",
+      "2FA_SUCCESS": "Code validé",
+      "2FA_FAILED": "Code erroné",
+      "2FA_ENABLED": "2 étapes activée",
+      "2FA_DISABLED": "2 étapes désactivée",
+      "USER_LOGOUT": "Déconnexion",
+      "SESSION_REVOKED": "Appareil déconnecté",
+      "SESSIONS_REVOKED_OTHERS": "Autres appareils déconnectés",
+      "USER_FORCE_LOGOUT": "Déconnexion forcée",
+      "SESSION_REUSE_DETECTED": "Jeton volé détecté",
+      "SESSION_REPLACED": "Remplacée par une nouvelle connexion",
+      "NEW_DEVICE_LOGIN": "Nouvel appareil",
+      "NOT_ME_REPORTED": "« Ce n’était pas moi »"
+    },
+    "reasons": {
+      "invalid_password": "Mot de passe erroné",
+      "unknown_account": "Adresse inconnue",
+      "account_locked": "Compte verrouillé",
+      "account_pending": "Compte en attente",
+      "account_suspended": "Compte suspendu",
+      "account_deactivated": "Compte désactivé",
+      "wrong_portal": "Mauvais espace de connexion"
+    },
+    "details": {
+      "lockedFor_one": "verrouillé {{count}} minute",
+      "lockedFor_other": "verrouillé {{count}} minutes",
+      "remainingAttempts_one": "{{count}} essai restant",
+      "remainingAttempts_other": "{{count}} essais restants",
+      "closedSessions_one": "{{count}} session fermée",
+      "closedSessions_other": "{{count}} sessions fermées",
+      "withTwoFactor": "avec code",
+      "by": "par {{name}}"
     }
   }
 }

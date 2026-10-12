@@ -1,13 +1,12 @@
 import { Server as SocketServer, Socket } from 'socket.io';
-import jwt from 'jsonwebtoken';
-import { config } from '../config';
 import { logger } from '../utils/logger';
-import { UserPayload } from '../middleware/auth.middleware';
+import { UserPayload, verifyAccessToken } from '../middleware/auth.middleware';
 import { DatabaseService } from '../services/database.service';
 import { TenantSettingsService } from '../services/tenant-settings.service';
+import { sessionRoom, setSessionEventsServer } from './sessionEvents';
 
 interface AuthenticatedSocket extends Socket {
-  user?: UserPayload;
+  user?: UserPayload & { sid?: string };
 }
 
 /** Whether `userId` takes part in `conversationId` of their own tenant. */
@@ -23,8 +22,10 @@ async function isChatParticipant(tenantId: number, userId: number, conversationI
 }
 
 export const setupSocketIO = (io: SocketServer): void => {
+  setSessionEventsServer(io);
+
   // Authentication middleware
-  io.use((socket: AuthenticatedSocket, next) => {
+  io.use(async (socket: AuthenticatedSocket, next) => {
     const token = socket.handshake.auth.token || socket.handshake.query.token;
 
     if (!token) {
@@ -32,8 +33,8 @@ export const setupSocketIO = (io: SocketServer): void => {
     }
 
     try {
-      const user = jwt.verify(token as string, config.jwt.secret) as UserPayload;
-      socket.user = user;
+      // Same check as the HTTP API, revoked sessions included.
+      socket.user = await verifyAccessToken(token as string);
       next();
     } catch (error) {
       next(new Error('Invalid token'));
@@ -46,6 +47,11 @@ export const setupSocketIO = (io: SocketServer): void => {
 
     // Join user's personal room
     socket.join(`user:${user.id}`);
+
+    // Session room: a login elsewhere that revokes this session signs it out at once.
+    if (user.sid) {
+      socket.join(sessionRoom(user.sid));
+    }
     
     // Join tenant room
     socket.join(`tenant:${user.tenantId}`);

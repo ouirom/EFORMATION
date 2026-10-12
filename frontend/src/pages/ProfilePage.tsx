@@ -43,10 +43,12 @@ import {
   Save,
   Loader2,
   Download,
+  Briefcase,
 } from 'lucide-react'
 import { api } from '@/services/api'
 import { fileService } from '@/services/file.service'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { SecurityTab } from '@/pages/profile/SecurityTab'
 
 interface Certificate {
   id: number
@@ -74,10 +76,13 @@ function badgeTypeIcon(type: string): string {
 export default function ProfilePage() {
   const { t } = useTranslation('profile')
   const { t: tCommon } = useTranslation('common')
+  const { t: tLayout } = useTranslation('layout')
   const { user, logout, updateUser } = useAuth()
   const navigate = useNavigate()
   const { toast } = useToast()
   const avatarInputRef = useRef<HTMLInputElement>(null)
+  // ?tab=security opens Profil > Sécurité directly (e.g. from a security email).
+  const [searchParams] = useSearchParams()
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false)
@@ -350,7 +355,15 @@ export default function ProfilePage() {
                   </h1>
                   <p className="text-muted-foreground">{user?.email}</p>
                   <div className="flex items-center gap-4 mt-2">
-                    <Badge variant="secondary">{user?.role || t('defaultRole')}</Badge>
+                    {user?.role === 'externe' ? (
+                      <Badge className="gap-1 border-amber-300 bg-amber-100 text-amber-800 hover:bg-amber-100 dark:bg-amber-950 dark:text-amber-300">
+                        <Briefcase className="h-3 w-3" />
+                        {tLayout('userMenu.externalBadge')}
+                        {user.externalCompany ? ` · ${user.externalCompany}` : ''}
+                      </Badge>
+                    ) : (
+                      <Badge variant="secondary">{user?.role || t('defaultRole')}</Badge>
+                    )}
                     <Badge variant="outline">{fullProfile?.job_title || t('defaultJobTitle')}</Badge>
                     {xpEnabled && (
                       <>
@@ -465,12 +478,17 @@ export default function ProfilePage() {
       )}
 
       {/* Tabs */}
-      <Tabs defaultValue={badgesEnabled ? 'badges' : 'certificates'}>
+      <Tabs defaultValue={searchParams.get('tab') === 'security' ? 'security' : badgesEnabled ? 'badges' : 'certificates'}>
         <TabsList>
           {badgesEnabled && <TabsTrigger value="badges">{t('tabs.badges')}</TabsTrigger>}
           <TabsTrigger value="certificates">{t('tabs.certificates')}</TabsTrigger>
           <TabsTrigger value="activity">{t('tabs.activity')}</TabsTrigger>
+          <TabsTrigger value="security">{t('tabs.security')}</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="security" className="mt-4">
+          <SecurityTab />
+        </TabsContent>
 
         <TabsContent value="badges" className="mt-4">
           <Card>

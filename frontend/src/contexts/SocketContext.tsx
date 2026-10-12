@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useAuth } from './AuthContext';
+import { endReplacedSession } from '@/lib/sessionEnd';
 
 interface SocketContextType {
   socket: Socket | null;
@@ -57,6 +58,12 @@ export function SocketProvider({ children }: { children: ReactNode }) {
     newSocket.on('connect_error', (error) => {
       console.warn('Socket connection error:', error.message);
       // Don't block the app, just log the error
+    });
+
+    // The account signed in on another device (one session per user): the
+    // server closed this session -- sign out now rather than on the next request.
+    newSocket.on('session:revoked', (payload: { reason?: string } | undefined) => {
+      if (payload?.reason === 'replaced_by_new_login') endReplacedSession();
     });
 
     newSocket.on('presence:online-users', (users: number[]) => {

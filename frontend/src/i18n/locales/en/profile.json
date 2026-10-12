@@ -37,7 +37,8 @@
   "tabs": {
     "badges": "Badges",
     "certificates": "Certificates",
-    "activity": "Activity"
+    "activity": "Activity",
+    "security": "Security"
   },
   "recentBadges": {
     "title": "Recent badges",
@@ -117,5 +118,54 @@
     "saving": "Saving...",
     "save": "Save"
   },
-  "exportData": "Download my data"
+  "exportData": "Download my data",
+  "security": {
+    "error": "Action failed",
+    "sessions": {
+      "singleSessionNote": "Your organization allows only one active session: signing in on another device automatically signs this one out.",
+      "title": "Signed-in devices",
+      "description": "Browsers and devices currently signed in to your account. Sign out any you do not recognize.",
+      "deviceLabel": "{{browser}} on {{os}}",
+      "thisDevice": "This device",
+      "ip": "IP {{ip}}",
+      "lastActivity": "Last active: {{when}}",
+      "signedInAt": "Signed in on {{when}}",
+      "method": {
+        "password": "Password",
+        "ldap": "Directory (LDAP)",
+        "sso_azure_ad": "Microsoft",
+        "sso_google": "Google"
+      },
+      "revoke": "Sign out",
+      "signOutHere": "Sign out",
+      "revokeOthers": "Sign out all other devices",
+      "revoked": "Device signed out",
+      "othersRevoked_one": "{{count}} other device signed out",
+      "othersRevoked_other": "{{count}} other devices signed out",
+      "confirmOthersTitle": "Sign out the other devices?",
+      "confirmOthersDescription_one": "{{count}} other device will be signed out right away. You stay signed in on this one.",
+      "confirmOthersDescription_other": "{{count}} other devices will be signed out right away. You stay signed in on this one."
+    },
+    "twoFactor": {
+      "title": "Two-step verification",
+      "description": "Each time you sign in with your password, a 6-digit code is sent to you by email: knowing your password is no longer enough to get in.",
+      "on": "On",
+      "off": "Off",
+      "enforced": "Required",
+      "enforcedHint": "Your organization requires two-step verification for all its members: it cannot be turned off.",
+      "noPasswordHint": "Your account signs in without a local password (directory or SSO): ask your administrator to turn verification off.",
+      "ssoHint": "Microsoft or Google (SSO) sign-ins do not ask for this code: your identity provider runs its own verification.",
+      "enable": "Turn on",
+      "disable": "Turn off",
+      "enableTitle": "Turn on two-step verification",
+      "enableDescription": "To check that you receive the codes, enter the one we just sent you.",
+      "confirmEnable": "Turn on",
+      "enabled": "Two-step verification turned on",
+      "disableTitle": "Turn off two-step verification?",
+      "disableDescription": "Confirm with your current password. Your account will then be protected by your password only.",
+      "currentPassword": "Current password",
+      "cancel": "Cancel",
+      "disabled": "Two-step verification turned off"
+    }
+  }
 }

@@ -57,6 +57,7 @@ import platformRoutes from './routes/platform.routes';
 import settingsRoutes from './routes/settings.routes';
 import logsRoutes from './routes/logs.routes';
 import importRoutes from './routes/import.routes';
+import securityRoutes from './routes/security.routes';
 
 // Import middleware
 import { errorHandler } from './middleware/error.middleware';
@@ -86,6 +87,12 @@ class App {
   }
 
   private initializeMiddleware(): void {
+    // Behind IIS/Nginx (TRUST_PROXY): req.ip is the client from X-Forwarded-For,
+    // not the proxy -- what sessions, the audit log and rate limits record.
+    if (config.trustProxy !== undefined) {
+      this.app.set('trust proxy', config.trustProxy);
+    }
+
     // Security middleware
     this.app.use(helmet({
       contentSecurityPolicy: {
@@ -195,6 +202,7 @@ class App {
     apiRouter.use('/settings', settingsRoutes);
     apiRouter.use('/logs', logsRoutes);
     apiRouter.use('/import', importRoutes);
+    apiRouter.use('/security', securityRoutes);
 
     this.app.use('/api/v1', apiRouter);
 

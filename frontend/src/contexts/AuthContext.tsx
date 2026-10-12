@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, setAuthToken, clearAuthToken } from '@/services/api';
+import { clearSessionReplacedFlag } from '@/lib/sessionEnd';
 
 interface User {
   id: number;
@@ -12,15 +13,41 @@ interface User {
   directionId?: number;
   serviceId?: number;
   avatarUrl?: string;
+  /** External participants (role 'externe'): the company they come from. */
+  externalCompany?: string | null;
+  jobTitle?: string | null;
 }
+
+interface LoginOptions {
+  /** 'external': the external participants' portal, which only accepts role 'externe'. */
+  portal?: 'external';
+}
+
+/** Second sign-in step: a 6-digit code was emailed, no session yet (POST /auth/2fa/verify). */
+export interface TwoFactorChallenge {
+  challengeToken: string;
+  /** "j***@domain.com" */
+  emailHint: string;
+  /** Seconds the code stays valid. */
+  expiresIn: number;
+  /** Seconds before "Renvoyer le code" is allowed. */
+  resendAfter: number;
+}
+
+/** What a sign-in resolves to when it did not open a session right away. */
+export type LoginOutcome = { twoFactor: TwoFactorChallenge } | void;
 
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, options?: LoginOptions) => Promise<LoginOutcome>;
   register: (data: RegisterData) => Promise<{ pending: boolean; message?: string }>;
-  loginWithLdap: (username: string, password: string) => Promise<void>;
+  loginWithLdap: (username: string, password: string) => Promise<LoginOutcome>;
+  /** Enters the emailed code; opens the session (and navigates) on success. */
+  verifyTwoFactor: (challengeToken: string, code: string) => Promise<void>;
+  /** Sends a new code; resolves to the new timings. */
+  resendTwoFactor: (challengeToken: string) => Promise<Pick<TwoFactorChallenge, 'emailHint' | 'expiresIn' | 'resendAfter'>>;
   completeSSOLogin: (provider: 'google' | 'azure', code: string, state: string) => Promise<void>;
   logout: () => void;
   updateUser: (data: Partial<User>) => void;
@@ -35,6 +62,15 @@ interface RegisterData {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+function twoFactorFrom(data: any): TwoFactorChallenge {
+  return {
+    challengeToken: data.challengeToken,
+    emailHint: data.emailHint,
+    expiresIn: data.expiresIn,
+    resendAfter: data.resendAfter,
+  };
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -70,6 +106,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (refreshToken) localStorage.setItem('refreshToken', refreshToken);
     setAuthToken(accessToken);
     setUser(userData);
+    // Signed in again: the "signed out by another device" banner has served.
+    clearSessionReplacedFlag();
     // If this login followed a session-timeout logout, return to the page the
     // user was on instead of dumping them back on the generic dashboard.
     const redirectTo = sessionStorage.getItem('postLoginRedirect');
@@ -77,8 +115,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     navigate(redirectTo || '/dashboard', { replace: true });
   }, [navigate]);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const response = await api.post('/auth/login', { email, password });
+  const login = useCallback(async (email: string, password: string, options?: LoginOptions): Promise<LoginOutcome> => {
+    const response = await api.post('/auth/login', { email, password, portal: options?.portal });
+    // Two-step sign-in: the page shows the code step, nothing is stored yet.
+    if (response.data.data.twoFactorRequired) {
+      return { twoFactor: twoFactorFrom(response.data.data) };
+    }
     // Password older than the organization allows: no session yet, the user
     // chooses a new password first (the short-lived token travels in router
     // state, not in the URL).
@@ -101,11 +143,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { pending: !!pending, message };
   }, []);
 
-  const loginWithLdap = useCallback(async (username: string, password: string) => {
+  const loginWithLdap = useCallback(async (username: string, password: string): Promise<LoginOutcome> => {
     const response = await api.post('/auth/ldap/login', { username, password });
+    if (response.data.data.twoFactorRequired) {
+      return { twoFactor: twoFactorFrom(response.data.data) };
+    }
     const { user: userData, accessToken, refreshToken } = response.data.data;
     applySession(userData, accessToken, refreshToken);
   }, [applySession]);
+
+  const verifyTwoFactor = useCallback(async (challengeToken: string, code: string) => {
+    const response = await api.post('/auth/2fa/verify', { challengeToken, code });
+    const { user: userData, accessToken, refreshToken } = response.data.data;
+    applySession(userData, accessToken, refreshToken);
+  }, [applySession]);
+
+  const resendTwoFactor = useCallback(async (challengeToken: string) => {
+    const response = await api.post('/auth/2fa/resend', { challengeToken });
+    return response.data.data;
+  }, []);
 
   const completeSSOLogin = useCallback(async (provider: 'google' | 'azure', code: string, state: string) => {
     const response = await api.post(`/auth/sso/${provider}/callback`, { code, state });
@@ -114,13 +170,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [applySession]);
 
   const logout = useCallback(() => {
-    api.post('/auth/logout').catch(() => {});
+    // Ends this session server-side. Both tokens are sent explicitly (captured
+    // before they are cleared below): the refresh token still names the session
+    // once the access token has expired.
+    const accessToken = localStorage.getItem('accessToken');
+    const refreshToken = localStorage.getItem('refreshToken');
+    api
+      .post('/auth/logout', { refreshToken }, { headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {} })
+      .catch(() => {});
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
     clearAuthToken();
+    // External participants go back to their own portal.
+    const loginPath = user?.role === 'externe' ? '/external/login' : '/login';
     setUser(null);
-    navigate('/login', { replace: true });
-  }, [navigate]);
+    navigate(loginPath, { replace: true });
+  }, [navigate, user?.role]);
 
   const updateUser = useCallback((data: Partial<User>) => {
     setUser(prev => prev ? { ...prev, ...data } : null);
@@ -147,6 +212,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login,
         register,
         loginWithLdap,
+        verifyTwoFactor,
+        resendTwoFactor,
         completeSSOLogin,
         logout,
         updateUser,

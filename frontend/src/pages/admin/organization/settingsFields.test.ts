@@ -21,4 +21,10 @@ describe('organization settings fields', () => {
     expect(scope.disabledWhen?.({ enableXp: false })).toBe(true)
     expect(scope.disabledWhen?.({ enableXp: true })).toBe(false)
   })
+
+  it('offers the one-session-per-user switch in the sessions group of the security tab', () => {
+    const sessions = SECURITY_GROUPS.find((g) => g.titleKey === 'organization.tabs.groups.sessions')!
+    const field = sessions.fields.find((f) => f.key === 'singleSessionPerUser')
+    expect(field).toMatchObject({ type: 'bool', labelKey: 'organization.settingsDialog.security.singleSessionPerUser' })
+  })
 })
