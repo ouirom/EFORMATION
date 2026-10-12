@@ -1230,6 +1230,42 @@
       "exportFiltered": "CSV of filtered rows",
       "filteredFileSuffix": "filtered",
       "noMatchFilters": "No row matches the filters"
+    },
+    "period": {
+      "label": "Period",
+      "ariaLabel": "Report period",
+      "presets": {
+        "all": "All time",
+        "last7": "Last 7 days",
+        "last30": "Last 30 days",
+        "thisMonth": "This month",
+        "lastMonth": "Last month",
+        "thisQuarter": "This quarter",
+        "thisYear": "This year",
+        "custom": "Custom"
+      },
+      "range": "From {{start}} to {{end}}",
+      "allData": "All data, no date limit",
+      "hint": "Applies to previews and exports.",
+      "dialogHint": "Same period as the page's period bar: changing it here changes it there too.",
+      "errors": {
+        "startRequired": "Enter the start date.",
+        "endRequired": "Enter the end date.",
+        "invalidDate": "Invalid date.",
+        "endBeforeStart": "The end date must be on or after the start date.",
+        "inFuture": "The end date can't be after today."
+      },
+      "appliesTo": "Period applies to: {{field}}",
+      "fields": {
+        "user_progress": "course enrollment date",
+        "course_completion": "enrollment date",
+        "quiz_performance": "attempt date",
+        "enrollment_summary": "enrollment date",
+        "badge_awards": "award date",
+        "certificate_issuance": "issue date",
+        "activity_log": "action date",
+        "organization_overview": "enrollment date"
+      }
     }
   },
   "organization": {

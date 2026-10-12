@@ -29,10 +29,23 @@ import {
   Loader2,
   FilterX,
   FileDown,
+  CalendarRange,
 } from 'lucide-react'
 import { api } from '@/services/api'
 import { downloadCsv } from '@/lib/csv'
 import { EMPTY_CHOICE, FilterKind, cellMatches, choicesFor, parseNumberFilter } from '@/lib/reportFilters'
+import {
+  PERIOD_PRESETS,
+  PeriodSelection,
+  CustomRangeError,
+  DayRange,
+  formatDayKey,
+  loadPeriodSelection,
+  resolvePeriod,
+  savePeriodSelection,
+  toDayKey,
+} from '@/lib/reportPeriod'
+import { dateLocale } from '@/lib/utils'
 
 // Matches backend/src/routes/report.routes.ts's `reportType` enum exactly --
 // this page can only ask for report types the server actually knows how to build.
@@ -94,7 +107,13 @@ export default function AdminReportsPage() {
   const [selectedLanguage, setSelectedLanguage] = useState<ReportLanguage>(
     i18n.language?.startsWith('en') ? 'en' : 'fr'
   )
-  const [dateRange, setDateRange] = useState({ start: '', end: '' })
+  // One period for the whole page (period bar, card previews, export dialog), remembered per viewer.
+  const [period, setPeriodState] = useState<PeriodSelection>(() => loadPeriodSelection())
+  const setPeriod = (next: PeriodSelection) => {
+    setPeriodState(next)
+    savePeriodSelection(next)
+  }
+  const resolvedPeriod = resolvePeriod(period)
   const [isGenerateDialogOpen, setIsGenerateDialogOpen] = useState(false)
   const [preview, setPreview] = useState<ReportPreview | null>(null)
 
@@ -106,11 +125,11 @@ export default function AdminReportsPage() {
     },
   })
 
-  const currentRequest = (): ReportRequest => ({
-    reportType: selectedReportType,
+  const currentRequest = (reportType = selectedReportType): ReportRequest => ({
+    reportType,
     language: selectedLanguage,
-    startDate: dateRange.start || undefined,
-    endDate: dateRange.end || undefined,
+    startDate: resolvedPeriod.range.start || undefined,
+    endDate: resolvedPeriod.range.end || undefined,
   })
 
   const downloadMutation = useMutation({
@@ -162,6 +181,7 @@ export default function AdminReportsPage() {
   }
 
   const busy = downloadMutation.isPending || previewMutation.isPending
+  const periodInvalid = resolvedPeriod.error !== null
 
   return (
     <div className="space-y-6">
@@ -232,30 +252,18 @@ export default function AdminReportsPage() {
                   </Select>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="report-start-date">{t('reports.generateDialog.startDate')}</Label>
-                  <Input
-                    id="report-start-date"
-                    type="date"
-                    value={dateRange.start}
-                    onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="report-end-date">{t('reports.generateDialog.endDate')}</Label>
-                  <Input
-                    id="report-end-date"
-                    type="date"
-                    value={dateRange.end}
-                    onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-                  />
-                </div>
+              <div className="space-y-2">
+                <Label>{t('reports.period.label')}</Label>
+                <ReportPeriodPicker idPrefix="dialog-period" value={period} onChange={setPeriod} range={resolvedPeriod.range} error={resolvedPeriod.error} />
+                <p className="text-xs text-muted-foreground">{t('reports.period.dialogHint')}</p>
               </div>
               {selectedReportType && (
                 <div className="p-3 bg-muted rounded-lg">
                   <p className="text-sm text-muted-foreground">
                     {getReportTypeInfo(selectedReportType)?.description}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {t('reports.period.appliesTo', { field: t(`reports.period.fields.${selectedReportType}`) })}
                   </p>
                 </div>
               )}
@@ -267,14 +275,14 @@ export default function AdminReportsPage() {
               <Button
                 variant="secondary"
                 onClick={() => previewMutation.mutate(currentRequest())}
-                disabled={!selectedReportType || busy}
+                disabled={!selectedReportType || busy || periodInvalid}
               >
                 {previewMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Eye className="h-4 w-4 mr-2" />}
                 {t('reports.generateDialog.preview')}
               </Button>
               <Button
                 onClick={() => downloadMutation.mutate({ request: currentRequest(), format: selectedFormat })}
-                disabled={!selectedReportType || busy}
+                disabled={!selectedReportType || busy || periodInvalid}
               >
                 {downloadMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
                 {downloadMutation.isPending ? t('reports.generateDialog.generating') : t('reports.generateDialog.download')}
@@ -367,6 +375,16 @@ export default function AdminReportsPage() {
       {/* Report Types */}
       <div>
         <h2 className="text-lg font-semibold mb-4">{t('reports.availableTypes')}</h2>
+        <Card className="mb-4" role="group" aria-label={t('reports.period.ariaLabel')}>
+          <CardContent className="p-4 space-y-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <CalendarRange className="h-4 w-4 text-muted-foreground" />
+              <span className="font-medium">{t('reports.period.label')}</span>
+              <span className="text-xs text-muted-foreground">{t('reports.period.hint')}</span>
+            </div>
+            <ReportPeriodPicker idPrefix="page-period" value={period} onChange={setPeriod} range={resolvedPeriod.range} error={resolvedPeriod.error} />
+          </CardContent>
+        </Card>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {reportTypes.map((type) => (
             <Card key={type.value} className="hover:border-primary transition-colors">
@@ -378,12 +396,16 @@ export default function AdminReportsPage() {
                   <div className="flex-1 min-w-0">
                     <h3 className="font-medium">{type.label}</h3>
                     <p className="text-sm text-muted-foreground">{type.description}</p>
+                    <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                      <CalendarRange className="h-3 w-3 shrink-0" />
+                      {t('reports.period.appliesTo', { field: t(`reports.period.fields.${type.value}`) })}
+                    </p>
                     <div className="flex gap-2 mt-3">
                       <Button
                         size="sm"
                         variant="secondary"
-                        disabled={busy}
-                        onClick={() => previewMutation.mutate({ ...currentRequest(), reportType: type.value, startDate: undefined, endDate: undefined })}
+                        disabled={busy || periodInvalid}
+                        onClick={() => previewMutation.mutate(currentRequest(type.value))}
                       >
                         <Eye className="h-3.5 w-3.5 mr-1.5" />
                         {t('reports.generateDialog.preview')}
@@ -401,6 +423,84 @@ export default function AdminReportsPage() {
         </div>
       </div>
 
+    </div>
+  )
+}
+
+/** Preset buttons, the two day inputs (custom preset) and the resolved range in words. */
+function ReportPeriodPicker({
+  idPrefix,
+  value,
+  onChange,
+  range,
+  error,
+}: {
+  idPrefix: string
+  value: PeriodSelection
+  onChange: (next: PeriodSelection) => void
+  range: DayRange
+  error: CustomRangeError | null
+}) {
+  const { t } = useTranslation('admin')
+  const today = toDayKey(new Date())
+  const locale = dateLocale()
+  const errorId = `${idPrefix}-error`
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-1.5">
+        {PERIOD_PRESETS.map((preset) => (
+          <Button
+            key={preset}
+            type="button"
+            size="sm"
+            className="h-8"
+            variant={value.preset === preset ? 'default' : 'outline'}
+            aria-pressed={value.preset === preset}
+            data-period-preset={preset}
+            onClick={() => onChange({ ...value, preset })}
+          >
+            {t(`reports.period.presets.${preset}`)}
+          </Button>
+        ))}
+      </div>
+      {value.preset === 'custom' && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-md">
+          <div className="space-y-1">
+            <Label htmlFor={`${idPrefix}-start`} className="text-xs">{t('reports.generateDialog.startDate')}</Label>
+            <Input
+              id={`${idPrefix}-start`}
+              type="date"
+              max={value.customEnd || today}
+              value={value.customStart}
+              aria-invalid={error === 'startRequired' || error === 'invalidDate' || error === 'endBeforeStart'}
+              aria-describedby={error ? errorId : undefined}
+              onChange={(e) => onChange({ ...value, customStart: e.target.value })}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor={`${idPrefix}-end`} className="text-xs">{t('reports.generateDialog.endDate')}</Label>
+            <Input
+              id={`${idPrefix}-end`}
+              type="date"
+              min={value.customStart || undefined}
+              max={today}
+              value={value.customEnd}
+              aria-invalid={error !== null && error !== 'startRequired'}
+              aria-describedby={error ? errorId : undefined}
+              onChange={(e) => onChange({ ...value, customEnd: e.target.value })}
+            />
+          </div>
+        </div>
+      )}
+      {error ? (
+        <p id={errorId} role="alert" className="text-sm text-destructive">{t(`reports.period.errors.${error}`)}</p>
+      ) : (
+        <p className="text-sm text-muted-foreground" data-period-range>
+          {range.start && range.end
+            ? t('reports.period.range', { start: formatDayKey(range.start, locale), end: formatDayKey(range.end, locale) })
+            : t('reports.period.allData')}
+        </p>
+      )}
     </div>
   )
 }
@@ -537,6 +637,9 @@ function ReportPreviewPanel({
                 count: meta.rowCount,
                 language: t(`reports.generateDialog.languages.${meta.language}`),
               })}
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {t('reports.period.appliesTo', { field: t(`reports.period.fields.${preview.request.reportType}`) })}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">

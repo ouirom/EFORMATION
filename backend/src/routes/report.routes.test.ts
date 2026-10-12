@@ -92,18 +92,24 @@ describe('POST /reports/generate uses real enrollments column names', () => {
   }
 });
 
-// Regression coverage: with a date range supplied, the bare `created_at` filter
-// used to be ambiguous whenever more than one joined table has a created_at
-// column (e.g. users + enterprises, or quizzes + lessons + courses), which
-// only surfaced once startDate/endDate were actually passed.
-describe('POST /reports/generate qualifies the date filter when multiple joined tables have created_at', () => {
+// Each report applies the period to the date that answers "what happened in
+// that period" (enrollment, attempt, award, issuance...), always qualified so it
+// can't be ambiguous between joined tables. On the optional (LEFT) joins it sits
+// in the ON clause: a WHERE there would drop the rows with nothing in the period.
+describe("POST /reports/generate applies the period to each report's meaningful date", () => {
   const cases = [
-    { reportType: 'user_progress', qualifiedColumn: 'u.created_at' },
-    { reportType: 'quiz_performance', qualifiedColumn: 'q.created_at' },
+    { reportType: 'user_progress', column: 'en.enrolled_at', inJoin: 'LEFT JOIN enrollments en' },
+    { reportType: 'course_completion', column: 'e.enrolled_at', inJoin: 'LEFT JOIN enrollments e' },
+    { reportType: 'quiz_performance', column: 'qa.started_at', inJoin: 'LEFT JOIN quiz_attempts qa' },
+    { reportType: 'enrollment_summary', column: 'e.enrolled_at' },
+    { reportType: 'badge_awards', column: 'ab.awarded_at', inJoin: 'LEFT JOIN user_badges ab' },
+    { reportType: 'certificate_issuance', column: 'c.issued_at' },
+    { reportType: 'activity_log', column: 'al.created_at' },
+    { reportType: 'organization_overview', column: 'en.enrolled_at', inJoin: 'LEFT JOIN enrollments en' },
   ];
 
-  for (const { reportType, qualifiedColumn } of cases) {
-    it(`${reportType} qualifies created_at as ${qualifiedColumn} when a date range is given`, async () => {
+  for (const { reportType, column, inJoin } of cases) {
+    it(`${reportType} filters the period on ${column}`, async () => {
       mockedQuery.mockImplementation((query: string) => {
         if (query.includes('FROM users WHERE id = @id')) return Promise.resolve([mockAuthLookup()]);
         return Promise.resolve([]);
@@ -116,9 +122,13 @@ describe('POST /reports/generate qualifies the date filter when multiple joined 
 
       expect(response.status).toBe(200);
       const dataQuery = mockedQuery.mock.calls.find(([q]: [string]) => q.includes('@startDate'))?.[0] || '';
-      expect(dataQuery).toContain(`${qualifiedColumn} >= @startDate`);
-      expect(dataQuery).toContain(`${qualifiedColumn} < @endDate`);
-      expect(dataQuery).not.toMatch(/[^.]\bcreated_at [<>]/);
+      expect(dataQuery).toContain(`${column} >= @startDate AND ${column} < @endDate`);
+      // Never an unqualified date column.
+      expect(dataQuery).not.toMatch(/[^.\w](created_at|enrolled_at|started_at|awarded_at|issued_at) [<>]/);
+      if (inJoin) {
+        const joinLine = dataQuery.split('\n').find((line: string) => line.includes(inJoin)) || '';
+        expect(joinLine).toContain(`${column} >= @startDate`);
+      }
     });
   }
 });

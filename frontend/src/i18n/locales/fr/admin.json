@@ -1230,6 +1230,42 @@
       "exportFiltered": "CSV des lignes filtrées",
       "filteredFileSuffix": "filtre",
       "noMatchFilters": "Aucune ligne ne correspond aux filtres"
+    },
+    "period": {
+      "label": "Période",
+      "ariaLabel": "Période des rapports",
+      "presets": {
+        "all": "Toute la période",
+        "last7": "7 derniers jours",
+        "last30": "30 derniers jours",
+        "thisMonth": "Ce mois-ci",
+        "lastMonth": "Mois dernier",
+        "thisQuarter": "Ce trimestre",
+        "thisYear": "Cette année",
+        "custom": "Personnalisée"
+      },
+      "range": "Du {{start}} au {{end}}",
+      "allData": "Toutes les données, sans limite de date",
+      "hint": "S'applique aux aperçus et aux exports.",
+      "dialogHint": "Même période que la barre de période de la page : la modifier ici la modifie aussi là-bas.",
+      "errors": {
+        "startRequired": "Indiquez la date de début.",
+        "endRequired": "Indiquez la date de fin.",
+        "invalidDate": "Date invalide.",
+        "endBeforeStart": "La date de fin doit être postérieure ou égale à la date de début.",
+        "inFuture": "La date de fin ne peut pas dépasser aujourd'hui."
+      },
+      "appliesTo": "Période appliquée à : {{field}}",
+      "fields": {
+        "user_progress": "date d'inscription aux cours",
+        "course_completion": "date d'inscription",
+        "quiz_performance": "date de la tentative",
+        "enrollment_summary": "date d'inscription",
+        "badge_awards": "date d'attribution",
+        "certificate_issuance": "date de délivrance",
+        "activity_log": "date de l'action",
+        "organization_overview": "date d'inscription"
+      }
     }
   },
   "organization": {

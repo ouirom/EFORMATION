@@ -229,34 +229,45 @@ async function generateReportData(
   const dateFilter = (column: string) =>
     [startDate ? `AND ${column} >= @startDate` : '', endDate ? `AND ${column} < @endDate` : ''].join(' ');
 
+  // Each report applies the period to the date that answers "what happened in
+  // that period" (enrollment, attempt, award, issuance...), noted per case. It
+  // used to filter on unrelated dates (account / course / quiz creation), and in
+  // a WHERE clause that turned optional joins into inner ones.
   switch (reportType) {
+    // Period: date of enrollment in the courses.
     case 'user_progress':
       return DatabaseService.query<any>(
         `SELECT u.id, u.display_name, u.email, u.role,
                 e.name as enterprise,
                 COUNT(DISTINCT en.course_id) as enrolled_courses,
                 AVG(en.progress_percent) as avg_progress,
-                SUM(CASE WHEN en.progress_percent >= 100 THEN 1 ELSE 0 END) as completed_courses
+                SUM(CASE WHEN en.progress_percent >= 100 THEN 1 ELSE 0 END) as completed_courses,
+                MIN(en.enrolled_at) as first_enrolled_at,
+                (SELECT MAX(lp.last_accessed_at) FROM lesson_progress lp
+                  WHERE lp.user_id = u.id AND lp.tenant_id = @tenantId ${dateFilter('lp.last_accessed_at')}) as last_activity_at,
+                u.last_login_at
          FROM users u
          LEFT JOIN enterprises e ON u.enterprise_id = e.id
-         LEFT JOIN enrollments en ON u.id = en.user_id
-         WHERE u.tenant_id = @tenantId AND u.deleted_at IS NULL ${dateFilter('u.created_at')}
-         GROUP BY u.id, u.display_name, u.email, u.role, e.name
+         LEFT JOIN enrollments en ON u.id = en.user_id ${dateFilter('en.enrolled_at')}
+         WHERE u.tenant_id = @tenantId AND u.deleted_at IS NULL
+         GROUP BY u.id, u.display_name, u.email, u.role, e.name, u.last_login_at
          ORDER BY CASE WHEN AVG(en.progress_percent) IS NULL THEN 1 ELSE 0 END, avg_progress DESC`,
         { tenantId, startDate, endDate }
       );
 
+    // Period: date of enrollment.
     case 'course_completion': {
       const [rows, categoryLabels] = await Promise.all([DatabaseService.query<any>(
-        `SELECT c.id, c.title, c.category,
+        `SELECT c.id, c.title, c.category, c.created_at as course_created_at,
                 COUNT(e.id) as total_enrollments,
                 SUM(CASE WHEN e.progress_percent >= 100 THEN 1 ELSE 0 END) as completions,
                 AVG(e.progress_percent) as avg_progress,
-                AVG(${db.diffDays('e.enrolled_at', 'e.completed_at')}) as avg_days_to_complete
+                AVG(${db.diffDays('e.enrolled_at', 'e.completed_at')}) as avg_days_to_complete,
+                MAX(e.completed_at) as last_completion_at
          FROM courses c
-         LEFT JOIN enrollments e ON c.id = e.course_id
-         WHERE c.tenant_id = @tenantId ${courseId ? 'AND c.id = @courseId' : ''} ${dateFilter('c.created_at')}
-         GROUP BY c.id, c.title, c.category
+         LEFT JOIN enrollments e ON c.id = e.course_id ${dateFilter('e.enrolled_at')}
+         WHERE c.tenant_id = @tenantId AND c.deleted_at IS NULL ${courseId ? 'AND c.id = @courseId' : ''}
+         GROUP BY c.id, c.title, c.category, c.created_at
          ORDER BY completions DESC`,
         { tenantId, courseId, startDate, endDate }
       ), CategoryService.labels(tenantId, language)]);
@@ -264,6 +275,7 @@ async function generateReportData(
       return rows.map((r: any) => ({ ...r, category: r.category ? categoryLabels.get(r.category) ?? r.category : null }));
     }
 
+    // Period: date of the attempt.
     case 'quiz_performance':
       return DatabaseService.query<any>(
         `SELECT q.id, q.title, c.title as course_title,
@@ -271,18 +283,21 @@ async function generateReportData(
                 AVG(qa.score) as avg_score,
                 MIN(qa.score) as min_score,
                 MAX(qa.score) as max_score,
-                SUM(CASE WHEN qa.passed = ${db.bool(true)} THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(qa.id), 0) as pass_rate
+                SUM(CASE WHEN qa.passed = ${db.bool(true)} THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(qa.id), 0) as pass_rate,
+                MIN(qa.started_at) as first_attempt_at,
+                MAX(qa.started_at) as last_attempt_at
          FROM quizzes q
          LEFT JOIN lessons l ON q.lesson_id = l.id
          LEFT JOIN modules m ON l.module_id = m.id
          LEFT JOIN courses c ON m.course_id = c.id
-         LEFT JOIN quiz_attempts qa ON q.id = qa.quiz_id
-         WHERE q.tenant_id = @tenantId ${dateFilter('q.created_at')}
+         LEFT JOIN quiz_attempts qa ON q.id = qa.quiz_id ${dateFilter('qa.started_at')}
+         WHERE q.tenant_id = @tenantId
          GROUP BY q.id, q.title, c.title
          ORDER BY total_attempts DESC`,
         { tenantId, startDate, endDate }
       );
 
+    // Period: date of enrollment (one row per day).
     case 'enrollment_summary':
       return DatabaseService.query<any>(
         `SELECT CAST(e.enrolled_at AS DATE) as date,
@@ -297,23 +312,27 @@ async function generateReportData(
         { tenantId, startDate, endDate }
       );
 
+    // Period: date of the award. Badges never awarded in the period stay listed (0).
     case 'badge_awards':
       return DatabaseService.query<any>(
         `SELECT b.name as badge_name, b.badge_type,
                 COUNT(ab.id) as times_awarded,
-                COUNT(DISTINCT ab.user_id) as unique_recipients
+                COUNT(DISTINCT ab.user_id) as unique_recipients,
+                MIN(ab.awarded_at) as first_awarded_at,
+                MAX(ab.awarded_at) as last_awarded_at
          FROM badges b
-         LEFT JOIN user_badges ab ON b.id = ab.badge_id
-         WHERE b.tenant_id = @tenantId ${dateFilter('ab.awarded_at')}
+         LEFT JOIN user_badges ab ON b.id = ab.badge_id ${dateFilter('ab.awarded_at')}
+         WHERE b.tenant_id = @tenantId
          GROUP BY b.id, b.name, b.badge_type
          ORDER BY times_awarded DESC`,
         { tenantId, startDate, endDate }
       );
 
+    // Period: date of issuance.
     case 'certificate_issuance':
       return DatabaseService.query<any>(
         `SELECT c.serial, u.display_name as user_name, u.email,
-                co.title as course_title, c.issued_at
+                co.title as course_title, c.issued_at, c.expires_at, c.revoked_at
          FROM certificates c
          JOIN users u ON c.user_id = u.id
          JOIN courses co ON c.course_id = co.id
@@ -322,18 +341,19 @@ async function generateReportData(
         { tenantId, startDate, endDate }
       );
 
+    // Period: date of the action.
     case 'activity_log':
       return DatabaseService.query<any>(
         IS_PG
-          ? `SELECT al.action, al.entity, al.entity_id,
-                    u.display_name as user_name, al.created_at
+          ? `SELECT al.created_at, al.action, al.entity, al.entity_id,
+                    u.display_name as user_name
              FROM audit_logs al
              LEFT JOIN users u ON al.user_id = u.id
              WHERE al.tenant_id = @tenantId ${dateFilter('al.created_at')}
              ORDER BY al.created_at DESC
              LIMIT 1000`
-          : `SELECT TOP 1000 al.action, al.entity, al.entity_id,
-                    u.display_name as user_name, al.created_at
+          : `SELECT TOP 1000 al.created_at, al.action, al.entity, al.entity_id,
+                    u.display_name as user_name
              FROM audit_logs al
              LEFT JOIN users u ON al.user_id = u.id
              WHERE al.tenant_id = @tenantId ${dateFilter('al.created_at')}
@@ -341,21 +361,27 @@ async function generateReportData(
         { tenantId, startDate, endDate }
       );
 
+    // Period: date of enrollment. One row per org unit that has people, counted
+    // from each person's own placement (the old join matched a user on its
+    // enterprise OR direction OR service, so every enterprise member was counted
+    // again on every service row).
     case 'organization_overview':
       return DatabaseService.query<any>(
-        `SELECT e.name as enterprise, d.name as direction, s.name as service,
+        `SELECT e.name as enterprise, sub.name as subsidiary, d.name as direction, s.name as service,
                 COUNT(DISTINCT u.id) as users,
                 COUNT(DISTINCT en.id) as enrollments,
-                AVG(en.progress_percent) as avg_progress
-         FROM enterprises e
-         LEFT JOIN directions d ON e.id = d.enterprise_id
-         LEFT JOIN services s ON d.id = s.direction_id
-         LEFT JOIN users u ON u.enterprise_id = e.id OR u.direction_id = d.id OR u.service_id = s.id
-         LEFT JOIN enrollments en ON u.id = en.user_id
-         WHERE e.tenant_id = @tenantId
-         GROUP BY e.id, e.name, d.id, d.name, s.id, s.name
-         ORDER BY e.name, d.name, s.name`,
-        { tenantId }
+                AVG(en.progress_percent) as avg_progress,
+                MAX(en.enrolled_at) as last_enrolled_at
+         FROM users u
+         LEFT JOIN enterprises e ON e.id = u.enterprise_id
+         LEFT JOIN subsidiaries sub ON sub.id = u.subsidiary_id
+         LEFT JOIN directions d ON d.id = u.direction_id
+         LEFT JOIN services s ON s.id = u.service_id
+         LEFT JOIN enrollments en ON en.user_id = u.id ${dateFilter('en.enrolled_at')}
+         WHERE u.tenant_id = @tenantId AND u.deleted_at IS NULL
+         GROUP BY e.name, sub.name, d.name, s.name
+         ORDER BY e.name, sub.name, d.name, s.name`,
+        { tenantId, startDate, endDate }
       );
 
     default:

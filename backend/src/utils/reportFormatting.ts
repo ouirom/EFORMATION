@@ -66,6 +66,19 @@ const COLUMNS: Record<string, Bilingual & { kind?: ColumnKind }> = {
   entity: { fr: 'Élément', en: 'Entity' },
   entity_id: { fr: 'ID élément', en: 'Entity ID', kind: 'number' },
   created_at: { fr: 'Date', en: 'Date', kind: 'datetime' },
+  subsidiary: { fr: 'Filiale', en: 'Subsidiary' },
+  first_enrolled_at: { fr: 'Première inscription', en: 'First enrollment', kind: 'datetime' },
+  last_activity_at: { fr: 'Dernière activité', en: 'Last activity', kind: 'datetime' },
+  last_login_at: { fr: 'Dernière connexion', en: 'Last login', kind: 'datetime' },
+  course_created_at: { fr: 'Créé le', en: 'Created on', kind: 'date' },
+  last_completion_at: { fr: 'Dernière complétion', en: 'Last completion', kind: 'datetime' },
+  first_attempt_at: { fr: 'Première tentative', en: 'First attempt', kind: 'datetime' },
+  last_attempt_at: { fr: 'Dernière tentative', en: 'Last attempt', kind: 'datetime' },
+  first_awarded_at: { fr: 'Première attribution', en: 'First award', kind: 'datetime' },
+  last_awarded_at: { fr: 'Dernière attribution', en: 'Last award', kind: 'datetime' },
+  expires_at: { fr: 'Expire le', en: 'Expires on', kind: 'date' },
+  revoked_at: { fr: 'Révoqué le', en: 'Revoked on', kind: 'date' },
+  last_enrolled_at: { fr: 'Dernière inscription', en: 'Last enrollment', kind: 'datetime' },
 };
 
 // Coded values shown to humans (role and badge type columns).
